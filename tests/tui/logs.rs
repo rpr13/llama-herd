@@ -64,3 +64,36 @@ fn test_parse_ansi_line_empty() {
     assert_eq!(log_line.spans[0].text, "");
     assert_eq!(log_line.spans[0].style, Style::default());
 }
+
+#[test]
+fn test_active_server_pid_termination() {
+    use llama_herd::tui::logs::ActiveServer;
+    use std::path::Path;
+
+    // Spawn a dummy process that runs for a few seconds
+    let params = if cfg!(target_os = "windows") {
+        vec![
+            "ping".to_string(),
+            "127.0.0.1".to_string(),
+            "-n".to_string(),
+            "10".to_string(),
+        ]
+    } else {
+        vec!["sleep".to_string(), "10".to_string()]
+    };
+
+    let mut server = ActiveServer::spawn(&params, Path::new(".")).unwrap();
+
+    // Verify it started running
+    assert!(*server.is_running.lock().unwrap());
+
+    // Terminate it via PID-based kill method
+    server.kill();
+
+    // Verify the child process is terminated (reaped exit status is some)
+    let exit_status = server.child.try_wait().unwrap();
+    assert!(
+        exit_status.is_some(),
+        "Spawning child process should be terminated after kill()"
+    );
+}

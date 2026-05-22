@@ -99,7 +99,17 @@ impl ActiveServer {
 
     pub fn kill(&mut self) {
         *self.is_running.lock().unwrap() = false;
-        let _ = self.child.kill();
+        #[cfg(target_os = "windows")]
+        {
+            let pid = self.child.id();
+            let _ = Command::new("taskkill")
+                .args(["/F", "/PID", &pid.to_string(), "/T"])
+                .output();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = self.child.kill();
+        }
         let _ = self.child.wait();
     }
 }

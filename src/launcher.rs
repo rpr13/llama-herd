@@ -1,19 +1,10 @@
 use crate::config::{ModelAssets, UserSettings};
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
 
 pub fn kill_existing_servers() {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "llama-server.exe", "/T"])
-            .output();
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = Command::new("pkill").args(["-9", "llama-server"]).output();
-    }
+    // Left empty to prevent killing unrelated global llama-server instances.
+    // LlamaHerd now manages child processes isolated by PID.
 }
 
 pub fn build_launch_parameters(
