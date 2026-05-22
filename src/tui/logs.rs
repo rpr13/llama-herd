@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -5,6 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use ratatui::style::{Color, Modifier, Style};
+
+pub const MAX_LOGS: usize = 5000;
 
 /// A single styled fragment within a log line.
 #[derive(Clone, Debug)]
@@ -21,8 +24,8 @@ pub struct LogLine {
 
 pub struct ActiveServer {
     pub child: Child,
-    pub logs: Arc<Mutex<Vec<LogLine>>>,
-    pub raw_history: Arc<Mutex<Vec<String>>>,
+    pub logs: Arc<Mutex<VecDeque<LogLine>>>,
+    pub raw_history: Arc<Mutex<VecDeque<String>>>,
     pub is_running: Arc<Mutex<bool>>,
 }
 
@@ -49,8 +52,8 @@ impl ActiveServer {
             .take()
             .ok_or_else(|| std::io::Error::other("Failed to capture stderr"))?;
 
-        let logs = Arc::new(Mutex::new(Vec::new()));
-        let raw_history = Arc::new(Mutex::new(Vec::new()));
+        let logs = Arc::new(Mutex::new(VecDeque::new()));
+        let raw_history = Arc::new(Mutex::new(VecDeque::new()));
         let is_running = Arc::new(Mutex::new(true));
 
         // Spawn stdout thread
@@ -67,8 +70,20 @@ impl ActiveServer {
                     }
                     if let Ok(line) = line_res {
                         let parsed = parse_ansi_line(&line);
-                        raw_history.lock().unwrap().push(line.clone());
-                        logs.lock().unwrap().push(parsed);
+                        {
+                            let mut hist_lock = raw_history.lock().unwrap();
+                            hist_lock.push_back(line.clone());
+                            if hist_lock.len() > MAX_LOGS {
+                                hist_lock.pop_front();
+                            }
+                        }
+                        {
+                            let mut logs_lock = logs.lock().unwrap();
+                            logs_lock.push_back(parsed);
+                            if logs_lock.len() > MAX_LOGS {
+                                logs_lock.pop_front();
+                            }
+                        }
                         if let Some(ref tx) = event_tx {
                             let _ = tx.send(crate::tui::TuiEvent::LogReceived);
                         }
@@ -91,8 +106,20 @@ impl ActiveServer {
                     }
                     if let Ok(line) = line_res {
                         let parsed = parse_ansi_line(&line);
-                        raw_history.lock().unwrap().push(line.clone());
-                        logs.lock().unwrap().push(parsed);
+                        {
+                            let mut hist_lock = raw_history.lock().unwrap();
+                            hist_lock.push_back(line.clone());
+                            if hist_lock.len() > MAX_LOGS {
+                                hist_lock.pop_front();
+                            }
+                        }
+                        {
+                            let mut logs_lock = logs.lock().unwrap();
+                            logs_lock.push_back(parsed);
+                            if logs_lock.len() > MAX_LOGS {
+                                logs_lock.pop_front();
+                            }
+                        }
                         if let Some(ref tx) = event_tx {
                             let _ = tx.send(crate::tui::TuiEvent::LogReceived);
                         }

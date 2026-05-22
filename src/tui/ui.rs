@@ -385,7 +385,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 ])
             };
 
-            let mut raw_logs = Vec::new();
+            let mut raw_logs = std::collections::VecDeque::new();
             if let Some(ref server) = state.active_server {
                 if state.logs_paused {
                     raw_logs = state.paused_logs_buffer.clone();

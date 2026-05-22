@@ -97,3 +97,38 @@ fn test_active_server_pid_termination() {
         "Spawning child process should be terminated after kill()"
     );
 }
+
+#[test]
+fn test_active_server_ring_buffer_capacity() {
+    use llama_herd::tui::logs::{ActiveServer, MAX_LOGS};
+    use std::path::Path;
+    use std::thread;
+    use std::time::Duration;
+
+    let params = if cfg!(target_os = "windows") {
+        vec![
+            "powershell.exe".to_string(),
+            "-Command".to_string(),
+            "1..6000 | ForEach-Object { Write-Output $_ }".to_string(),
+        ]
+    } else {
+        vec!["seq".to_string(), "1".to_string(), "6000".to_string()]
+    };
+
+    let mut server = ActiveServer::spawn(&params, Path::new("."), None).unwrap();
+
+    // Wait for the process to exit
+    let status = server.child.wait().unwrap();
+    assert!(status.success());
+
+    // Give reader threads a moment to finish collecting the last lines
+    thread::sleep(Duration::from_millis(500));
+
+    // Get log counts
+    let logs_count = server.logs.lock().unwrap().len();
+    let history_count = server.raw_history.lock().unwrap().len();
+
+    // Verify it is capped to MAX_LOGS
+    assert_eq!(logs_count, MAX_LOGS);
+    assert_eq!(history_count, MAX_LOGS);
+}

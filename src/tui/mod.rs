@@ -211,7 +211,11 @@ pub fn handle_key_event(
                 if let Some(ref server) = state.active_server
                     && let Ok(hist) = server.raw_history.lock()
                 {
-                    let full_text = hist.join("\n");
+                    let full_text = hist
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<&str>>()
+                        .join("\n");
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
                         let _ = clipboard.set_text(full_text);
                     }
