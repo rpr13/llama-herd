@@ -7,7 +7,7 @@ pub mod tui {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
-    use llama_herd::tui::{AppScreen, AppState, handle_key_event};
+    use llama_herd::tui::{AppScreen, AppState, TuiEvent, handle_key_event};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -27,7 +27,8 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        assert!(handle_key_event(&mut state, key));
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        assert!(handle_key_event(&mut state, key, &tx));
     }
 
     #[test]
@@ -79,7 +80,8 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        handle_key_event(&mut state, key);
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        handle_key_event(&mut state, key, &tx);
         assert_eq!(state.screen, AppScreen::EditingCtx);
         assert_eq!(state.input_buffer, "123");
     }
@@ -101,9 +103,10 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        handle_key_event(&mut state, key);
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        handle_key_event(&mut state, key, &tx);
         assert!(!state.ui);
-        handle_key_event(&mut state, key);
+        handle_key_event(&mut state, key, &tx);
         assert!(state.ui);
     }
 
@@ -120,6 +123,8 @@ mod tests {
         state.screen = AppScreen::EditingNgl;
         state.input_buffer = "auto".to_string();
 
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
         // Type '1'
         let key_1 = KeyEvent {
             code: KeyCode::Char('1'),
@@ -127,7 +132,7 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        handle_key_event(&mut state, key_1);
+        handle_key_event(&mut state, key_1, &tx);
         assert_eq!(state.input_buffer, "auto1");
 
         // Backspace
@@ -137,7 +142,7 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        handle_key_event(&mut state, key_bs);
+        handle_key_event(&mut state, key_bs, &tx);
         assert_eq!(state.input_buffer, "auto");
 
         // Enter
@@ -147,7 +152,7 @@ mod tests {
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        handle_key_event(&mut state, key_enter);
+        handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::Select);
         assert_eq!(state.ngl, "auto");
     }

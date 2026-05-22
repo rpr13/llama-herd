@@ -14,7 +14,18 @@ use std::time::Duration;
 pub use app::{AppScreen, AppState};
 pub use logs::ActiveServer;
 
-pub fn handle_key_event(state: &mut AppState, key: KeyEvent) -> bool {
+#[derive(Clone, Debug)]
+pub enum TuiEvent {
+    Input(KeyEvent),
+    Tick,
+    LogReceived,
+}
+
+pub fn handle_key_event(
+    state: &mut AppState,
+    key: KeyEvent,
+    event_tx: &std::sync::mpsc::Sender<TuiEvent>,
+) -> bool {
     let mut should_quit = false;
 
     match state.screen {
@@ -76,7 +87,7 @@ pub fn handle_key_event(state: &mut AppState, key: KeyEvent) -> bool {
                 state.last_launch_args = launch_args.clone();
                 state.is_router_mode = true;
 
-                match ActiveServer::spawn(&launch_args, &state.models_dir) {
+                match ActiveServer::spawn(&launch_args, &state.models_dir, Some(event_tx.clone())) {
                     Ok(server) => {
                         state.active_server = Some(server);
                         state.screen = AppScreen::Running;
@@ -105,7 +116,7 @@ pub fn handle_key_event(state: &mut AppState, key: KeyEvent) -> bool {
                 state.last_launch_args = launch_args.clone();
                 state.is_router_mode = false;
 
-                match ActiveServer::spawn(&launch_args, &state.models_dir) {
+                match ActiveServer::spawn(&launch_args, &state.models_dir, Some(event_tx.clone())) {
                     Ok(server) => {
                         state.active_server = Some(server);
                         state.screen = AppScreen::Running;
@@ -167,7 +178,11 @@ pub fn handle_key_event(state: &mut AppState, key: KeyEvent) -> bool {
                 if let Some(mut server) = state.active_server.take() {
                     server.kill();
                 }
-                match ActiveServer::spawn(&state.last_launch_args, &state.models_dir) {
+                match ActiveServer::spawn(
+                    &state.last_launch_args,
+                    &state.models_dir,
+                    Some(event_tx.clone()),
+                ) {
                     Ok(server) => {
                         state.active_server = Some(server);
                         state.logs_paused = false;
@@ -258,16 +273,63 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    let (event_tx, event_rx) = std::sync::mpsc::channel::<TuiEvent>();
+
+    // Spawn thread for user input events
+    {
+        let event_tx = event_tx.clone();
+        std::thread::spawn(move || {
+            loop {
+                if let Ok(true) = crossterm::event::poll(Duration::from_millis(100))
+                    && let Ok(Event::Key(key)) = crossterm::event::read()
+                    && key.kind == event::KeyEventKind::Press
+                    && event_tx.send(TuiEvent::Input(key)).is_err()
+                {
+                    break;
+                }
+            }
+        });
+    }
+
+    // Spawn thread for periodic ticks
+    {
+        let event_tx = event_tx.clone();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_millis(250));
+                if event_tx.send(TuiEvent::Tick).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
     let mut should_quit = false;
 
-    while !should_quit {
-        terminal.draw(|f| ui::draw(f, &mut state))?;
+    // Draw the initial screen before blocking on events
+    terminal.draw(|f| ui::draw(f, &mut state))?;
 
-        if event::poll(Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == event::KeyEventKind::Press
-        {
-            should_quit = handle_key_event(&mut state, key);
+    while !should_quit {
+        if let Ok(first_event) = event_rx.recv() {
+            let mut events = vec![first_event];
+            // Coalesce / batch rapid subsequent events (e.g. multiple log lines)
+            while let Ok(event) = event_rx.try_recv() {
+                events.push(event);
+            }
+
+            for event in events {
+                match event {
+                    TuiEvent::Input(key) => {
+                        should_quit = handle_key_event(&mut state, key, &event_tx);
+                    }
+                    TuiEvent::Tick => {}
+                    TuiEvent::LogReceived => {}
+                }
+            }
+
+            terminal.draw(|f| ui::draw(f, &mut state))?;
+        } else {
+            break; // Channel disconnected, exit loop
         }
     }
 

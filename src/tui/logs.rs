@@ -27,7 +27,11 @@ pub struct ActiveServer {
 }
 
 impl ActiveServer {
-    pub fn spawn(params: &[String], cwd: &Path) -> Result<Self, std::io::Error> {
+    pub fn spawn(
+        params: &[String],
+        cwd: &Path,
+        event_tx: Option<std::sync::mpsc::Sender<crate::tui::TuiEvent>>,
+    ) -> Result<Self, std::io::Error> {
         let mut cmd = Command::new(&params[0]);
         cmd.args(&params[1..])
             .current_dir(cwd)
@@ -54,6 +58,7 @@ impl ActiveServer {
             let logs = logs.clone();
             let raw_history = raw_history.clone();
             let is_running = is_running.clone();
+            let event_tx = event_tx.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line_res in reader.lines() {
@@ -62,8 +67,11 @@ impl ActiveServer {
                     }
                     if let Ok(line) = line_res {
                         let parsed = parse_ansi_line(&line);
-                        raw_history.lock().unwrap().push(line);
+                        raw_history.lock().unwrap().push(line.clone());
                         logs.lock().unwrap().push(parsed);
+                        if let Some(ref tx) = event_tx {
+                            let _ = tx.send(crate::tui::TuiEvent::LogReceived);
+                        }
                     }
                 }
             });
@@ -74,6 +82,7 @@ impl ActiveServer {
             let logs = logs.clone();
             let raw_history = raw_history.clone();
             let is_running = is_running.clone();
+            let event_tx = event_tx.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line_res in reader.lines() {
@@ -82,8 +91,11 @@ impl ActiveServer {
                     }
                     if let Ok(line) = line_res {
                         let parsed = parse_ansi_line(&line);
-                        raw_history.lock().unwrap().push(line);
+                        raw_history.lock().unwrap().push(line.clone());
                         logs.lock().unwrap().push(parsed);
+                        if let Some(ref tx) = event_tx {
+                            let _ = tx.send(crate::tui::TuiEvent::LogReceived);
+                        }
                     }
                 }
             });

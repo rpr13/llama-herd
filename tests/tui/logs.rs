@@ -82,7 +82,7 @@ fn test_active_server_pid_termination() {
         vec!["sleep".to_string(), "10".to_string()]
     };
 
-    let mut server = ActiveServer::spawn(&params, Path::new(".")).unwrap();
+    let mut server = ActiveServer::spawn(&params, Path::new("."), None).unwrap();
 
     // Verify it started running
     assert!(*server.is_running.lock().unwrap());
