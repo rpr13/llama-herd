@@ -4,35 +4,32 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 fn show_help() {
-    println!(
-        r#"🦙 LLAMA-HERD - Rust Edition
-Native cross-platform server launcher for llama.cpp
-
-Usage:
-  llama-herd [options]
-
-Options:
-  -h, --help     Show this help documentation.
-  -c, --cli      Force classic interactive CLI terminal menus.
-  --ini          Generate models-preset.ini dynamically and exit.
-
-Environment:
-  LLAMA_PATH     Base directory containing llama-server and models/ subdirectory.
-                 Default fallbacks: d:/llama, c:/llama, or ~/llama.
-
-Global Configuration (config.toml):
-  Place in LLAMA_PATH to share parameters across all presets. Key settings:
-  host = "0.0.0.0"        # Host IP to bind the server
-  port = 8080             # Port to listen on
-  flash_attn = "auto"     # Enable flash attention ("auto", "1", "0")
-  kv_quant = "q8_0"       # KV cache quantization ("q8_0", "f16", etc.)
-  models_max = 1          # Max active models loaded concurrently in Router Mode
-  batch_size = 256        # Prompt processing batch size (-b)
-  ubatch_size = 256       # Prompt processing micro-batch size (-ub)
-  threads = 8             # Explicit CPU thread count override (-t)
-  ui = true                # Global Web UI enablement toggle
-"#
-    );
+    println!(concat!(
+        "🦙 LLAMA-HERD v",
+        env!("CARGO_PKG_VERSION"),
+        " - Rust Edition\n",
+        "Native cross-platform server launcher for llama.cpp\n\n",
+        "Usage:\n",
+        "  llama-herd [options]\n\n",
+        "Options:\n",
+        "  -h, --help     Show this help documentation.\n",
+        "  -c, --cli      Force classic interactive CLI terminal menus.\n",
+        "  --ini          Generate models-preset.ini dynamically and exit.\n\n",
+        "Environment:\n",
+        "  LLAMA_PATH     Base directory containing llama-server and models/ subdirectory.\n",
+        "                 Default fallbacks: d:/llama, c:/llama, or ~/llama.\n\n",
+        "Global Configuration (config.toml):\n",
+        "  Place in LLAMA_PATH to share parameters across all presets. Key settings:\n",
+        "  host = \"0.0.0.0\"        # Host IP to bind the server\n",
+        "  port = 8080             # Port to listen on\n",
+        "  flash_attn = \"auto\"     # Enable flash attention (\"auto\", \"1\", \"0\")\n",
+        "  kv_quant = \"q8_0\"       # KV cache quantization (\"q8_0\", \"f16\", etc.)\n",
+        "  models_max = 1          # Max active models loaded concurrently in Router Mode\n",
+        "  batch_size = 256        # Prompt processing batch size (-b)\n",
+        "  ubatch_size = 256       # Prompt processing micro-batch size (-ub)\n",
+        "  threads = 8             # Explicit CPU thread count override (-t)\n",
+        "  ui = true                # Global Web UI enablement toggle\n"
+    ));
 
     std::process::exit(0);
 }
@@ -101,8 +98,13 @@ fn main() {
     }
 
     if use_cli {
-        println!("LLAMA SERVER LAUNCHER (Classic CLI)");
-        println!("-----------------------------------");
+        let title = format!(
+            "LLAMA SERVER LAUNCHER v{} (Classic CLI)",
+            env!("CARGO_PKG_VERSION")
+        );
+        let divider = "-".repeat(title.len());
+        println!("{}", title);
+        println!("{}", divider);
         println!("Select Server Mode:");
         println!("[1] Router Mode (Multi-model: dynamic load/unload)");
         println!("[2] Single Model Mode (Interactive selection)");

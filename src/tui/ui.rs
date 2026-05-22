@@ -25,7 +25,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     // --- 1. HEADER PANEL ---
     let header_text = vec![Line::from(vec![
         Span::styled(
-            " 🦙 LLAMA-HERD ",
+            concat!(" 🦙 LLAMA-HERD v", env!("CARGO_PKG_VERSION"), " "),
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),

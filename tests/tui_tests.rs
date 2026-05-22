@@ -31,6 +31,38 @@ mod tests {
     }
 
     #[test]
+    fn test_ui_header_displays_version() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+        );
+        terminal
+            .draw(|f| {
+                llama_herd::tui::ui::draw(f, &mut state);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut row_str = String::new();
+        for x in 0..80 {
+            row_str.push(buffer[(x, 1)].symbol().chars().next().unwrap_or(' '));
+        }
+        let expected_version = env!("CARGO_PKG_VERSION");
+        assert!(
+            row_str.contains(&format!("v{}", expected_version)),
+            "Row 1 string '{}' did not contain version 'v{}'",
+            row_str,
+            expected_version
+        );
+    }
+
+    #[test]
     fn test_handle_key_event_edit_ctx() {
         let mut state = AppState::new(
             vec![],
