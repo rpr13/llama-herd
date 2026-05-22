@@ -1,0 +1,17 @@
+[package]
+name = "llama-herd"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+ratatui = "0.30.0"
+crossterm = "0.29.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+arboard = "3.4.0"
+regex = "1.10"
+toml = "1.1.2"
+
+[dev-dependencies]
+tempfile = "3"
+cargo-husky = { version = "1", features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy", "run-cargo-fmt"] }

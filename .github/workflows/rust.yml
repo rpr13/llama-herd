@@ -1,0 +1,158 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt, llvm-tools-preview
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Check formatting
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --check
+
+      - name: Clippy check
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cargo test --workspace --all-targets --all-features
+
+      - name: Install cargo-llvm-cov (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run tests with coverage (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Print coverage summary (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo llvm-cov report --summary-only
+
+      - name: Generate HTML coverage report (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo llvm-cov report --html --output-dir coverage-html
+
+      - name: Upload coverage HTML report (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-html
+          path: coverage-html
+
+  release-build:
+    name: Release Build (${{ matrix.os }})
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/develop'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked --all-features
+
+      - name: Package binary (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cd target/release
+          tar -czf ../../llama-herd-linux.tar.gz llama-herd
+
+      - name: Package binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/release
+          Compress-Archive -Path llama-herd.exe -DestinationPath ../../llama-herd-windows.zip
+
+      - name: Upload packaged binary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-binaries-${{ matrix.os }}
+          path: |
+            llama-herd-linux.tar.gz
+            llama-herd-windows.zip
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish Release
+    needs: release-build
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Ubuntu artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: release-binaries-ubuntu-latest
+          path: ./dist
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: release-binaries-windows-latest
+          path: ./dist
+
+      - name: Determine Release Details
+        id: details
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "name=Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "tag=early-access" >> $GITHUB_OUTPUT
+            echo "name=Early Access (develop)" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.details.outputs.tag }}
+          name: ${{ steps.details.outputs.name }}
+          prerelease: ${{ steps.details.outputs.prerelease == 'true' }}
+          files: ./dist/*
+          body: |
+            Automated build for llama-herd.
+
+            ${{ steps.details.outputs.prerelease == 'true' && 'This is an early-access preview build compiled from the latest develop branch.' || 'Official stable release.' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

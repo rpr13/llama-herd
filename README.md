@@ -1,0 +1,112 @@
+# 🦙 Llama-Herd (`llama-herd`)
+
+> [!IMPORTANT]
+> 🤖✨ **AI-First Software**: This project was designed and built with **very heavy use of agentic AI coding assistants** working in partnership with human developers. 🦾💻
+
+<p align="center">
+  <a href="https://github.com/rpr13/llama-herd/actions"><img src="https://github.com/rpr13/llama-herd/actions/workflows/rust.yml/badge.svg" alt="Build Status"></a>
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-blue?logo=linux&logoColor=white" alt="Platforms">
+  <img src="https://img.shields.io/badge/License-MIT%20%2F%20Apache--2.0-blue" alt="License">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Built_with-Agentic_AI-blueviolet?logo=googlegemini&logoColor=white" alt="AI Assisted">
+  <img src="https://img.shields.io/badge/Powered_by-llama.cpp-yellow?logo=openllama&logoColor=black" alt="llama.cpp">
+  <img src="https://img.shields.io/badge/API-OpenAI%20Compatible-darkgreen?logo=openai&logoColor=white" alt="OpenAI Compatible">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Rust-2024-orange?logo=rust&logoColor=white" alt="Rust 2024">
+  <img src="https://img.shields.io/badge/UI-Ratatui-red?logo=terminal&logoColor=white" alt="Ratatui">
+  <img src="https://img.shields.io/badge/Linter-Clippy-yellow?logo=rust&logoColor=white" alt="Clippy Enforced">
+  <img src="https://img.shields.io/badge/Code%20Style-Prettier-ff69b4?logo=prettier&logoColor=white" alt="Prettier">
+</p>
+
+**Llama-Herd** is a high-performance, native Rust Terminal User Interface (TUI) and Command Line Interface (CLI) companion for orchestrating, pairing, and routing local Large Language Model (LLM) services driven by `llama.cpp`'s `llama-server`.
+
+---
+
+## Why Llama-Herd?
+
+Running local LLMs via raw `llama-server` command lines is often brittle and manually tedious. `Llama-Herd` orchestrates the lifecycle of your models automatically: it auto-discovers GGUFs, applies naming heuristics to pair draft and vision sub-models, enforces strict TOML parameter safety, parses and displays ANSI log streams live in Ratatui, and routes request traffic dynamically in Multi-Model Router modes.
+
+### Key Capabilities
+
+- 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics.
+- 🔒 **Configuration Validation**: Enforces TOML constraints, filtering out unsafe flags and normalizing CLI parameter bindings safely.
+- 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing loaded status, resource allocations, and real-time logs.
+- 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with scroll, pause, and export controls.
+- 🔀 **Dynamic Preset Routing**: Coordinates on-demand model loading and routing configurations (governed by generated `models-preset.ini` files).
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+1. **Rust Toolchain**: Install stable Rust using [rustup](https://rustup.rs/) (v1.70+ recommended).
+2. **llama-server**: Install `llama.cpp` and build the `llama-server` binary. Set the environment variable `LLAMA_PATH` to the directory containing this binary.
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/rpr13/llama-herd.git
+cd llama-herd
+
+# Install the binary globally in your Cargo path
+cargo install --path .
+```
+
+### Execution Commands
+
+```bash
+# Start in the default interactive TUI dashboard mode
+llama-herd
+
+# Force classic interactive CLI terminal menus
+llama-herd --cli
+
+# Generate models-preset.ini dynamically and exit immediately
+llama-herd --ini
+```
+
+---
+
+## Configuration Snippet
+
+Llama-Herd reads custom parameters from `.toml` files matching your `.gguf` models (e.g. `Qwen2.5-7B-Instruct.toml` for `Qwen2.5-7B-Instruct.gguf`).
+
+```toml
+# Llama-Herd Orchestration Settings
+lh-is-default = true
+lh-ctx-size = "32k"
+lh-ngl = "auto"
+
+# Speculative Decoding Configurations
+lh-draft = "Qwen2.5-1.5B-Instruct.gguf"
+lh-spec-type = "draft-mtp"
+
+# Short/Long Option Passthroughs for llama-server
+s-sps = 0.6                     # short-arg: -sps 0.6
+slot-prompt-similarity = 0.5   # long-arg: --slot-prompt-similarity 0.5
+```
+
+---
+
+## Deep Dives & Reference
+
+For comprehensive details on how to design, configure, or optimize Llama-Herd, refer to:
+
+- 🏛️ **[Architecture & System Design](file:///home/rpr/dev/llama-herd/docs/architecture.md)**: Visual flowchart, directory structures, and module architecture breakdown.
+- ⚙️ **[Configuration & Performance Optimization](file:///home/rpr/dev/llama-herd/docs/configuration.md)**: Global settings, model config keys list, API routing endpoints, and tuning tips.
+
+---
+
+## Credits & Acknowledgments
+
+- **llama.cpp**: The core execution engine for high-performance GGUF quantization inference.
+- **Ratatui**: The excellent Terminal UI framework enabling the interactive dashboard interface.
+- **Crossterm**: Safe, cross-platform terminal control backend.
+- **serde & toml-rs**: Standard libraries for type-safe configuration loading and validation.
+- **tokio**: Powering concurrent log parsing and subprocess process lifecycle management.

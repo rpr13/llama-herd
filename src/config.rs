@@ -1,0 +1,442 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+// --- CONFIGURATION STRUCTURES ---
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelAssets {
+    pub config: HashMap<String, serde_json::Value>,
+    pub jinja_template: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserSettings {
+    pub ctx: usize,
+    pub ngl: String,
+    pub ui: bool,
+    pub mmproj: Option<PathBuf>,
+    pub draft_model: Option<PathBuf>,
+    pub draft_ngl: String,
+}
+
+// --- PURE PARSERS & HELPERS ---
+
+pub fn parse_ctx(value: &serde_json::Value) -> usize {
+    let fallback = 131072;
+    match value {
+        serde_json::Value::Number(num) => {
+            if let Some(i) = num.as_u64() {
+                i as usize
+            } else if let Some(f) = num.as_f64() {
+                f as usize
+            } else {
+                fallback
+            }
+        }
+        serde_json::Value::String(s) => parse_ctx_str(s),
+        _ => fallback,
+    }
+}
+
+pub fn parse_ctx_str(s: &str) -> usize {
+    let fallback = 131072;
+    let s_lower = s.to_lowercase();
+    if s_lower.contains('k')
+        && let Ok(val) = s_lower.replace('k', "").trim().parse::<usize>()
+    {
+        return val * 1024;
+    }
+    s.trim().parse::<usize>().unwrap_or(fallback)
+}
+
+pub fn get_optimal_threads() -> String {
+    match std::thread::available_parallelism() {
+        Ok(cores) => {
+            let logical = cores.get();
+            let physical = std::cmp::max(1, logical / 2);
+            physical.to_string()
+        }
+        Err(_) => "4".to_string(),
+    }
+}
+
+pub fn calculate_ngl(input_str: &str, default_val: &str, total_layers: Option<usize>) -> String {
+    if let Some(stripped) = input_str.strip_prefix("--")
+        && let Some(layers) = total_layers
+        && let Ok(delta) = stripped.parse::<usize>()
+    {
+        return layers.saturating_sub(delta).to_string();
+    }
+    if input_str.is_empty() {
+        default_val.to_string()
+    } else {
+        input_str.to_string()
+    }
+}
+
+// --- TOML LOADERS ---
+
+const RESTRICTED_LONG: &[&str] = &[
+    "ctx-size",
+    "total-layers",
+    "n-gpu-layers",
+    "kv-quant",
+    "lh-kv-quant",
+    "kv-unified",
+    "lh-kv-unified",
+    "cache-type-k",
+    "cache-type-v",
+    "ngl",
+    "threads",
+    "ngld",
+    "gpu-layers-draft",
+    "spec-draft-ngl",
+    "model-draft",
+    "spec-draft-model",
+    "is-draft",
+    "is-default",
+    "is-draft-only",
+    "ui",
+    "webui",
+    "model",
+    "chat-template-file",
+    "mmproj",
+    "jinja",
+    "flash-attn",
+    "version",
+    "tools",
+    "batch-size",
+    "ubatch-size",
+    "log-colors",
+    "host",
+    "port",
+    "np",
+    "parallel",
+    "models-preset",
+    "models-max",
+    "models-autoload",
+    "props",
+    "temp",
+    "top-p",
+    "top-k",
+    "reasoning",
+    "reasoning-format",
+];
+
+const RESTRICTED_SHORT: &[&str] = &[
+    "c", "ngl", "ngld", "t", "md", "m", "mm", "np", "b", "ub", "fa", "kvu", "h",
+];
+
+fn is_invalid_key(k: &str) -> Option<&'static str> {
+    if k.starts_with('-') {
+        Some("starts with a dash '-'")
+    } else if k.contains('_') {
+        Some("contains an underscore '_'")
+    } else {
+        None
+    }
+}
+
+pub fn is_restricted_key(key: &str) -> bool {
+    if key.starts_with("lh-") {
+        return true;
+    }
+    let norm_key = if let Some(stripped) = key.strip_prefix("s-") {
+        stripped
+    } else {
+        key
+    };
+    RESTRICTED_SHORT.contains(&norm_key) || RESTRICTED_LONG.contains(&norm_key)
+}
+
+pub fn format_arg_name(key: &str) -> Option<String> {
+    if key.starts_with("lh-") {
+        None
+    } else if let Some(stripped) = key.strip_prefix("s-") {
+        Some(format!("-{}", stripped))
+    } else {
+        Some(format!("--{}", key))
+    }
+}
+
+pub fn format_ini_key(key: &str) -> Option<String> {
+    if key.starts_with("lh-") {
+        None
+    } else if let Some(stripped) = key.strip_prefix("s-") {
+        Some(stripped.to_string())
+    } else {
+        Some(key.to_string())
+    }
+}
+
+pub fn load_toml_silent(path: &Path) -> HashMap<String, serde_json::Value> {
+    if let Ok(mut file) = File::open(path) {
+        let mut contents = String::new();
+        if file.read_to_string(&mut contents).is_ok()
+            && let Ok(value) = toml::from_str::<toml::Value>(&contents)
+        {
+            return toml_to_json(value, false);
+        }
+    }
+    HashMap::new()
+}
+
+pub fn load_toml_safe(path: &Path) -> HashMap<String, serde_json::Value> {
+    match File::open(path) {
+        Ok(mut file) => {
+            let mut contents = String::new();
+            if file.read_to_string(&mut contents).is_ok() {
+                match toml::from_str::<toml::Value>(&contents) {
+                    Ok(value) => {
+                        println!(
+                            "[*] Loaded parameters from: {}",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        );
+                        return toml_to_json(value, true);
+                    }
+                    Err(e) => {
+                        println!(
+                            "[!] Parse error on {}: {}",
+                            path.file_name().unwrap_or_default().to_string_lossy(),
+                            e
+                        );
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!(
+                "[!] Read error on {}: {}",
+                path.file_name().unwrap_or_default().to_string_lossy(),
+                e
+            );
+        }
+    }
+    HashMap::new()
+}
+
+fn toml_to_json(toml: toml::Value, warn: bool) -> HashMap<String, serde_json::Value> {
+    let mut map = HashMap::new();
+    if let toml::Value::Table(table) = toml {
+        for (k, v) in table {
+            if let Some(reason) = is_invalid_key(&k) {
+                if warn {
+                    println!(
+                        "[!] Warning: Key '{}' is invalid ({}) and was skipped.",
+                        k, reason
+                    );
+                }
+                continue;
+            }
+            map.insert(k, convert_toml_val(v, warn));
+        }
+    }
+    map
+}
+
+fn convert_toml_val(v: toml::Value, warn: bool) -> serde_json::Value {
+    match v {
+        toml::Value::String(s) => serde_json::Value::String(s),
+        toml::Value::Integer(i) => serde_json::Value::Number(i.into()),
+        toml::Value::Float(f) => {
+            serde_json::Value::Number(serde_json::Number::from_f64(f).unwrap())
+        }
+        toml::Value::Boolean(b) => serde_json::Value::Bool(b),
+        toml::Value::Array(arr) => serde_json::Value::Array(
+            arr.into_iter()
+                .map(|item| convert_toml_val(item, warn))
+                .collect(),
+        ),
+        toml::Value::Table(table) => {
+            let mut map = serde_json::Map::new();
+            for (k, v) in table {
+                if let Some(reason) = is_invalid_key(&k) {
+                    if warn {
+                        println!(
+                            "[!] Warning: Key '{}' is invalid ({}) and was skipped.",
+                            k, reason
+                        );
+                    }
+                    continue;
+                }
+                map.insert(k, convert_toml_val(v, warn));
+            }
+            serde_json::Value::Object(map)
+        }
+        toml::Value::Datetime(_) => serde_json::Value::Null,
+    }
+}
+
+// --- INI PARSING & MERGING ---
+
+pub fn parse_settings_ini(content: &str) -> HashMap<String, HashMap<String, String>> {
+    let mut sections = HashMap::new();
+    let mut current_section_name: Option<String> = None;
+    let mut current_section_map = HashMap::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+
+        if line.starts_with('[') && line.ends_with(']') {
+            if let Some(sec) = current_section_name.take() {
+                sections.insert(sec, current_section_map);
+                current_section_map = HashMap::new();
+            }
+            let sec_name = line[1..line.len() - 1].trim().to_string();
+            current_section_name = Some(sec_name);
+        } else if let Some(pos) = line.find('=') {
+            let key = line[..pos].trim().to_string();
+            let value = line[pos + 1..].trim().to_string();
+            current_section_map.insert(key, value);
+        }
+    }
+
+    if let Some(sec) = current_section_name {
+        sections.insert(sec, current_section_map);
+    }
+
+    sections
+}
+
+pub fn load_settings_from_ini(
+    preset_name: &str,
+    preset_path: &Path,
+) -> Option<HashMap<String, String>> {
+    if !preset_path.exists() {
+        return None;
+    }
+    if let Ok(content) = std::fs::read_to_string(preset_path) {
+        let sections = parse_settings_ini(&content);
+
+        let mut merged = HashMap::new();
+        if let Some(global) = sections.get("*") {
+            merged.extend(global.clone());
+        }
+        if let Some(preset) = sections.get(preset_name) {
+            merged.extend(preset.clone());
+            return Some(merged);
+        }
+    }
+    None
+}
+
+pub fn discover_assets(selected_model: &Path, models_dir: &Path) -> ModelAssets {
+    let stem = selected_model
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let mut toml_files = Vec::new();
+    let mut jinja_files = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                let ext_lower = ext.to_lowercase();
+                if ext_lower == "toml" {
+                    toml_files.push(path);
+                } else if ext_lower == "jinja" {
+                    jinja_files.push(path);
+                }
+            }
+        }
+    }
+
+    // Sort descending by length of file name
+    toml_files.sort_by_key(|p| std::cmp::Reverse(p.file_name().unwrap_or_default().len()));
+    jinja_files.sort_by_key(|p| std::cmp::Reverse(p.file_name().unwrap_or_default().len()));
+
+    let mut config_data = HashMap::new();
+    for f in toml_files {
+        let f_stem = f
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if stem.starts_with(&f_stem) {
+            config_data = load_toml_silent(&f);
+            break;
+        }
+    }
+
+    let mut jinja_template = None;
+    for f in jinja_files {
+        let f_stem = f
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if stem.starts_with(&f_stem) {
+            jinja_template = Some(f);
+            break;
+        }
+    }
+
+    ModelAssets {
+        config: config_data,
+        jinja_template,
+    }
+}
+
+pub fn get_home_dir() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .ok()
+}
+
+pub fn resolve_base_dir() -> Option<PathBuf> {
+    if let Ok(env_val) = std::env::var("LLAMA_PATH") {
+        let p = PathBuf::from(env_val);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    let mut fallbacks = vec![
+        PathBuf::from("d:/llama"),
+        PathBuf::from("c:/llama"),
+        PathBuf::from("C:/llama"),
+    ];
+    if let Some(home) = get_home_dir() {
+        fallbacks.push(home.join("llama"));
+    }
+
+    fallbacks.into_iter().find(|p| p.join("models").is_dir())
+}
+
+pub fn get_server_executable(base_dir: &Path) -> PathBuf {
+    let bin_name = if cfg!(target_os = "windows") {
+        "llama-server.exe"
+    } else {
+        "llama-server"
+    };
+    base_dir.join(bin_name)
+}
+
+pub fn parse_args(args: &[String]) -> (bool, bool, bool) {
+    let mut use_cli = false;
+    let mut show_help = false;
+    let mut generate_ini = false;
+
+    for arg in args.iter().skip(1) {
+        if arg == "-h" || arg == "--help" {
+            show_help = true;
+        }
+        if arg == "-c" || arg == "--cli" {
+            use_cli = true;
+        }
+        if arg == "--ini" {
+            generate_ini = true;
+        }
+    }
+
+    (use_cli, show_help, generate_ini)
+}
