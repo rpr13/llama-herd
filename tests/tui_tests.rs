@@ -53,10 +53,10 @@ mod tests {
         for x in 0..80 {
             row_str.push(buffer[(x, 1)].symbol().chars().next().unwrap_or(' '));
         }
-        let expected_version = env!("CARGO_PKG_VERSION");
+        let expected_version = env!("APP_VERSION");
         assert!(
-            row_str.contains(&format!("v{}", expected_version)),
-            "Row 1 string '{}' did not contain version 'v{}'",
+            row_str.contains(expected_version),
+            "Row 1 string '{}' did not contain version '{}'",
             row_str,
             expected_version
         );

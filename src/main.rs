@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 fn show_help() {
     println!(concat!(
-        "🦙 LLAMA-HERD v",
-        env!("CARGO_PKG_VERSION"),
+        "🦙 LLAMA-HERD ",
+        env!("APP_VERSION"),
         " - Rust Edition\n",
         "Native cross-platform server launcher for llama.cpp\n\n",
         "Usage:\n",
@@ -99,8 +99,8 @@ fn main() {
 
     if use_cli {
         let title = format!(
-            "LLAMA SERVER LAUNCHER v{} (Classic CLI)",
-            env!("CARGO_PKG_VERSION")
+            "LLAMA SERVER LAUNCHER {} (Classic CLI)",
+            env!("APP_VERSION")
         );
         let divider = "-".repeat(title.len());
         println!("{}", title);
