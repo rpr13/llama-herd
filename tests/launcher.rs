@@ -30,8 +30,14 @@ fn test_build_launch_parameters_defaults() -> TestResult {
 
     let global_config = HashMap::new();
 
-    let params =
-        build_launch_parameters(&exe_path, &model_path, &assets, &settings, &global_config);
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &global_config,
+        8080,
+    );
 
     // Verify binary and model paths
     assert_eq!(params[0], "/bin/llama-server");
@@ -110,8 +116,14 @@ fn test_build_launch_parameters_overrides() -> TestResult {
     global_config.insert("ubatch-size".to_string(), serde_json::json!(256));
     global_config.insert("tools".to_string(), serde_json::json!("web-search"));
 
-    let params =
-        build_launch_parameters(&exe_path, &model_path, &assets, &settings, &global_config);
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &global_config,
+        9000,
+    );
 
     // Verify overrides
     let host_idx = params.iter().position(|r| r == "--host").unwrap();
@@ -191,8 +203,14 @@ fn test_build_launch_parameters_speculative_types() -> TestResult {
         draft_ngl: "0".to_string(),
     };
 
-    let params =
-        build_launch_parameters(&exe_path, &model_path, &assets, &settings, &HashMap::new());
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &HashMap::new(),
+        8080,
+    );
 
     let spec_idx = params.iter().position(|r| r == "--spec-type").unwrap();
     assert_eq!(params[spec_idx + 1], "draft-eagle3");
@@ -215,7 +233,7 @@ fn test_build_router_launch_parameters_logic() -> TestResult {
     global_config.insert("models-max".to_string(), serde_json::json!(3));
     global_config.insert("ui".to_string(), serde_json::json!(false));
 
-    let params = build_router_launch_parameters(&exe_path, &preset_path, &global_config);
+    let params = build_router_launch_parameters(&exe_path, &preset_path, &global_config, 8000);
 
     // Verify base arguments
     assert_eq!(params[0], "/bin/llama-server");

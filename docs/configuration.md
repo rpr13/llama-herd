@@ -18,7 +18,7 @@ Placed directly inside the `LLAMA_PATH` directory to define global settings shar
 | Parameter     | Default          | Type    | Description                                                                |
 | :------------ | :--------------- | :------ | :------------------------------------------------------------------------- |
 | `host`        | `"0.0.0.0"`      | String  | Host binding IP for `llama-server`.                                        |
-| `port`        | `8080`           | Integer | Listen port for incoming inference requests.                               |
+| `port`        | `"auto"`         | String/Int | Listen port for incoming inference requests. If set to `"auto"` (or if the configured port is busy), llama-herd dynamically finds the next available TCP port starting at 8080. |
 | `flash-attn`  | `"auto"`         | String  | Enables flash attention processing (`"auto"`, `"1"`, or `"0"`).            |
 | `kv-quant`    | `"q8_0"`         | String  | Configures KV cache quantization type (`"q8_0"`, `"f16"`, `"q4_0"`, etc.). |
 | `models-max`  | `1`              | Integer | Max loaded models concurrently hosted in Router Mode.                      |

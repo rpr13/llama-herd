@@ -10,6 +10,7 @@ pub enum AppScreen {
     EditingCtx,
     EditingNgl,
     EditingDraftNgl,
+    EditingPort,
 }
 
 pub struct AppState {
@@ -49,6 +50,7 @@ pub struct AppState {
     pub auto_scroll: bool,
     pub last_launch_args: Vec<String>,
     pub is_router_mode: bool,
+    pub port: String,
 }
 
 impl AppState {
@@ -60,6 +62,17 @@ impl AppState {
         global_config: HashMap<String, serde_json::Value>,
         server_exe: PathBuf,
     ) -> Self {
+        let port = global_config
+            .get("port")
+            .and_then(|v| {
+                if let Some(i) = v.as_i64() {
+                    Some(i.to_string())
+                } else {
+                    v.as_str().map(|s| s.to_string())
+                }
+            })
+            .unwrap_or_else(|| "auto".to_string());
+
         let mut state = AppState {
             presets,
             models_dir,
@@ -87,6 +100,7 @@ impl AppState {
             auto_scroll: true,
             last_launch_args: Vec::new(),
             is_router_mode: false,
+            port,
         };
 
         state.load_current_preset_settings();

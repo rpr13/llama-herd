@@ -115,6 +115,18 @@ fn main() {
         let _ = std::io::stdin().read_line(&mut mode_choice);
         let mode_choice = mode_choice.trim();
 
+        let port_str = global_config
+            .get("port")
+            .and_then(|v| {
+                if let Some(i) = v.as_i64() {
+                    Some(i.to_string())
+                } else {
+                    v.as_str().map(|s| s.to_string())
+                }
+            })
+            .unwrap_or_else(|| "auto".to_string());
+        let resolved_port = launcher::resolve_port(&port_str);
+
         let params = if mode_choice == "2" {
             let (preset_name, selected_model) = cli::prompt_preset_selection(&presets);
             let ini_settings = match config::load_settings_from_ini(&preset_name, &preset_ini_path)
@@ -191,9 +203,15 @@ fn main() {
                 &assets,
                 &final_settings,
                 &global_config,
+                resolved_port,
             )
         } else {
-            launcher::build_router_launch_parameters(&server_exe, &preset_ini_path, &global_config)
+            launcher::build_router_launch_parameters(
+                &server_exe,
+                &preset_ini_path,
+                &global_config,
+                resolved_port,
+            )
         };
 
         cli::run_cli_session(&params, &base_dir);

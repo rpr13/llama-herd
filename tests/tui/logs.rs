@@ -82,7 +82,7 @@ fn test_active_server_pid_termination() {
         vec!["sleep".to_string(), "10".to_string()]
     };
 
-    let mut server = ActiveServer::spawn(&params, Path::new("."), None).unwrap();
+    let mut server = ActiveServer::spawn(&params, Path::new("."), None, None).unwrap();
 
     // Verify it started running
     assert!(*server.is_running.lock().unwrap());
@@ -91,7 +91,7 @@ fn test_active_server_pid_termination() {
     server.kill();
 
     // Verify the child process is terminated (reaped exit status is some)
-    let exit_status = server.child.try_wait().unwrap();
+    let exit_status = server.child.lock().unwrap().try_wait().unwrap();
     assert!(
         exit_status.is_some(),
         "Spawning child process should be terminated after kill()"
@@ -115,10 +115,10 @@ fn test_active_server_ring_buffer_capacity() {
         vec!["seq".to_string(), "1".to_string(), "6000".to_string()]
     };
 
-    let mut server = ActiveServer::spawn(&params, Path::new("."), None).unwrap();
+    let server = ActiveServer::spawn(&params, Path::new("."), None, None).unwrap();
 
     // Wait for the process to exit
-    let status = server.child.wait().unwrap();
+    let status = server.child.lock().unwrap().wait().unwrap();
     assert!(status.success());
 
     // Give reader threads a moment to finish collecting the last lines
@@ -131,4 +131,72 @@ fn test_active_server_ring_buffer_capacity() {
     // Verify it is capped to MAX_LOGS
     assert_eq!(logs_count, MAX_LOGS);
     assert_eq!(history_count, MAX_LOGS);
+}
+
+#[test]
+fn test_parse_startup_status() {
+    use llama_herd::tui::logs::parse_startup_status;
+    assert!(parse_startup_status(
+        "0.01.203.404 I srv  HTTP server running"
+    ));
+    assert!(parse_startup_status(
+        "0.02.105.602 I srv  start: binding port"
+    ));
+    assert!(parse_startup_status(
+        "0.03.302.203 I srv  Available models (13)"
+    ));
+    assert!(parse_startup_status(
+        "0.04.102.114 I srv  init: running without SSL"
+    ));
+    assert!(!parse_startup_status(
+        "0.05.502.115 I srv  Some random log message"
+    ));
+}
+
+#[test]
+fn test_parse_spawning_instance() {
+    use llama_herd::tui::logs::parse_spawning_instance;
+    let line = "0.28.626.828 I srv          load: spawning server instance with name=Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K on port 62757";
+    let (model, port) = parse_spawning_instance(line).unwrap();
+    assert_eq!(model, "Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K");
+    assert_eq!(port, 62757);
+
+    assert!(parse_spawning_instance("some other logs").is_none());
+}
+
+#[test]
+fn test_parse_proxy_request() {
+    use llama_herd::tui::logs::parse_proxy_request;
+    let line = "0.25.851.203 I srv  proxy_reques: proxying request to model Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K on port 54364";
+    let (model, port) = parse_proxy_request(line).unwrap();
+    assert_eq!(model, "Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K");
+    assert_eq!(port, 54364);
+
+    assert!(parse_proxy_request("some other logs").is_none());
+}
+
+#[test]
+fn test_parse_active_model() {
+    use llama_herd::tui::logs::parse_active_model;
+
+    let line1 = "0.02.404.347 I srv  ensure_model: waiting until model name=Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K is fully loaded...";
+    assert_eq!(
+        parse_active_model(line1).unwrap(),
+        "Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K"
+    );
+
+    let line2 = "0.03.584.517 I srv  proxy_reques: proxying request to model Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K on port 51377";
+    assert_eq!(
+        parse_active_model(line2).unwrap(),
+        "Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K"
+    );
+
+    let line_spawn = "0.28.626.828 I srv          load: spawning server instance with name=Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K on port 62757";
+    assert_eq!(
+        parse_active_model(line_spawn).unwrap(),
+        "Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K"
+    );
+
+    let line3 = "Some other server log message";
+    assert!(parse_active_model(line3).is_none());
 }

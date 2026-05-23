@@ -26,7 +26,7 @@ LlamaHerd is a high-performance, native Rust TUI and CLI wrapper designed as a s
 Placed directly in `LLAMA_PATH` to share parameters across all presets. Supported options include:
 
 - `host` (default: `"0.0.0.0"`)
-- `port` (default: `8080`)
+- `port` (default: `"auto"`) - Binds to 8080 or the first free port sequentially if auto or occupied.
 - `flash-attn` (default: `"auto"`)
 - `kv-quant` (default: `"q8_0"`)
 - `models-max` (default: `1`) - Maximum active models loaded concurrently in Router Mode
@@ -98,3 +98,9 @@ The project enforces code quality via Git pre-commit hooks managed by `cargo-hus
 ### 5. Documentation Maintenance
 
 - **AI Agents**: When implementing code changes, the AI agent must always check `README.md` and all files in the `docs/` directory to identify and perform any necessary updates, ensuring that documentation never goes out of sync with code modifications.
+
+### 6. Local Process Metrics & Orchestrator Status
+
+The TUI must not use network-scraping or HTTP requests to poll performance metrics/slots from `llama-server`. Instead, status tracking is handled locally:
+- Subprocess `stdout`/`stderr` output streams are parsed dynamically to extract runtime info (e.g. startup completion, sub-instance routing details, port mapping).
+- Subprocess state and PID are monitored directly via local OS child processes check (e.g. `try_wait`).

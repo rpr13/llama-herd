@@ -13,6 +13,7 @@ pub fn build_launch_parameters(
     assets: &ModelAssets,
     settings: &UserSettings,
     global_config: &HashMap<String, serde_json::Value>,
+    resolved_port: u16,
 ) -> Vec<String> {
     let mut params = Vec::new();
     params.push(executable_path.to_string_lossy().into_owned());
@@ -27,18 +28,8 @@ pub fn build_launch_parameters(
     params.push("--host".to_string());
     params.push(host.to_string());
 
-    let port = global_config
-        .get("port")
-        .and_then(|v| {
-            if let Some(i) = v.as_i64() {
-                Some(i.to_string())
-            } else {
-                v.as_str().map(|s| s.to_string())
-            }
-        })
-        .unwrap_or_else(|| "8080".to_string());
     params.push("--port".to_string());
-    params.push(port);
+    params.push(resolved_port.to_string());
 
     params.push("--log-colors".to_string());
     params.push("on".to_string());
@@ -199,6 +190,7 @@ pub fn build_router_launch_parameters(
     executable_path: &Path,
     preset_path: &Path,
     global_config: &HashMap<String, serde_json::Value>,
+    resolved_port: u16,
 ) -> Vec<String> {
     let mut params = Vec::new();
     params.push(executable_path.to_string_lossy().into_owned());
@@ -213,18 +205,8 @@ pub fn build_router_launch_parameters(
     params.push("--host".to_string());
     params.push(host.to_string());
 
-    let port = global_config
-        .get("port")
-        .and_then(|v| {
-            if let Some(i) = v.as_i64() {
-                Some(i.to_string())
-            } else {
-                v.as_str().map(|s| s.to_string())
-            }
-        })
-        .unwrap_or_else(|| "8080".to_string());
     params.push("--port".to_string());
-    params.push(port);
+    params.push(resolved_port.to_string());
 
     params.push("--log-colors".to_string());
     params.push("on".to_string());
@@ -294,4 +276,35 @@ pub fn build_router_launch_parameters(
     }
 
     params
+}
+
+pub fn is_port_available(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+pub fn resolve_port(port_str: &str) -> u16 {
+    if port_str == "auto" {
+        let mut port = 8080;
+        while port < 65535 {
+            if is_port_available(port) {
+                return port;
+            }
+            port += 1;
+        }
+        8080
+    } else {
+        let parsed: u16 = port_str.parse().unwrap_or(8080);
+        if is_port_available(parsed) {
+            parsed
+        } else {
+            let mut port = parsed + 1;
+            while port < 65535 {
+                if is_port_available(port) {
+                    return port;
+                }
+                port += 1;
+            }
+            parsed
+        }
+    }
 }

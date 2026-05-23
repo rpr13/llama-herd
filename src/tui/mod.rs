@@ -48,6 +48,10 @@ pub fn handle_key_event(
             KeyCode::Char('u') => {
                 state.ui = !state.ui;
             }
+            KeyCode::Char('p') => {
+                state.screen = AppScreen::EditingPort;
+                state.input_buffer = state.port.clone();
+            }
             KeyCode::Char('v') if !state.mmproj_list.is_empty() => {
                 state.mmproj_index = (state.mmproj_index + 1) % state.mmproj_list.len();
             }
@@ -79,15 +83,27 @@ pub fn handle_key_event(
                     &state.base_dir,
                     &state.global_config,
                 );
+                let resolved_port = crate::launcher::resolve_port(&state.port);
                 let launch_args = crate::launcher::build_router_launch_parameters(
                     &state.server_exe,
                     &preset_ini_path,
                     &state.global_config,
+                    resolved_port,
                 );
                 state.last_launch_args = launch_args.clone();
                 state.is_router_mode = true;
+                let model_name = if state.presets.is_empty() {
+                    None
+                } else {
+                    Some(state.presets[state.preset_index].0.clone())
+                };
 
-                match ActiveServer::spawn(&launch_args, &state.models_dir, Some(event_tx.clone())) {
+                match ActiveServer::spawn(
+                    &launch_args,
+                    &state.models_dir,
+                    model_name,
+                    Some(event_tx.clone()),
+                ) {
                     Ok(server) => {
                         state.active_server = Some(server);
                         state.screen = AppScreen::Running;
@@ -106,17 +122,29 @@ pub fn handle_key_event(
                 let (_preset_name, model_path) = &state.presets[state.preset_index];
                 let assets = crate::discovery::discover_assets(model_path, &state.models_dir);
                 let settings = state.get_user_settings();
+                let resolved_port = crate::launcher::resolve_port(&state.port);
                 let launch_args = crate::launcher::build_launch_parameters(
                     &state.server_exe,
                     model_path,
                     &assets,
                     &settings,
                     &state.global_config,
+                    resolved_port,
                 );
                 state.last_launch_args = launch_args.clone();
                 state.is_router_mode = false;
+                let model_name = if state.presets.is_empty() {
+                    None
+                } else {
+                    Some(state.presets[state.preset_index].0.clone())
+                };
 
-                match ActiveServer::spawn(&launch_args, &state.models_dir, Some(event_tx.clone())) {
+                match ActiveServer::spawn(
+                    &launch_args,
+                    &state.models_dir,
+                    model_name,
+                    Some(event_tx.clone()),
+                ) {
                     Ok(server) => {
                         state.active_server = Some(server);
                         state.screen = AppScreen::Running;
@@ -131,35 +159,39 @@ pub fn handle_key_event(
             }
             _ => {}
         },
-        AppScreen::EditingCtx | AppScreen::EditingNgl | AppScreen::EditingDraftNgl => {
-            match key.code {
-                KeyCode::Esc => {
-                    state.screen = AppScreen::Select;
-                }
-                KeyCode::Enter => {
-                    match state.screen {
-                        AppScreen::EditingCtx => {
-                            state.ctx = crate::config::parse_ctx_str(&state.input_buffer);
-                        }
-                        AppScreen::EditingNgl => {
-                            state.ngl = state.input_buffer.trim().to_string();
-                        }
-                        AppScreen::EditingDraftNgl => {
-                            state.draft_ngl = state.input_buffer.trim().to_string();
-                        }
-                        _ => {}
-                    }
-                    state.screen = AppScreen::Select;
-                }
-                KeyCode::Backspace => {
-                    state.input_buffer.pop();
-                }
-                KeyCode::Char(c) => {
-                    state.input_buffer.push(c);
-                }
-                _ => {}
+        AppScreen::EditingCtx
+        | AppScreen::EditingNgl
+        | AppScreen::EditingDraftNgl
+        | AppScreen::EditingPort => match key.code {
+            KeyCode::Esc => {
+                state.screen = AppScreen::Select;
             }
-        }
+            KeyCode::Enter => {
+                match state.screen {
+                    AppScreen::EditingCtx => {
+                        state.ctx = crate::config::parse_ctx_str(&state.input_buffer);
+                    }
+                    AppScreen::EditingNgl => {
+                        state.ngl = state.input_buffer.trim().to_string();
+                    }
+                    AppScreen::EditingDraftNgl => {
+                        state.draft_ngl = state.input_buffer.trim().to_string();
+                    }
+                    AppScreen::EditingPort => {
+                        state.port = state.input_buffer.trim().to_string();
+                    }
+                    _ => {}
+                }
+                state.screen = AppScreen::Select;
+            }
+            KeyCode::Backspace => {
+                state.input_buffer.pop();
+            }
+            KeyCode::Char(c) => {
+                state.input_buffer.push(c);
+            }
+            _ => {}
+        },
         AppScreen::Running => match key.code {
             KeyCode::Char('q') => {
                 if let Some(mut server) = state.active_server.take() {
@@ -178,9 +210,15 @@ pub fn handle_key_event(
                 if let Some(mut server) = state.active_server.take() {
                     server.kill();
                 }
+                let model_name = if state.presets.is_empty() {
+                    None
+                } else {
+                    Some(state.presets[state.preset_index].0.clone())
+                };
                 match ActiveServer::spawn(
                     &state.last_launch_args,
                     &state.models_dir,
+                    model_name,
                     Some(event_tx.clone()),
                 ) {
                     Ok(server) => {

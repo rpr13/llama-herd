@@ -48,7 +48,8 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         AppScreen::Select
         | AppScreen::EditingCtx
         | AppScreen::EditingNgl
-        | AppScreen::EditingDraftNgl => {
+        | AppScreen::EditingDraftNgl
+        | AppScreen::EditingPort => {
             // Split Content Area into Left (Presets List) and Right (Preset Parameters Details)
             let content_layout = if size.width < 110 {
                 let presets_height = (state.presets.len() as u16 + 2).clamp(5, 8);
@@ -246,6 +247,16 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]),
+                Row::new(vec![
+                    Cell::from(Span::styled(
+                        "[p]",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    )),
+                    Cell::from(Span::styled("Port", Style::default().fg(Color::DarkGray))),
+                    Cell::from(state.port.clone()).style(Style::default().fg(Color::Yellow)),
+                ]),
             ];
 
             let table = Table::new(
@@ -274,6 +285,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         " Edit Draft GPU Layers ",
                         "Enter draft N-GPU-layers (e.g. auto, 0, 8):",
                     ),
+                    AppScreen::EditingPort => (" Edit Port ", "Enter port number or 'auto':"),
                     _ => ("", ""),
                 };
 
@@ -319,17 +331,22 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 .get("host")
                 .and_then(|v| v.as_str())
                 .unwrap_or("0.0.0.0");
-            let port = state
-                .global_config
-                .get("port")
-                .and_then(|v| {
-                    if let Some(i) = v.as_i64() {
-                        Some(i.to_string())
-                    } else {
-                        v.as_str().map(|s| s.to_string())
+            let port = if let Some(ref _server) = state.active_server {
+                let mut p = "8080".to_string();
+                let mut idx = 0;
+                while idx < state.last_launch_args.len() {
+                    if state.last_launch_args[idx] == "--port"
+                        && idx + 1 < state.last_launch_args.len()
+                    {
+                        p = state.last_launch_args[idx + 1].clone();
+                        break;
                     }
-                })
-                .unwrap_or_else(|| "8080".to_string());
+                    idx += 1;
+                }
+                p
+            } else {
+                state.port.clone()
+            };
 
             let status_span = if state.logs_paused {
                 Span::styled(
@@ -349,11 +366,31 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 )
             };
 
+            let (label, display_name) = if state.is_router_mode {
+                (
+                    if size.width < 110 {
+                        "Mode: "
+                    } else {
+                        "Server Mode: "
+                    },
+                    "Router".to_string(),
+                )
+            } else {
+                (
+                    if size.width < 110 {
+                        "Preset: "
+                    } else {
+                        "Server Preset: "
+                    },
+                    preset_name,
+                )
+            };
+
             let server_info = if size.width < 110 {
                 Line::from(vec![
-                    Span::styled("Preset: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(label, Style::default().fg(Color::DarkGray)),
                     Span::styled(
-                        format!("{} ", truncate_middle(&preset_name, 15)),
+                        format!("{} ", truncate_middle(&display_name, 15)),
                         Style::default()
                             .fg(Color::Magenta)
                             .add_modifier(Modifier::BOLD),
@@ -368,9 +405,9 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 ])
             } else {
                 Line::from(vec![
-                    Span::styled("Server Preset: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(label, Style::default().fg(Color::DarkGray)),
                     Span::styled(
-                        format!("{} ", preset_name),
+                        format!("{} ", display_name),
                         Style::default()
                             .fg(Color::Magenta)
                             .add_modifier(Modifier::BOLD),
@@ -413,12 +450,13 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 1
             };
 
-            // Split Running view into Server Info Header + Full Command + Logs Scroll Pane
+            // Split Running view into Server Info Header + Full Command + Metrics + Logs Scroll Pane
             let running_layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(1),          // Server Info line
                     Constraint::Length(cmd_height), // Full Command line
+                    Constraint::Length(3),          // Metrics Panel
                     Constraint::Min(2),             // Logs block
                 ])
                 .split(main_layout[1]);
@@ -434,8 +472,118 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 running_layout[1],
             );
 
+            // Fetch and render server metrics
+            let mut server_metrics = crate::tui::logs::ServerMetrics::default();
+            if let Some(ref server) = state.active_server {
+                if let Ok(m) = server.metrics.lock() {
+                    server_metrics = m.clone();
+                }
+            } else {
+                server_metrics.status = "OFFLINE".to_string();
+            }
+
+            let metrics_block = Block::default()
+                .borders(Borders::TOP | Borders::BOTTOM)
+                .title("── Orchestrator Process & Routing Status ")
+                .border_style(Style::default().fg(Color::Magenta));
+
+            f.render_widget(metrics_block.clone(), running_layout[2]);
+            let metrics_area = metrics_block.inner(running_layout[2]);
+            let metrics_cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33), // Column 1: Process Status
+                    Constraint::Percentage(33), // Column 2: Server Mode
+                    Constraint::Percentage(34), // Column 3: Routing Details
+                ])
+                .split(metrics_area);
+
+            // Column 1: Process Status & PID
+            let status_color = match server_metrics.status.as_str() {
+                "RUNNING" => Color::Green,
+                "LOADING" => Color::Yellow,
+                "ERROR" => Color::Red,
+                _ => Color::DarkGray,
+            };
+            let col1_text = vec![
+                Line::from(vec![
+                    Span::styled(" Status: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        server_metrics.status.clone(),
+                        Style::default()
+                            .fg(status_color)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled(" PID:    ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        server_metrics
+                            .pid
+                            .map(|p| p.to_string())
+                            .unwrap_or_else(|| "N/A".to_string()),
+                        Style::default().fg(Color::White),
+                    ),
+                ]),
+            ];
+            f.render_widget(Paragraph::new(col1_text), metrics_cols[0]);
+
+            // Column 2: Server Mode & Max Models
+            let mode_str = if server_metrics.is_router {
+                "Router"
+            } else {
+                "Single Model"
+            };
+            let max_models_str = if server_metrics.is_router {
+                server_metrics
+                    .max_models
+                    .map(|m| m.to_string())
+                    .unwrap_or_else(|| "1".to_string())
+            } else {
+                "N/A".to_string()
+            };
+            let col2_text = vec![
+                Line::from(vec![
+                    Span::styled(" Mode:       ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        mode_str,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled(" Max Active: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(max_models_str, Style::default().fg(Color::White)),
+                ]),
+            ];
+            f.render_widget(Paragraph::new(col2_text), metrics_cols[1]);
+
+            // Column 3: Active Model & Port
+            let active_model_str = server_metrics.active_model.as_deref().unwrap_or("None");
+            let active_port_str = server_metrics
+                .active_port
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            let col3_text = vec![
+                Line::from(vec![
+                    Span::styled(" Active Model: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        active_model_str,
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled(" Active Port:  ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(active_port_str, Style::default().fg(Color::White)),
+                ]),
+            ];
+            f.render_widget(Paragraph::new(col3_text), metrics_cols[2]);
+
             // Calculate inner logs scroll height
-            let logs_rect = running_layout[2];
+            let logs_rect = running_layout[3];
             let inner_height = if logs_rect.height > 2 {
                 logs_rect.height - 2
             } else {
@@ -522,7 +670,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 .block(logs_block)
                 .scroll((state.log_scroll_offset as u16, state.log_scroll_x as u16));
 
-            f.render_widget(paragraph, running_layout[2]);
+            f.render_widget(paragraph, running_layout[3]);
         }
     }
 
@@ -590,6 +738,13 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(" Web UI  ", Style::default().fg(Color::White)),
+                        Span::styled(
+                            " [p]",
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" Port  ", Style::default().fg(Color::White)),
                         Span::styled(
                             " [q]",
                             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
@@ -659,6 +814,13 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         ),
                         Span::styled(" Toggle Web UI  ", Style::default().fg(Color::White)),
                         Span::styled(
+                            " [p]",
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" Edit Port  ", Style::default().fg(Color::White)),
+                        Span::styled(
                             " [q]",
                             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                         ),
@@ -667,7 +829,10 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 ]
             }
         }
-        AppScreen::EditingCtx | AppScreen::EditingNgl | AppScreen::EditingDraftNgl => {
+        AppScreen::EditingCtx
+        | AppScreen::EditingNgl
+        | AppScreen::EditingDraftNgl
+        | AppScreen::EditingPort => {
             vec![Line::from(vec![
                 Span::styled(
                     " [Enter]",

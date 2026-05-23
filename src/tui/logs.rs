@@ -22,17 +22,29 @@ pub struct LogLine {
     pub spans: Vec<StyledSpan>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ServerMetrics {
+    pub status: String, // "LOADING", "RUNNING", "STOPPED", "ERROR", "OFFLINE"
+    pub pid: Option<u32>,
+    pub is_router: bool,
+    pub max_models: Option<usize>,
+    pub active_model: Option<String>,
+    pub active_port: Option<u16>,
+}
+
 pub struct ActiveServer {
-    pub child: Child,
+    pub child: Arc<Mutex<Child>>,
     pub logs: Arc<Mutex<VecDeque<LogLine>>>,
     pub raw_history: Arc<Mutex<VecDeque<String>>>,
     pub is_running: Arc<Mutex<bool>>,
+    pub metrics: Arc<Mutex<ServerMetrics>>,
 }
 
 impl ActiveServer {
     pub fn spawn(
         params: &[String],
         cwd: &Path,
+        model_name: Option<String>,
         event_tx: Option<std::sync::mpsc::Sender<crate::tui::TuiEvent>>,
     ) -> Result<Self, std::io::Error> {
         let mut cmd = Command::new(&params[0]);
@@ -55,6 +67,62 @@ impl ActiveServer {
         let logs = Arc::new(Mutex::new(VecDeque::new()));
         let raw_history = Arc::new(Mutex::new(VecDeque::new()));
         let is_running = Arc::new(Mutex::new(true));
+        let is_router = params.iter().any(|arg| arg == "--models-preset");
+
+        let mut max_models = None;
+        let mut idx = 0;
+        while idx < params.len() {
+            if params[idx] == "--models-max" && idx + 1 < params.len() {
+                max_models = params[idx + 1].parse().ok();
+            }
+            idx += 1;
+        }
+
+        let metrics = Arc::new(Mutex::new(ServerMetrics {
+            status: "LOADING".to_string(),
+            pid: Some(child.id()),
+            is_router,
+            max_models,
+            active_model: if is_router { None } else { model_name.clone() },
+            active_port: None,
+        }));
+
+        let child = Arc::new(Mutex::new(child));
+
+        // Spawn status monitoring thread
+        {
+            let is_running = is_running.clone();
+            let metrics = metrics.clone();
+            let child_ref = child.clone();
+            thread::spawn(move || {
+                while *is_running.lock().unwrap() {
+                    let exit_status = {
+                        let mut child_lock = child_ref.lock().unwrap();
+                        child_lock.try_wait()
+                    };
+                    match exit_status {
+                        Ok(Some(status)) => {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.status = if status.success() {
+                                "STOPPED".to_string()
+                            } else {
+                                "ERROR".to_string()
+                            };
+                            *is_running.lock().unwrap() = false;
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(_) => {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.status = "ERROR".to_string();
+                            *is_running.lock().unwrap() = false;
+                            break;
+                        }
+                    }
+                    thread::sleep(std::time::Duration::from_secs(1));
+                }
+            });
+        }
 
         // Spawn stdout thread
         {
@@ -62,6 +130,7 @@ impl ActiveServer {
             let raw_history = raw_history.clone();
             let is_running = is_running.clone();
             let event_tx = event_tx.clone();
+            let metrics = metrics.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
                 for line_res in reader.lines() {
@@ -69,6 +138,33 @@ impl ActiveServer {
                         break;
                     }
                     if let Ok(line) = line_res {
+                        if line.contains("update_slots: all slots are idle") {
+                            continue;
+                        }
+                        if parse_startup_status(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            if m_lock.status == "LOADING" {
+                                m_lock.status = "RUNNING".to_string();
+                            }
+                        }
+                        if let Some((model, port)) = parse_spawning_instance(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.active_model = Some(model);
+                            m_lock.active_port = Some(port);
+                            m_lock.status = "RUNNING".to_string();
+                        } else if let Some((model, port)) = parse_proxy_request(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.active_model = Some(model);
+                            m_lock.active_port = Some(port);
+                            m_lock.status = "RUNNING".to_string();
+                        } else if let Some(model) = parse_active_model(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.active_model = Some(model);
+                            m_lock.status = "RUNNING".to_string();
+                        }
+                        if line.contains("proxy_reques: proxying request to model") {
+                            continue;
+                        }
                         let parsed = parse_ansi_line(&line);
                         {
                             let mut hist_lock = raw_history.lock().unwrap();
@@ -98,6 +194,7 @@ impl ActiveServer {
             let raw_history = raw_history.clone();
             let is_running = is_running.clone();
             let event_tx = event_tx.clone();
+            let metrics = metrics.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line_res in reader.lines() {
@@ -105,6 +202,33 @@ impl ActiveServer {
                         break;
                     }
                     if let Ok(line) = line_res {
+                        if line.contains("update_slots: all slots are idle") {
+                            continue;
+                        }
+                        if parse_startup_status(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            if m_lock.status == "LOADING" {
+                                m_lock.status = "RUNNING".to_string();
+                            }
+                        }
+                        if let Some((model, port)) = parse_spawning_instance(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.active_model = Some(model);
+                            m_lock.active_port = Some(port);
+                            m_lock.status = "RUNNING".to_string();
+                        } else if let Some((model, port)) = parse_proxy_request(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.active_model = Some(model);
+                            m_lock.active_port = Some(port);
+                            m_lock.status = "RUNNING".to_string();
+                        } else if let Some(model) = parse_active_model(&line) {
+                            let mut m_lock = metrics.lock().unwrap();
+                            m_lock.active_model = Some(model);
+                            m_lock.status = "RUNNING".to_string();
+                        }
+                        if line.contains("proxy_reques: proxying request to model") {
+                            continue;
+                        }
                         let parsed = parse_ansi_line(&line);
                         {
                             let mut hist_lock = raw_history.lock().unwrap();
@@ -133,23 +257,26 @@ impl ActiveServer {
             logs,
             raw_history,
             is_running,
+            metrics,
         })
     }
 
     pub fn kill(&mut self) {
         *self.is_running.lock().unwrap() = false;
-        #[cfg(target_os = "windows")]
-        {
-            let pid = self.child.id();
-            let _ = Command::new("taskkill")
-                .args(["/F", "/PID", &pid.to_string(), "/T"])
-                .output();
+        if let Ok(mut child) = self.child.lock() {
+            #[cfg(target_os = "windows")]
+            {
+                let pid = child.id();
+                let _ = Command::new("taskkill")
+                    .args(["/F", "/PID", &pid.to_string(), "/T"])
+                    .output();
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = child.kill();
+            }
+            let _ = child.wait();
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = self.child.kill();
-        }
-        let _ = self.child.wait();
     }
 }
 
@@ -292,4 +419,69 @@ pub fn apply_sgr(params: &str, base: Style) -> Style {
     }
 
     style
+}
+pub fn parse_startup_status(line: &str) -> bool {
+    line.contains("HTTP server running")
+        || line.contains("binding port")
+        || line.contains("Available models")
+        || line.contains("running without SSL")
+}
+
+pub fn parse_spawning_instance(line: &str) -> Option<(String, u16)> {
+    if let Some(pos) = line.find("spawning server instance with name=") {
+        let rest = &line[pos + 35..];
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if let Some(&model) = parts.first() {
+            let mut port = None;
+            for i in 0..parts.len() {
+                if parts[i] == "port" && i + 1 < parts.len() {
+                    port = parts[i + 1].parse::<u16>().ok();
+                }
+            }
+            return Some((model.to_string(), port.unwrap_or(0)));
+        }
+    }
+    None
+}
+
+pub fn parse_proxy_request(line: &str) -> Option<(String, u16)> {
+    if let Some(pos) = line.find("proxy_reques: proxying request to model ") {
+        let rest = &line[pos + 40..];
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if let Some(&model) = parts.first() {
+            let mut port = None;
+            for i in 0..parts.len() {
+                if parts[i] == "port" && i + 1 < parts.len() {
+                    port = parts[i + 1].parse::<u16>().ok();
+                }
+            }
+            return Some((model.to_string(), port.unwrap_or(0)));
+        }
+    }
+    None
+}
+
+pub fn parse_active_model(line: &str) -> Option<String> {
+    if let Some(pos) = line.find("ensure_model: waiting until model name=") {
+        let rest = &line[pos + 39..];
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if let Some(model) = parts.first() {
+            return Some(model.to_string());
+        }
+    }
+    if let Some(pos) = line.find("proxy_reques: proxying request to model ") {
+        let rest = &line[pos + 40..];
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if let Some(model) = parts.first() {
+            return Some(model.to_string());
+        }
+    }
+    if let Some(pos) = line.find("spawning server instance with name=") {
+        let rest = &line[pos + 35..];
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if let Some(model) = parts.first() {
+            return Some(model.to_string());
+        }
+    }
+    None
 }
