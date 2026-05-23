@@ -128,61 +128,55 @@ impl ActiveServer {
         {
             let logs = logs.clone();
             let raw_history = raw_history.clone();
-            let is_running = is_running.clone();
             let event_tx = event_tx.clone();
             let metrics = metrics.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stdout);
-                for line_res in reader.lines() {
-                    if !*is_running.lock().unwrap() {
-                        break;
+                for line in reader.lines().map_while(Result::ok) {
+                    if line.contains("update_slots: all slots are idle") {
+                        continue;
                     }
-                    if let Ok(line) = line_res {
-                        if line.contains("update_slots: all slots are idle") {
-                            continue;
-                        }
-                        if parse_startup_status(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            if m_lock.status == "LOADING" {
-                                m_lock.status = "RUNNING".to_string();
-                            }
-                        }
-                        if let Some((model, port)) = parse_spawning_instance(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            m_lock.active_model = Some(model);
-                            m_lock.active_port = Some(port);
-                            m_lock.status = "RUNNING".to_string();
-                        } else if let Some((model, port)) = parse_proxy_request(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            m_lock.active_model = Some(model);
-                            m_lock.active_port = Some(port);
-                            m_lock.status = "RUNNING".to_string();
-                        } else if let Some(model) = parse_active_model(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            m_lock.active_model = Some(model);
+                    if parse_startup_status(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        if m_lock.status == "LOADING" {
                             m_lock.status = "RUNNING".to_string();
                         }
-                        if line.contains("proxy_reques: proxying request to model") {
-                            continue;
+                    }
+                    if let Some((model, port)) = parse_spawning_instance(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        m_lock.active_model = Some(model);
+                        m_lock.active_port = Some(port);
+                        m_lock.status = "RUNNING".to_string();
+                    } else if let Some((model, port)) = parse_proxy_request(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        m_lock.active_model = Some(model);
+                        m_lock.active_port = Some(port);
+                        m_lock.status = "RUNNING".to_string();
+                    } else if let Some(model) = parse_active_model(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        m_lock.active_model = Some(model);
+                        m_lock.status = "RUNNING".to_string();
+                    }
+                    if line.contains("proxy_reques: proxying request to model") {
+                        continue;
+                    }
+                    let parsed = parse_ansi_line(&line);
+                    {
+                        let mut hist_lock = raw_history.lock().unwrap();
+                        hist_lock.push_back(line.clone());
+                        if hist_lock.len() > MAX_LOGS {
+                            hist_lock.pop_front();
                         }
-                        let parsed = parse_ansi_line(&line);
-                        {
-                            let mut hist_lock = raw_history.lock().unwrap();
-                            hist_lock.push_back(line.clone());
-                            if hist_lock.len() > MAX_LOGS {
-                                hist_lock.pop_front();
-                            }
+                    }
+                    {
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_back(parsed);
+                        if logs_lock.len() > MAX_LOGS {
+                            logs_lock.pop_front();
                         }
-                        {
-                            let mut logs_lock = logs.lock().unwrap();
-                            logs_lock.push_back(parsed);
-                            if logs_lock.len() > MAX_LOGS {
-                                logs_lock.pop_front();
-                            }
-                        }
-                        if let Some(ref tx) = event_tx {
-                            let _ = tx.send(crate::tui::TuiEvent::LogReceived);
-                        }
+                    }
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx.send(crate::tui::TuiEvent::LogReceived);
                     }
                 }
             });
@@ -192,61 +186,55 @@ impl ActiveServer {
         {
             let logs = logs.clone();
             let raw_history = raw_history.clone();
-            let is_running = is_running.clone();
             let event_tx = event_tx.clone();
             let metrics = metrics.clone();
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
-                for line_res in reader.lines() {
-                    if !*is_running.lock().unwrap() {
-                        break;
+                for line in reader.lines().map_while(Result::ok) {
+                    if line.contains("update_slots: all slots are idle") {
+                        continue;
                     }
-                    if let Ok(line) = line_res {
-                        if line.contains("update_slots: all slots are idle") {
-                            continue;
-                        }
-                        if parse_startup_status(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            if m_lock.status == "LOADING" {
-                                m_lock.status = "RUNNING".to_string();
-                            }
-                        }
-                        if let Some((model, port)) = parse_spawning_instance(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            m_lock.active_model = Some(model);
-                            m_lock.active_port = Some(port);
-                            m_lock.status = "RUNNING".to_string();
-                        } else if let Some((model, port)) = parse_proxy_request(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            m_lock.active_model = Some(model);
-                            m_lock.active_port = Some(port);
-                            m_lock.status = "RUNNING".to_string();
-                        } else if let Some(model) = parse_active_model(&line) {
-                            let mut m_lock = metrics.lock().unwrap();
-                            m_lock.active_model = Some(model);
+                    if parse_startup_status(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        if m_lock.status == "LOADING" {
                             m_lock.status = "RUNNING".to_string();
                         }
-                        if line.contains("proxy_reques: proxying request to model") {
-                            continue;
+                    }
+                    if let Some((model, port)) = parse_spawning_instance(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        m_lock.active_model = Some(model);
+                        m_lock.active_port = Some(port);
+                        m_lock.status = "RUNNING".to_string();
+                    } else if let Some((model, port)) = parse_proxy_request(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        m_lock.active_model = Some(model);
+                        m_lock.active_port = Some(port);
+                        m_lock.status = "RUNNING".to_string();
+                    } else if let Some(model) = parse_active_model(&line) {
+                        let mut m_lock = metrics.lock().unwrap();
+                        m_lock.active_model = Some(model);
+                        m_lock.status = "RUNNING".to_string();
+                    }
+                    if line.contains("proxy_reques: proxying request to model") {
+                        continue;
+                    }
+                    let parsed = parse_ansi_line(&line);
+                    {
+                        let mut hist_lock = raw_history.lock().unwrap();
+                        hist_lock.push_back(line.clone());
+                        if hist_lock.len() > MAX_LOGS {
+                            hist_lock.pop_front();
                         }
-                        let parsed = parse_ansi_line(&line);
-                        {
-                            let mut hist_lock = raw_history.lock().unwrap();
-                            hist_lock.push_back(line.clone());
-                            if hist_lock.len() > MAX_LOGS {
-                                hist_lock.pop_front();
-                            }
+                    }
+                    {
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_back(parsed);
+                        if logs_lock.len() > MAX_LOGS {
+                            logs_lock.pop_front();
                         }
-                        {
-                            let mut logs_lock = logs.lock().unwrap();
-                            logs_lock.push_back(parsed);
-                            if logs_lock.len() > MAX_LOGS {
-                                logs_lock.pop_front();
-                            }
-                        }
-                        if let Some(ref tx) = event_tx {
-                            let _ = tx.send(crate::tui::TuiEvent::LogReceived);
-                        }
+                    }
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx.send(crate::tui::TuiEvent::LogReceived);
                     }
                 }
             });
