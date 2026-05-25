@@ -50,34 +50,26 @@ The `llama-server` executable path and the `models-dir` (where your models are l
 Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`).
 
 > [!IMPORTANT]
-> **Strict TOML Key Rules & Prefixes**:
+> **Strict TOML Key Rules & Categories**:
 >
 > - **Strict Keys**: Keys in TOML configurations must not contain underscores (`_`) or start with a dash (`-`). Violating keys are rejected at parse/load time, with warning logs emitted in `load_toml_safe`.
-> - **Prefix `lh-`**: Reserved for `llama-herd` custom settings (e.g. `lh-ctx-size`, `lh-is-draft`). These are handled internally and not passed to `llama-server`.
-> - **Prefix `s-`**: Used for `llama-server` short option keys (e.g., `s-sps = 0.5`). When launching `llama-server` directly, these are formatted as a single dash (e.g. `-sps 0.5`). When generating `models-preset.ini`, the prefix is stripped (e.g. `sps = 0.5`).
-> - **Normal keys (unprefixed)**: Treated as normal long keys. When launching `llama-server`, they are formatted with a double dash (e.g. `slot-prompt-similarity` -> `--slot-prompt-similarity`). When generating `models-preset.ini`, they are written as-is.
+> - **Table `[llama-herd]`**: Reserved for `llama-herd` custom settings (e.g. `is-default`, `is-draft`). These are handled internally and not passed to `llama-server`.
+> - **Table `[llama-server-long]`**: Mapped directly to double-dash long options for `llama-server`. For example, `ctx-size = "32k"` maps to `--ctx-size 32768`.
+> - **Table `[llama-server-short]`**: Mapped directly to single-dash short options for `llama-server`. For example, `sps = 0.5` maps to `-sps 0.5`.
+> - **Root level**: Treated as long options, maintaining backward compatibility.
 
-#### Supported `lh-` Custom Configuration Keys:
+#### Supported `[llama-herd]` Custom Configuration Keys:
 
 - **Heuristic & Discovery Controls**:
-  - `lh-is-draft` / `lh-is-draft-only`: Flag this model as a draft (hides it from the main select list).
-  - `lh-is-default`: Designates this model as the default startup selection in the TUI.
-  - `lh-draft` / `lh-draft-model`: Specify a draft model filename (or `"none"` / `"false"` to disable draft pairing).
-  - `lh-mmproj`: Explicitly define the vision projector model filename to pair with this model.
-- **TUI Parameter & Launcher Overrides**:
-  - `lh-ctx-size`: Override context size (supports formats like `"8k"` or raw numbers).
-  - `lh-ngl`: Override GPU layers count. If set to `"auto"`, falls back to total layers if available.
-  - `lh-total-layers`: Total number of layers for layers-based computations.
-  - `lh-temp`: Default temperature setting (default: `0.8`).
-  - `lh-top-p`: Default top-p setting (default: `0.95`).
-  - `lh-top-k`: Default top-k setting (default: `40`).
-  - `lh-reasoning`: Enable reasoning formatting (`"on"` maps format to deepseek format, `"off"`, or `"auto"`).
-  - `lh-kv-quant`: Override KV cache quantization format (default: `"q8_0"`, maps to `-ctk` and `-ctv` arguments).
-  - `lh-spec-type`: Override speculative decoding type (e.g., `"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).
-  - `lh-spec-draft-n-max`: Override maximum draft tokens to predict per slot (default: `4`).
-  - `lh-spec-draft-p-min`: Override minimum speculative decoding probability (default: `0.0`).
+  - `is-draft` / `is-draft-only`: Flag this model as a draft (hides it from the main select list).
+  - `is-default`: Designates this model as the default startup selection in the TUI.
+  - `draft` / `draft-model`: Specify a draft model filename (or `"none"` / `"false"` to disable draft pairing).
+  - `mmproj`: Explicitly define the vision projector model filename to pair with this model.
+  - `total-layers`: Total number of layers for layers-based computations.
 
-### 3. Theme System (`theme.toml`)
+---
+
+## Theme System (`theme.toml`)
 
 The TUI utilizes a Hybrid Theme System (Functional Palette + Procedural UI). It is fully customizable via a `theme.toml` file in the global configuration directory.
 
@@ -107,7 +99,7 @@ Every UI component in LlamaHerd **must** use the theme system.
 
 To prevent conflicts with managed options, any key (long, short, prefixed with `s-`, or unprefixed) matching a managed parameter is **restricted** and ignored during the passthrough stage.
 
-- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `lh-kv-quant`, `kv-unified`, `lh-kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`.
+- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`.
 - **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`.
 
 ### 3. Automated Quality Gates

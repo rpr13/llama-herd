@@ -101,29 +101,15 @@ fn test_is_restricted_key_checks() -> TestResult {
     // When checked via is_restricted_key
     // Then restricted options return true, and customizable pass-through keys return false
 
-    // 1. Custom settings prefix
-    assert!(is_restricted_key("lh-ctx-size"));
-    assert!(is_restricted_key("lh-anything"));
-
-    // 2. Short forms
-    assert!(is_restricted_key("s-ngl"));
-    assert!(is_restricted_key("s-c"));
-    assert!(is_restricted_key("ngl"));
-    assert!(is_restricted_key("c"));
-
-    // 3. Long forms
+    // 1. Long forms
     assert!(is_restricted_key("ctx-size"));
     assert!(is_restricted_key("total-layers"));
     assert!(is_restricted_key("n-gpu-layers"));
-
-    // 4. Pass-through keys
-    assert!(!is_restricted_key("slot-prompt-similarity"));
-    assert!(!is_restricted_key("s-sps")); // non-restricted short
-    // Wait, is temp in RESTRICTED_LONG? Yes! Let's assert it is restricted:
     assert!(is_restricted_key("temp"));
 
-    // Completely unmanaged keys should return false
+    // 2. Pass-through keys
     assert!(!is_restricted_key("slot-prompt-similarity"));
+    assert!(!is_restricted_key("sps"));
 
     Ok(())
 }
@@ -132,20 +118,12 @@ fn test_is_restricted_key_checks() -> TestResult {
 fn test_format_arg_name_mapping() -> TestResult {
     // Given user custom keys
     // When calling format_arg_name
-    // Then custom prefixes return None, short prefixes translate to single dash, and others to double dashes
-
-    // 1. Custom keys
-    assert!(format_arg_name("lh-ctx-size").is_none());
-
-    // 2. Short options
-    assert_eq!(format_arg_name("s-sps"), Some("-sps".to_string()));
-    assert_eq!(format_arg_name("s-t"), Some("-t".to_string()));
-
-    // 3. Long options
+    // Then it formats to double dashes
     assert_eq!(
         format_arg_name("slot-prompt-similarity"),
         Some("--slot-prompt-similarity".to_string())
     );
+    assert_eq!(format_arg_name("sps"), Some("--sps".to_string()));
 
     Ok(())
 }
@@ -154,19 +132,12 @@ fn test_format_arg_name_mapping() -> TestResult {
 fn test_format_ini_key_mapping() -> TestResult {
     // Given keys intended for preset INI formatting
     // When calling format_ini_key
-    // Then custom prefixes return None, short prefixes strip the prefix, and others remain unchanged
-
-    // 1. Custom keys
-    assert!(format_ini_key("lh-ctx-size").is_none());
-
-    // 2. Short options
-    assert_eq!(format_ini_key("s-sps"), Some("sps".to_string()));
-
-    // 3. Long options
+    // Then it returns the key unchanged
     assert_eq!(
         format_ini_key("slot-prompt-similarity"),
         Some("slot-prompt-similarity".to_string())
     );
+    assert_eq!(format_ini_key("sps"), Some("sps".to_string()));
 
     Ok(())
 }
@@ -246,7 +217,7 @@ fn test_load_settings_from_ini_merge() -> TestResult {
 
 #[test]
 fn test_load_toml_skips_invalid_keys() -> TestResult {
-    // Given a temporary TOML file containing valid keys, underscored keys, and dashed prefix keys
+    // Given a temporary TOML file containing tables and keys
     // When calling load_toml_silent or load_toml_safe
     // Then invalid keys containing underscores or leading dashes are skipped from the map
 
@@ -255,10 +226,14 @@ fn test_load_toml_skips_invalid_keys() -> TestResult {
 
     let content = r#"
         host = "127.0.0.1"
-        lh-ctx-size = 4096
         invalid_underscore_key = "value"
         -invalid-dash-start = 123
-        nested-table = { valid-key = true, invalid_key = false }
+        [llama-herd]
+        is-draft = true
+        [llama-server-short]
+        sps = 0.85
+        [llama-server-long]
+        ctx-size = "128k"
     "#;
 
     File::create(&path)?.write_all(content.as_bytes())?;
@@ -269,14 +244,31 @@ fn test_load_toml_skips_invalid_keys() -> TestResult {
         loaded_silent.get("host").unwrap().as_str().unwrap(),
         "127.0.0.1"
     );
-    assert_eq!(
-        loaded_silent.get("lh-ctx-size").unwrap().as_i64().unwrap(),
-        4096
-    );
+    let lh = loaded_silent
+        .get("llama-herd")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    assert!(lh.get("is-draft").unwrap().as_bool().unwrap());
+
+    let short = loaded_silent
+        .get("llama-server-short")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    assert_eq!(short.get("sps").unwrap().as_f64().unwrap(), 0.85);
+
+    let long = loaded_silent
+        .get("llama-server-long")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    assert_eq!(long.get("ctx-size").unwrap().as_str().unwrap(), "128k");
+
     assert!(!loaded_silent.contains_key("invalid_underscore_key"));
     assert!(!loaded_silent.contains_key("-invalid-dash-start"));
 
-    // 2. Using safe loader with stdout warnings (checks behavior is equivalent)
+    // 2. Using safe loader
     let loaded_safe = load_toml_safe(&path);
     assert_eq!(
         loaded_safe.get("host").unwrap().as_str().unwrap(),
@@ -300,14 +292,13 @@ fn test_load_toml_silent_internal() {
         let mut file = File::create(test_path).unwrap();
         std::io::Write::write_all(
             &mut file,
-            b"host = \"127.0.0.1\"\nport = 8080\nis-draft = true\nthreads = 4\ntemp = 0.8\ninvalid_key = 123\n-invalid-dash = 456\n"
+            b"host = \"127.0.0.1\"\nport = 8080\nthreads = 4\ntemp = 0.8\ninvalid_key = 123\n-invalid-dash = 456\n"
         ).unwrap();
     }
 
     let cfg = load_toml_silent(test_path);
     assert_eq!(cfg.get("host").unwrap().as_str().unwrap(), "127.0.0.1");
     assert_eq!(cfg.get("port").unwrap().as_i64().unwrap(), 8080);
-    assert!(cfg.get("is-draft").unwrap().as_bool().unwrap());
     assert_eq!(cfg.get("threads").unwrap().as_i64().unwrap(), 4);
     assert_eq!(cfg.get("temp").unwrap().as_f64().unwrap(), 0.8);
     assert!(!cfg.contains_key("invalid_key"));
@@ -317,24 +308,16 @@ fn test_load_toml_silent_internal() {
 
 #[test]
 fn test_is_restricted_key_internal() {
-    assert!(is_restricted_key("lh-ctx-size"));
-    assert!(is_restricted_key("s-c"));
-    assert!(is_restricted_key("c"));
-    assert!(is_restricted_key("s-ctx-size"));
     assert!(is_restricted_key("ctx-size"));
-    assert!(is_restricted_key("s-ngl"));
-    assert!(is_restricted_key("ngl"));
-    assert!(is_restricted_key("s-h"));
+    assert!(is_restricted_key("total-layers"));
+    assert!(is_restricted_key("n-gpu-layers"));
+    assert!(is_restricted_key("temp"));
 
-    assert!(!is_restricted_key("s-sps"));
-    assert!(!is_restricted_key("s-rea"));
     assert!(!is_restricted_key("slot-prompt-similarity"));
 }
 
 #[test]
 fn test_format_arg_name_internal() {
-    assert_eq!(format_arg_name("lh-ctx-size"), None);
-    assert_eq!(format_arg_name("s-sps"), Some("-sps".to_string()));
     assert_eq!(
         format_arg_name("slot-prompt-similarity"),
         Some("--slot-prompt-similarity".to_string())
@@ -343,8 +326,6 @@ fn test_format_arg_name_internal() {
 
 #[test]
 fn test_format_ini_key_internal() {
-    assert_eq!(format_ini_key("lh-ctx-size"), None);
-    assert_eq!(format_ini_key("s-sps"), Some("sps".to_string()));
     assert_eq!(
         format_ini_key("slot-prompt-similarity"),
         Some("slot-prompt-similarity".to_string())

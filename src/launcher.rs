@@ -56,8 +56,20 @@ pub fn build_launch_parameters(
     params.push("-m".to_string());
     params.push(model_path.to_string_lossy().into_owned());
 
-    let host = global_config
-        .get("host")
+    let _get_global_lh = |key: &str| -> Option<&serde_json::Value> {
+        global_config
+            .get("llama-herd")
+            .and_then(|lh| lh.get(key))
+            .or_else(|| global_config.get(key))
+    };
+    let get_global_long = |key: &str| -> Option<&serde_json::Value> {
+        global_config
+            .get("llama-server-long")
+            .and_then(|l| l.get(key))
+            .or_else(|| global_config.get(key))
+    };
+
+    let host = get_global_long("host")
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0.0");
     params.push("--host".to_string());
@@ -75,60 +87,78 @@ pub fn build_launch_parameters(
     params.push("--ctx-size".to_string());
     params.push(settings.ctx.to_string());
 
-    let flash_attn = global_config
-        .get("flash-attn")
+    let flash_attn = get_global_long("flash-attn")
         .and_then(|v| v.as_str())
         .unwrap_or("auto");
     params.push("--flash-attn".to_string());
     params.push(flash_attn.to_string());
 
-    let cache_ram = global_config
-        .get("cache-ram")
-        .and_then(|v| v.as_i64().map(|i| i.to_string()))
+    let cache_ram = get_global_long("cache-ram")
+        .and_then(|v| {
+            if let Some(i) = v.as_i64() {
+                Some(i.to_string())
+            } else {
+                v.as_str().map(|s| s.to_string())
+            }
+        })
         .unwrap_or_else(|| "-1".to_string());
     params.push("--cache-ram".to_string());
     params.push(cache_ram);
 
-    let np = global_config
-        .get("np")
-        .and_then(|v| v.as_i64().map(|i| i.to_string()))
+    let np = get_global_long("np")
+        .and_then(|v| {
+            if let Some(i) = v.as_i64() {
+                Some(i.to_string())
+            } else {
+                v.as_str().map(|s| s.to_string())
+            }
+        })
         .unwrap_or_else(|| "1".to_string());
     params.push("-np".to_string());
     params.push(np);
 
-    let threads = global_config
-        .get("threads")
-        .and_then(|v| v.as_i64().map(|i| i.to_string()))
+    let threads = get_global_long("threads")
+        .and_then(|v| {
+            if let Some(i) = v.as_i64() {
+                Some(i.to_string())
+            } else {
+                v.as_str().map(|s| s.to_string())
+            }
+        })
         .unwrap_or_else(crate::config::get_optimal_threads);
     params.push("-t".to_string());
     params.push(threads);
 
     params.push("--kv-unified".to_string());
 
-    if let Some(bs) = global_config.get("batch-size").and_then(|v| v.as_i64()) {
+    if let Some(bs) = get_global_long("batch-size").and_then(|v| v.as_i64()) {
         params.push("-b".to_string());
         params.push(bs.to_string());
     }
-    if let Some(ubs) = global_config.get("ubatch-size").and_then(|v| v.as_i64()) {
+    if let Some(ubs) = get_global_long("ubatch-size").and_then(|v| v.as_i64()) {
         params.push("-ub".to_string());
         params.push(ubs.to_string());
     }
-    if let Some(tools) = global_config.get("tools").and_then(|v| v.as_str()) {
+    if let Some(tools) = get_global_long("tools").and_then(|v| v.as_str()) {
         params.push("--tools".to_string());
         params.push(tools.to_string());
     }
 
-    let kv_quant = global_config
-        .get("lh-kv-quant")
-        .or_else(|| global_config.get("kv-quant"))
+    let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
+        assets.config.get("llama-herd").and_then(|lh| lh.get(key))
+    };
+    let get_long_val = |key: &str| -> Option<&serde_json::Value> {
+        assets
+            .config
+            .get("llama-server-long")
+            .and_then(|l| l.get(key))
+            .or_else(|| assets.config.get(key))
+    };
+
+    let kv_quant = get_global_long("kv-quant")
+        .or_else(|| get_lh_val("kv-quant"))
+        .or_else(|| get_long_val("kv-quant"))
         .and_then(|v| v.as_str())
-        .or_else(|| {
-            assets
-                .config
-                .get("lh-kv-quant")
-                .or_else(|| assets.config.get("kv-quant"))
-                .and_then(|v| v.as_str())
-        })
         .unwrap_or("q8_0");
     params.push("-ctk".to_string());
     params.push(kv_quant.to_string());
@@ -139,39 +169,76 @@ pub fn build_launch_parameters(
         params.push("--no-ui".to_string());
     }
 
-    let mut processed_config = assets.config.clone();
-    if let Some(val) = processed_config.remove("lh-spec-type") {
-        let spec_val = if val.as_str() == Some("mtp") {
-            serde_json::Value::String("draft-mtp".to_string())
-        } else {
-            val
-        };
-        processed_config.insert("spec-type".to_string(), spec_val);
-    }
+    // Helper to format and add a long parameter
+    let add_long_param = |arg: &str, val: &serde_json::Value, params: &mut Vec<String>| {
+        if crate::config::is_restricted_key(arg) {
+            return;
+        }
+        let arg_name = format!("--{}", arg);
+        if let Some(b) = val.as_bool() {
+            if b {
+                params.push(arg_name);
+            }
+        } else if let Some(i) = val.as_i64() {
+            params.push(arg_name);
+            params.push(i.to_string());
+        } else if let Some(f) = val.as_f64() {
+            params.push(arg_name);
+            params.push(f.to_string());
+        } else if let Some(s) = val.as_str() {
+            params.push(arg_name);
+            params.push(s.to_string());
+        } else if let Some(arr) = val.as_array() {
+            let items: Vec<String> = arr
+                .iter()
+                .map(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| v.to_string())
+                })
+                .collect();
+            params.push(arg_name);
+            params.push(items.join(","));
+        }
+    };
 
-    if let Some(spec_type) = processed_config.get_mut("spec-type")
-        && spec_type.as_str() == Some("mtp")
-    {
-        *spec_type = serde_json::Value::String("draft-mtp".to_string());
-    }
-
-    let is_mtp = processed_config.get("spec-type").and_then(|v| v.as_str()) == Some("draft-mtp");
-
-    if is_mtp
-        && !processed_config.contains_key("lh-spec-draft-n-max")
-        && !processed_config.contains_key("spec-draft-n-max")
-    {
-        processed_config.insert(
-            "spec-draft-n-max".to_string(),
-            serde_json::Value::Number(4.into()),
-        );
-    }
-
-    for (key, val) in &processed_config {
-        if crate::config::is_restricted_key(key) {
+    // 1. Process root level long options
+    let mut sorted_root_keys: Vec<&String> = assets.config.keys().collect();
+    sorted_root_keys.sort();
+    for k in sorted_root_keys {
+        if k == "llama-herd" || k == "llama-server-short" || k == "llama-server-long" {
             continue;
         }
-        if let Some(arg_name) = crate::config::format_arg_name(key) {
+        add_long_param(k, &assets.config[k], &mut params);
+    }
+
+    // 2. Process llama-server-long table options
+    if let Some(long_obj) = assets
+        .config
+        .get("llama-server-long")
+        .and_then(|v| v.as_object())
+    {
+        let mut sorted_long_keys: Vec<&String> = long_obj.keys().collect();
+        sorted_long_keys.sort();
+        for k in sorted_long_keys {
+            add_long_param(k, &long_obj[k], &mut params);
+        }
+    }
+
+    // 3. Process llama-server-short table options
+    if let Some(short_obj) = assets
+        .config
+        .get("llama-server-short")
+        .and_then(|v| v.as_object())
+    {
+        let mut sorted_short_keys: Vec<&String> = short_obj.keys().collect();
+        sorted_short_keys.sort();
+        for k in sorted_short_keys {
+            if crate::config::is_restricted_short_key(k) {
+                continue;
+            }
+            let val = &short_obj[k];
+            let arg_name = format!("-{}", k);
             if let Some(b) = val.as_bool() {
                 if b {
                     params.push(arg_name);
@@ -185,17 +252,6 @@ pub fn build_launch_parameters(
             } else if let Some(s) = val.as_str() {
                 params.push(arg_name);
                 params.push(s.to_string());
-            } else if let Some(arr) = val.as_array() {
-                let items: Vec<String> = arr
-                    .iter()
-                    .map(|v| {
-                        v.as_str()
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| v.to_string())
-                    })
-                    .collect();
-                params.push(arg_name);
-                params.push(items.join(","));
             }
         }
     }
@@ -210,6 +266,81 @@ pub fn build_launch_parameters(
         params.push(draft.to_string_lossy().into_owned());
         params.push("-ngld".to_string());
         params.push(settings.draft_ngl.clone());
+
+        if let Some(parent) = draft.parent() {
+            let draft_assets = crate::config::discover_assets(draft, parent);
+
+            let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
+                draft_assets
+                    .config
+                    .get("llama-server-long")
+                    .and_then(|l| l.get(key))
+                    .or_else(|| draft_assets.config.get(key))
+            };
+
+            let spec_type = get_long_val("spec-type")
+                .or_else(|| get_draft_long("spec-type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("draft-mtp");
+
+            let spec_draft_n_max = get_long_val("spec-draft-n-max")
+                .or_else(|| get_draft_long("spec-draft-n-max"))
+                .and_then(|v| {
+                    if let Some(s) = v.as_str() {
+                        s.parse::<u64>().ok()
+                    } else if let Some(n) = v.as_u64() {
+                        Some(n)
+                    } else {
+                        v.as_i64().map(|i| i as u64)
+                    }
+                })
+                .unwrap_or(4);
+
+            let spec_draft_p_min = get_long_val("spec-draft-p-min")
+                .or_else(|| get_draft_long("spec-draft-p-min"))
+                .and_then(|v| {
+                    if let Some(s) = v.as_str() {
+                        s.parse::<f64>().ok()
+                    } else if let Some(f) = v.as_f64() {
+                        Some(f)
+                    } else {
+                        v.as_i64().map(|i| i as f64)
+                    }
+                })
+                .unwrap_or(0.0);
+
+            let has_main_spec_type = assets.config.contains_key("spec-type")
+                || assets
+                    .config
+                    .get("llama-server-long")
+                    .and_then(|l| l.get("spec-type"))
+                    .is_some();
+            let has_main_n_max = assets.config.contains_key("spec-draft-n-max")
+                || assets
+                    .config
+                    .get("llama-server-long")
+                    .and_then(|l| l.get("spec-draft-n-max"))
+                    .is_some();
+            let has_main_p_min = assets.config.contains_key("spec-draft-p-min")
+                || assets
+                    .config
+                    .get("llama-server-long")
+                    .and_then(|l| l.get("spec-draft-p-min"))
+                    .is_some();
+
+            if !has_main_spec_type {
+                params.push("--spec-type".to_string());
+                params.push(spec_type.to_string());
+            }
+            if !has_main_n_max {
+                params.push("--spec-draft-n-max".to_string());
+                params.push(spec_draft_n_max.to_string());
+            }
+            if !has_main_p_min {
+                params.push("--spec-draft-p-min".to_string());
+                params.push(spec_draft_p_min.to_string());
+            }
+        }
     }
 
     if let Some(ref template) = assets.jinja_template {
@@ -233,8 +364,20 @@ pub fn build_router_launch_parameters(
     params.push("--models-preset".to_string());
     params.push(preset_path.to_string_lossy().into_owned());
 
-    let host = global_config
-        .get("host")
+    let get_global_lh = |key: &str| -> Option<&serde_json::Value> {
+        global_config
+            .get("llama-herd")
+            .and_then(|lh| lh.get(key))
+            .or_else(|| global_config.get(key))
+    };
+    let get_global_long = |key: &str| -> Option<&serde_json::Value> {
+        global_config
+            .get("llama-server-long")
+            .and_then(|l| l.get(key))
+            .or_else(|| global_config.get(key))
+    };
+
+    let host = get_global_long("host")
         .and_then(|v| v.as_str())
         .unwrap_or("0.0.0.0");
     params.push("--host".to_string());
@@ -246,22 +389,19 @@ pub fn build_router_launch_parameters(
     params.push("--log-colors".to_string());
     params.push("on".to_string());
 
-    let flash_attn = global_config
-        .get("flash-attn")
+    let flash_attn = get_global_long("flash-attn")
         .and_then(|v| v.as_str())
         .unwrap_or("auto");
     params.push("--flash-attn".to_string());
     params.push(flash_attn.to_string());
 
-    let cache_ram = global_config
-        .get("cache-ram")
+    let cache_ram = get_global_long("cache-ram")
         .and_then(|v| v.as_i64().map(|i| i.to_string()))
         .unwrap_or_else(|| "-1".to_string());
     params.push("--cache-ram".to_string());
     params.push(cache_ram);
 
-    let models_max = global_config
-        .get("models-max")
+    let models_max = get_global_lh("models-max")
         .and_then(|v| {
             if let Some(i) = v.as_i64() {
                 Some(i.to_string())
@@ -273,15 +413,13 @@ pub fn build_router_launch_parameters(
     params.push("--models-max".to_string());
     params.push(models_max);
 
-    let np = global_config
-        .get("np")
+    let np = get_global_long("np")
         .and_then(|v| v.as_i64().map(|i| i.to_string()))
         .unwrap_or_else(|| "1".to_string());
     params.push("-np".to_string());
     params.push(np);
 
-    let threads = global_config
-        .get("threads")
+    let threads = get_global_long("threads")
         .and_then(|v| v.as_i64().map(|i| i.to_string()))
         .unwrap_or_else(crate::config::get_optimal_threads);
     params.push("-t".to_string());
@@ -289,21 +427,20 @@ pub fn build_router_launch_parameters(
 
     params.push("--props".to_string());
 
-    if let Some(bs) = global_config.get("batch-size").and_then(|v| v.as_i64()) {
+    if let Some(bs) = get_global_long("batch-size").and_then(|v| v.as_i64()) {
         params.push("-b".to_string());
         params.push(bs.to_string());
     }
-    if let Some(ubs) = global_config.get("ubatch-size").and_then(|v| v.as_i64()) {
+    if let Some(ubs) = get_global_long("ubatch-size").and_then(|v| v.as_i64()) {
         params.push("-ub".to_string());
         params.push(ubs.to_string());
     }
-    if let Some(tools) = global_config.get("tools").and_then(|v| v.as_str()) {
+    if let Some(tools) = get_global_long("tools").and_then(|v| v.as_str()) {
         params.push("--tools".to_string());
         params.push(tools.to_string());
     }
 
-    let ui_enabled = global_config
-        .get("ui")
+    let ui_enabled = get_global_lh("ui")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     if !ui_enabled {

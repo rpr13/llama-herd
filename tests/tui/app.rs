@@ -147,6 +147,7 @@ fn test_app_state_draft_discovery() {
     fs::write(
         &draft_config_path,
         r#"
+[llama-herd]
 is-draft = true
 "#,
     )
@@ -156,7 +157,7 @@ is-draft = true
     fs::write(
         &preset_path,
         r#"
-[test-preset]
+[test-preset-draft]
 model = main-model.gguf
 model-draft = draft-model.gguf
 gpu-layers-draft = 10
@@ -164,7 +165,67 @@ gpu-layers-draft = 10
     )
     .unwrap();
 
-    let presets = vec![("test-preset".to_string(), model_path)];
+    let presets = vec![("test-preset-draft".to_string(), model_path)];
+    let global_config = HashMap::new();
+    let server_exe = PathBuf::from("llama-server");
+
+    let state = AppState::new(
+        presets,
+        models_dir,
+        preset_path,
+        global_config,
+        server_exe,
+        llama_herd::tui::theme::Theme::default(),
+    );
+
+    assert_eq!(state.draft_list.len(), 2);
+    assert!(state.draft_list[1].is_some());
+    assert_eq!(
+        state.draft_list[state.draft_index]
+            .as_ref()
+            .unwrap()
+            .file_name()
+            .unwrap(),
+        "draft-model.gguf"
+    );
+    assert_eq!(state.draft_ngl, "10");
+}
+
+#[test]
+fn test_app_state_lh_draft_discovery() {
+    let dir = tempdir().unwrap();
+    let models_dir = dir.path().join("models");
+    fs::create_dir(&models_dir).unwrap();
+
+    let model_path = models_dir.join("main-model.gguf");
+    fs::write(&model_path, "dummy").unwrap();
+
+    let draft_path = models_dir.join("draft-model.gguf");
+    fs::write(&draft_path, "dummy").unwrap();
+
+    let draft_config_path = models_dir.join("draft-model.toml");
+    fs::write(
+        &draft_config_path,
+        r#"
+[llama-herd]
+is-draft-only = true
+"#,
+    )
+    .unwrap();
+
+    let preset_path = dir.path().join("models-preset.ini");
+    fs::write(
+        &preset_path,
+        r#"
+[test-preset-draft]
+model = main-model.gguf
+model-draft = draft-model.gguf
+gpu-layers-draft = 10
+"#,
+    )
+    .unwrap();
+
+    let presets = vec![("test-preset-draft".to_string(), model_path)];
     let global_config = HashMap::new();
     let server_exe = PathBuf::from("llama-server");
 
@@ -208,6 +269,7 @@ fn test_app_state_draft_heuristic() {
     fs::write(
         &draft_config_path,
         r#"
+[llama-herd]
 is-draft = true
 "#,
     )
@@ -217,13 +279,13 @@ is-draft = true
     fs::write(
         &preset_path,
         r#"
-[test-preset]
+[test-preset-draft]
 model = Llama-3-8B.gguf
 "#,
     )
     .unwrap();
 
-    let presets = vec![("test-preset".to_string(), model_path)];
+    let presets = vec![("test-preset-draft".to_string(), model_path)];
     let global_config = HashMap::new();
     let server_exe = PathBuf::from("llama-server");
 

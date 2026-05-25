@@ -130,9 +130,19 @@ impl AppState {
             .unwrap_or_default();
 
         let assets = crate::discovery::discover_assets(model_path, &self.models_dir);
-        let total_layers = assets
-            .config
-            .get("total-layers")
+        let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
+            assets.config.get("llama-herd").and_then(|lh| lh.get(key))
+        };
+        let get_long_val = |key: &str| -> Option<&serde_json::Value> {
+            assets
+                .config
+                .get("llama-server-long")
+                .and_then(|l| l.get(key))
+                .or_else(|| assets.config.get(key))
+        };
+
+        let total_layers = get_lh_val("total-layers")
+            .or_else(|| get_long_val("total-layers"))
             .and_then(|v| v.as_u64().map(|i| i as usize));
 
         // Context Size
@@ -140,9 +150,8 @@ impl AppState {
             .get("ctx-size")
             .map(|s| serde_json::Value::String(s.clone()))
             .unwrap_or_else(|| {
-                assets
-                    .config
-                    .get("ctx-size")
+                get_lh_val("ctx-size")
+                    .or_else(|| get_long_val("ctx-size"))
                     .cloned()
                     .unwrap_or_else(|| serde_json::Value::String("131072".to_string()))
             });
@@ -153,9 +162,8 @@ impl AppState {
             .get("n-gpu-layers")
             .cloned()
             .unwrap_or_else(|| {
-                assets
-                    .config
-                    .get("ngl")
+                get_lh_val("ngl")
+                    .or_else(|| get_long_val("ngl"))
                     .and_then(|v| {
                         if let Some(s) = v.as_str() {
                             Some(s.to_string())
@@ -243,7 +251,14 @@ impl AppState {
                                     .to_lowercase();
                                 if stem.starts_with(&js_stem) {
                                     let cfg = crate::config::load_toml_silent(&sp);
-                                    if cfg.get("is-draft").and_then(|v| v.as_bool()) == Some(true) {
+                                    let is_d = cfg
+                                        .get("llama-herd")
+                                        .and_then(|lh| {
+                                            lh.get("is-draft").or_else(|| lh.get("is-draft-only"))
+                                        })
+                                        .and_then(|v| v.as_bool())
+                                        == Some(true);
+                                    if is_d {
                                         is_draft = true;
                                     }
                                     break;
@@ -265,41 +280,44 @@ impl AppState {
         }
 
         self.draft_index = 0;
-        if let Some(active_draft) = ini_settings.get("model-draft") {
-            let active_name = Path::new(active_draft).file_name().unwrap_or_default();
-            for (idx, opt) in self.draft_list.iter().enumerate() {
-                if let Some(path) = opt
-                    && path.file_name().unwrap_or_default() == active_name
-                {
-                    self.draft_index = idx;
-                    break;
-                }
-            }
-            self.draft_ngl = ini_settings
-                .get("gpu-layers-draft")
-                .cloned()
-                .unwrap_or_else(|| "auto".to_string());
-        } else {
-            self.draft_ngl = "".to_string();
-            // Automatically select draft if discovered by heuristic
-            let heuristic_draft = crate::discovery::find_matching_draft(
-                model_path,
-                &self
-                    .draft_list
-                    .iter()
-                    .filter_map(|x| x.clone())
-                    .collect::<Vec<_>>(),
-            );
-            if let Some(hd) = heuristic_draft {
+        self.draft_ngl = "".to_string();
+
+        if preset_name.to_lowercase().contains("draft") {
+            if let Some(active_draft) = ini_settings.get("model-draft") {
+                let active_name = Path::new(active_draft).file_name().unwrap_or_default();
                 for (idx, opt) in self.draft_list.iter().enumerate() {
                     if let Some(path) = opt
-                        && path == &hd
+                        && path.file_name().unwrap_or_default() == active_name
                     {
                         self.draft_index = idx;
                         break;
                     }
                 }
-                self.draft_ngl = "auto".to_string();
+                self.draft_ngl = ini_settings
+                    .get("gpu-layers-draft")
+                    .cloned()
+                    .unwrap_or_else(|| "auto".to_string());
+            } else {
+                // Automatically select draft if discovered by heuristic
+                let heuristic_draft = crate::discovery::find_matching_draft(
+                    model_path,
+                    &self
+                        .draft_list
+                        .iter()
+                        .filter_map(|x| x.clone())
+                        .collect::<Vec<_>>(),
+                );
+                if let Some(hd) = heuristic_draft {
+                    for (idx, opt) in self.draft_list.iter().enumerate() {
+                        if let Some(path) = opt
+                            && path == &hd
+                        {
+                            self.draft_index = idx;
+                            break;
+                        }
+                    }
+                    self.draft_ngl = "auto".to_string();
+                }
             }
         }
     }

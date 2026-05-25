@@ -54,35 +54,45 @@ pub fn find_matching_draft(model_path: &Path, draft_files: &[PathBuf]) -> Option
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_lowercase();
-    let ignore_tokens = vec![
-        "assistant",
-        "draft",
-        "mtp",
-        "gguf",
-        "it",
-        "chat",
-        "instruct",
-        "q8_0",
-        "f16",
-        "q4_k_m",
-        "q4_0",
-        "q4_1",
-        "q5_0",
-        "q5_1",
-        "q6_k",
-    ];
-    let re = regex::Regex::new(r"[-._]").unwrap();
+
+    let clean_tokens = |name: &str| -> Vec<String> {
+        let size_re = regex::Regex::new(r"\b\d+(?:\.\d+)?(?:x\d+)?[bm]\b").unwrap();
+        let quant_re =
+            regex::Regex::new(r"\b(?:q\d+(?:_?[k\d](?:_[sml])?)?|f16|fp16|bf16)\b").unwrap();
+
+        let cleaned_size = size_re.replace_all(name, " ");
+        let cleaned_quant = quant_re.replace_all(&cleaned_size, " ");
+
+        let ignore_tokens = [
+            "assistant",
+            "draft",
+            "mtp",
+            "gguf",
+            "it",
+            "chat",
+            "instruct",
+            "vision",
+        ];
+
+        let split_re = regex::Regex::new(r"[-._\s]+").unwrap();
+        split_re
+            .split(&cleaned_quant)
+            .filter(|&t| !t.is_empty() && !ignore_tokens.contains(&t))
+            .map(|t| t.to_string())
+            .collect()
+    };
+
+    let main_tokens = clean_tokens(&model_name_lower);
+
     for df in draft_files {
         let df_stem_lower = df
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
-        let draft_tokens: Vec<&str> = re
-            .split(&df_stem_lower)
-            .filter(|&t| !t.is_empty() && !ignore_tokens.contains(&t))
-            .collect();
-        if !draft_tokens.is_empty() && draft_tokens.iter().all(|&t| model_name_lower.contains(t)) {
+        let draft_tokens = clean_tokens(&df_stem_lower);
+
+        if !draft_tokens.is_empty() && draft_tokens.iter().all(|t| main_tokens.contains(t)) {
             return Some(df.clone());
         }
     }
@@ -168,10 +178,9 @@ pub fn generate_presets_ini(
                 .to_lowercase();
             if stem.starts_with(&js_stem) {
                 let cfg = crate::config::load_toml_silent(js);
-                if cfg.get("lh-is-draft").and_then(|v| v.as_bool()) == Some(true)
-                    || cfg.get("lh-is-draft-only").and_then(|v| v.as_bool()) == Some(true)
-                    || cfg.get("is-draft").and_then(|v| v.as_bool()) == Some(true)
-                    || cfg.get("is-draft-only").and_then(|v| v.as_bool()) == Some(true)
+                if let Some(lh) = cfg.get("llama-herd")
+                    && (lh.get("is-draft").and_then(|v| v.as_bool()) == Some(true)
+                        || lh.get("is-draft-only").and_then(|v| v.as_bool()) == Some(true))
                 {
                     is_draft = true;
                 }
@@ -201,8 +210,8 @@ pub fn generate_presets_ini(
                 .to_lowercase();
             if stem.starts_with(&js_stem) {
                 let cfg = crate::config::load_toml_silent(js);
-                if cfg.get("lh-is-default").and_then(|v| v.as_bool()) == Some(true)
-                    || cfg.get("is-default").and_then(|v| v.as_bool()) == Some(true)
+                if let Some(lh) = cfg.get("llama-herd")
+                    && lh.get("is-default").and_then(|v| v.as_bool()) == Some(true)
                 {
                     default_candidates.push(model.clone());
                 }
@@ -251,8 +260,21 @@ pub fn generate_presets_ini(
     }
     mmproj_files.sort();
 
-    let kv_quant = global_config
-        .get("kv_quant")
+    let _get_global_lh = |key: &str| -> Option<&serde_json::Value> {
+        global_config
+            .get("llama-herd")
+            .and_then(|lh| lh.get(key))
+            .or_else(|| global_config.get(key))
+    };
+    let get_global_long = |key: &str| -> Option<&serde_json::Value> {
+        global_config
+            .get("llama-server-long")
+            .and_then(|l| l.get(key))
+            .or_else(|| global_config.get(key))
+    };
+
+    let kv_quant = get_global_long("kv-quant")
+        .or_else(|| get_global_long("kv_quant"))
         .and_then(|v| v.as_str())
         .unwrap_or("q8_0");
 
@@ -274,18 +296,25 @@ pub fn generate_presets_ini(
         let clean_name = clean_model_id(model_path);
         let is_default = Some(model_path) == designated_default.as_ref();
 
-        let ctx_val = assets
-            .config
-            .get("lh-ctx-size")
-            .or_else(|| assets.config.get("ctx-size"))
+        let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
+            assets.config.get("llama-herd").and_then(|lh| lh.get(key))
+        };
+        let get_long_val = |key: &str| -> Option<&serde_json::Value> {
+            assets
+                .config
+                .get("llama-server-long")
+                .and_then(|l| l.get(key))
+                .or_else(|| assets.config.get(key))
+        };
+
+        let ctx_val = get_lh_val("ctx-size")
+            .or_else(|| get_long_val("ctx-size"))
             .unwrap_or(&serde_json::Value::String("131072".to_string()))
             .clone();
         let ctx_size = crate::config::parse_ctx(&ctx_val);
 
-        let mut ngl = assets
-            .config
-            .get("lh-ngl")
-            .or_else(|| assets.config.get("ngl"))
+        let mut ngl = get_lh_val("ngl")
+            .or_else(|| get_long_val("ngl"))
             .and_then(|v| {
                 if let Some(s) = v.as_str() {
                     Some(s.to_string())
@@ -295,46 +324,33 @@ pub fn generate_presets_ini(
             })
             .unwrap_or_else(|| "auto".to_string());
         if ngl == "auto"
-            && let Some(total) = assets
-                .config
-                .get("lh-total-layers")
-                .or_else(|| assets.config.get("total-layers"))
-                .and_then(|v| v.as_u64())
+            && let Some(total) = get_lh_val("total-layers").and_then(|v| v.as_u64())
         {
             ngl = total.to_string();
         }
 
-        let temp = assets
-            .config
-            .get("lh-temp")
-            .or_else(|| assets.config.get("temp"))
+        let temp = get_lh_val("temp")
+            .or_else(|| get_long_val("temp"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.8);
-        let top_p = assets
-            .config
-            .get("lh-top-p")
-            .or_else(|| assets.config.get("top-p"))
+        let top_p = get_lh_val("top-p")
+            .or_else(|| get_long_val("top-p"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.95);
-        let top_k = assets
-            .config
-            .get("lh-top-k")
-            .or_else(|| assets.config.get("top-k"))
+        let top_k = get_lh_val("top-k")
+            .or_else(|| get_long_val("top-k"))
             .and_then(|v| v.as_i64())
             .unwrap_or(40);
-        let reasoning = assets
-            .config
-            .get("lh-reasoning")
-            .or_else(|| assets.config.get("reasoning"))
+        let reasoning = get_lh_val("reasoning")
+            .or_else(|| get_long_val("reasoning"))
             .and_then(|v| v.as_str())
             .unwrap_or("auto");
 
         let mut mmproj_file = None;
-        let mmproj_val = assets
-            .config
-            .get("lh-mmproj")
-            .or_else(|| assets.config.get("mmproj"));
-        if let Some(mmproj_cfg) = mmproj_val.and_then(|v| v.as_str()) {
+        if let Some(mmproj_cfg) = get_lh_val("mmproj")
+            .or_else(|| get_long_val("mmproj"))
+            .and_then(|v| v.as_str())
+        {
             let mmproj_path = models_dir.join(mmproj_cfg);
             if mmproj_path.exists() {
                 mmproj_file = Some(mmproj_path);
@@ -350,10 +366,7 @@ pub fn generate_presets_ini(
         }
 
         let mut draft_file = None;
-        let draft_val = assets
-            .config
-            .get("lh-draft")
-            .or_else(|| assets.config.get("draft-model"));
+        let draft_val = get_lh_val("draft").or_else(|| get_long_val("draft"));
         if let Some(draft_cfg) = draft_val.and_then(|v| v.as_str())
             && !draft_cfg.to_lowercase().eq("none")
             && !draft_cfg.to_lowercase().eq("false")
@@ -369,10 +382,14 @@ pub fn generate_presets_ini(
                 }
             }
         }
-        if !assets.config.contains_key("lh-draft")
-            && !assets.config.contains_key("draft-model")
-            && draft_file.is_none()
-        {
+        let draft_in_lh = assets
+            .config
+            .get("llama-herd")
+            .and_then(|lh| lh.get("draft"))
+            .is_some();
+        let draft_in_root = assets.config.contains_key("draft");
+
+        if !draft_in_lh && !draft_in_root && draft_file.is_none() {
             draft_file = find_matching_draft(model_path, &draft_files);
         }
 
@@ -420,15 +437,13 @@ pub fn generate_presets_ini(
                 }
             }
 
-            // --- Passthrough for other keys ---
-            let mut sorted_cfg_keys: Vec<&String> = assets.config.keys().collect();
-            sorted_cfg_keys.sort();
-            for k in sorted_cfg_keys {
-                if crate::config::is_restricted_key(k) {
-                    continue;
-                }
-                if let Some(ini_key) = crate::config::format_ini_key(k) {
-                    let val = &assets.config[k];
+            // Helper to check if a key is restricted and format/write it
+            let write_long_option =
+                |k: &str, val: &serde_json::Value, current_preset: &mut Vec<String>| {
+                    if crate::config::is_restricted_key(k) {
+                        return;
+                    }
+                    let ini_key = k;
                     if let Some(s) = val.as_str() {
                         current_preset.push(format!("{} = {}", ini_key, s));
                     } else if let Some(b) = val.as_bool() {
@@ -447,6 +462,53 @@ pub fn generate_presets_ini(
                             })
                             .collect();
                         current_preset.push(format!("{} = {}", ini_key, items.join(",")));
+                    }
+                };
+
+            // 1. Process root level passthrough keys
+            let mut sorted_root_keys: Vec<&String> = assets.config.keys().collect();
+            sorted_root_keys.sort();
+            for k in sorted_root_keys {
+                if k == "llama-herd" || k == "llama-server-short" || k == "llama-server-long" {
+                    continue;
+                }
+                write_long_option(k, &assets.config[k], &mut current_preset);
+            }
+
+            // 2. Process [llama-server-long] table passthrough keys
+            if let Some(long_obj) = assets
+                .config
+                .get("llama-server-long")
+                .and_then(|v| v.as_object())
+            {
+                let mut sorted_long_keys: Vec<&String> = long_obj.keys().collect();
+                sorted_long_keys.sort();
+                for k in sorted_long_keys {
+                    write_long_option(k, &long_obj[k], &mut current_preset);
+                }
+            }
+
+            // 3. Process [llama-server-short] table keys
+            if let Some(short_obj) = assets
+                .config
+                .get("llama-server-short")
+                .and_then(|v| v.as_object())
+            {
+                let mut sorted_short_keys: Vec<&String> = short_obj.keys().collect();
+                sorted_short_keys.sort();
+                for k in sorted_short_keys {
+                    if crate::config::is_restricted_short_key(k) {
+                        continue;
+                    }
+                    let val = &short_obj[k];
+                    if let Some(s) = val.as_str() {
+                        current_preset.push(format!("{} = {}", k, s));
+                    } else if let Some(b) = val.as_bool() {
+                        current_preset.push(format!("{} = {}", k, b));
+                    } else if let Some(n) = val.as_i64() {
+                        current_preset.push(format!("{} = {}", k, n));
+                    } else if let Some(f) = val.as_f64() {
+                        current_preset.push(format!("{} = {}", k, f));
                     }
                 }
             }
@@ -477,28 +539,31 @@ pub fn generate_presets_ini(
                     }
                 }
 
-                let mut spec_type = draft_config
-                    .get("lh-spec-type")
-                    .or_else(|| draft_config.get("spec-type"))
+                let get_draft_lh = |key: &str| -> Option<&serde_json::Value> {
+                    draft_config.get("llama-herd").and_then(|lh| lh.get(key))
+                };
+                let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
+                    draft_config
+                        .get("llama-server-long")
+                        .and_then(|l| l.get(key))
+                        .or_else(|| draft_config.get(key))
+                };
+
+                let mut spec_type = get_draft_long("spec-type")
                     .and_then(|v| v.as_str())
                     .unwrap_or("draft-mtp");
                 if spec_type == "mtp" {
                     spec_type = "draft-mtp";
                 }
 
-                let spec_draft_n_max = draft_config
-                    .get("lh-spec-draft-n-max")
-                    .or_else(|| draft_config.get("spec-draft-n-max"))
+                let spec_draft_n_max = get_draft_long("spec-draft-n-max")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(4);
-                let spec_draft_p_min = draft_config
-                    .get("lh-spec-draft-p-min")
-                    .or_else(|| draft_config.get("spec-draft-p-min"))
+                let spec_draft_p_min = get_draft_long("spec-draft-p-min")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
-                let d_ngl = draft_config
-                    .get("lh-total-layers")
-                    .or_else(|| draft_config.get("total-layers"))
+                let d_ngl = get_draft_lh("total-layers")
+                    .or_else(|| get_draft_long("total-layers"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(4);
 

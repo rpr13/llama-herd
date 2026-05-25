@@ -82,15 +82,27 @@ fn test_build_launch_parameters_overrides() -> TestResult {
 
     // 1. Setup custom config assets
     let mut config_data = HashMap::new();
-    config_data.insert(
-        "s-sps".to_string(),
+    let mut short_map = serde_json::Map::new();
+    short_map.insert(
+        "sps".to_string(),
         serde_json::Value::Number(serde_json::Number::from_f64(0.8).unwrap()),
     );
+    config_data.insert(
+        "llama-server-short".to_string(),
+        serde_json::Value::Object(short_map),
+    );
+
     config_data.insert(
         "slot-prompt-similarity".to_string(),
         serde_json::Value::Number(serde_json::Number::from_f64(0.95).unwrap()),
     );
-    config_data.insert("lh-custom-ignored".to_string(), serde_json::json!(true));
+
+    let mut herd_map = serde_json::Map::new();
+    herd_map.insert("custom-ignored".to_string(), serde_json::json!(true));
+    config_data.insert(
+        "llama-herd".to_string(),
+        serde_json::Value::Object(herd_map),
+    );
 
     let assets = ModelAssets {
         config: config_data,
@@ -111,7 +123,7 @@ fn test_build_launch_parameters_overrides() -> TestResult {
     let mut global_config = HashMap::new();
     global_config.insert("host".to_string(), serde_json::json!("127.0.0.1"));
     global_config.insert("port".to_string(), serde_json::json!(9000));
-    global_config.insert("lh-kv-quant".to_string(), serde_json::json!("q4_0"));
+    global_config.insert("kv-quant".to_string(), serde_json::json!("q4_0"));
     global_config.insert("batch-size".to_string(), serde_json::json!(512));
     global_config.insert("ubatch-size".to_string(), serde_json::json!(256));
     global_config.insert("tools".to_string(), serde_json::json!("web-search"));
@@ -155,8 +167,7 @@ fn test_build_launch_parameters_overrides() -> TestResult {
         .unwrap();
     assert_eq!(params[l_sps_idx + 1], "0.95");
 
-    // Verify custom "lh-" prefix keys are NOT passed directly to llama-server
-    assert!(!params.contains(&"--lh-custom-ignored".to_string()));
+    // Verify custom "llama-herd" keys are NOT passed directly to llama-server
     assert!(!params.contains(&"--custom-ignored".to_string()));
 
     // Draft model arguments (-md and -ngld)
@@ -184,10 +195,13 @@ fn test_build_launch_parameters_overrides() -> TestResult {
 fn test_build_launch_parameters_speculative_types() -> TestResult {
     let exe_path = PathBuf::from("llama-server");
     let model_path = PathBuf::from("model.gguf");
+
     let mut config_data = HashMap::new();
+    let mut long_map = serde_json::Map::new();
+    long_map.insert("spec-type".to_string(), serde_json::json!("draft-eagle3"));
     config_data.insert(
-        "lh-spec-type".to_string(),
-        serde_json::json!("draft-eagle3"),
+        "llama-server-long".to_string(),
+        serde_json::Value::Object(long_map),
     );
 
     let assets = ModelAssets {
@@ -254,6 +268,71 @@ fn test_build_router_launch_parameters_logic() -> TestResult {
 
     // UI disable toggle mapped correctly
     assert!(params.contains(&"--no-ui".to_string()));
+
+    Ok(())
+}
+
+#[test]
+fn test_build_launch_parameters_draft_fallback_loading() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let models_dir = dir.path().join("models");
+    std::fs::create_dir(&models_dir)?;
+
+    let model_path = models_dir.join("main-model.gguf");
+    std::fs::write(&model_path, "dummy").unwrap();
+
+    let draft_path = models_dir.join("draft-model.gguf");
+    std::fs::write(&draft_path, "dummy").unwrap();
+
+    let draft_config_path = models_dir.join("draft-model.toml");
+    std::fs::write(
+        &draft_config_path,
+        r#"
+[llama-server-long]
+spec-type = "draft-mtp"
+spec-draft-n-max = 6
+spec-draft-p-min = 0.85
+"#,
+    )
+    .unwrap();
+
+    let assets = ModelAssets {
+        config: HashMap::new(),
+        jinja_template: None,
+    };
+
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "0".to_string(),
+        ui: true,
+        mmproj: None,
+        draft_model: Some(draft_path),
+        draft_ngl: "0".to_string(),
+    };
+
+    let params = build_launch_parameters(
+        &PathBuf::from("llama-server"),
+        &model_path,
+        &assets,
+        &settings,
+        &HashMap::new(),
+        8080,
+    );
+
+    let spec_type_idx = params.iter().position(|r| r == "--spec-type").unwrap();
+    assert_eq!(params[spec_type_idx + 1], "draft-mtp");
+
+    let n_max_idx = params
+        .iter()
+        .position(|r| r == "--spec-draft-n-max")
+        .unwrap();
+    assert_eq!(params[n_max_idx + 1], "6");
+
+    let p_min_idx = params
+        .iter()
+        .position(|r| r == "--spec-draft-p-min")
+        .unwrap();
+    assert_eq!(params[p_min_idx + 1], "0.85");
 
     Ok(())
 }

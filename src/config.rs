@@ -83,9 +83,7 @@ const RESTRICTED_LONG: &[&str] = &[
     "total-layers",
     "n-gpu-layers",
     "kv-quant",
-    "lh-kv-quant",
     "kv-unified",
-    "lh-kv-unified",
     "cache-type-k",
     "cache-type-v",
     "ngl",
@@ -140,35 +138,19 @@ fn is_invalid_key(k: &str) -> Option<&'static str> {
 }
 
 pub fn is_restricted_key(key: &str) -> bool {
-    if key.starts_with("lh-") {
-        return true;
-    }
-    let norm_key = if let Some(stripped) = key.strip_prefix("s-") {
-        stripped
-    } else {
-        key
-    };
-    RESTRICTED_SHORT.contains(&norm_key) || RESTRICTED_LONG.contains(&norm_key)
+    RESTRICTED_LONG.contains(&key)
+}
+
+pub fn is_restricted_short_key(key: &str) -> bool {
+    RESTRICTED_SHORT.contains(&key)
 }
 
 pub fn format_arg_name(key: &str) -> Option<String> {
-    if key.starts_with("lh-") {
-        None
-    } else if let Some(stripped) = key.strip_prefix("s-") {
-        Some(format!("-{}", stripped))
-    } else {
-        Some(format!("--{}", key))
-    }
+    Some(format!("--{}", key))
 }
 
 pub fn format_ini_key(key: &str) -> Option<String> {
-    if key.starts_with("lh-") {
-        None
-    } else if let Some(stripped) = key.strip_prefix("s-") {
-        Some(stripped.to_string())
-    } else {
-        Some(key.to_string())
-    }
+    Some(key.to_string())
 }
 
 pub fn load_toml_silent(path: &Path) -> HashMap<String, serde_json::Value> {
@@ -422,7 +404,9 @@ pub fn resolve_server_executable(
 ) -> Option<PathBuf> {
     // 1. Check config
     if let Some(s) = global_config
-        .get("llama-server")
+        .get("llama-herd")
+        .and_then(|lh| lh.get("llama-server").or_else(|| lh.get("server-path")))
+        .or_else(|| global_config.get("llama-server"))
         .or_else(|| global_config.get("server-path"))
         .and_then(|v| v.as_str())
     {
@@ -454,7 +438,9 @@ pub fn resolve_server_executable(
 pub fn resolve_models_dir(global_config: &HashMap<String, serde_json::Value>) -> Option<PathBuf> {
     // 1. Check config
     if let Some(s) = global_config
-        .get("models-dir")
+        .get("llama-herd")
+        .and_then(|lh| lh.get("models-dir").or_else(|| lh.get("models-path")))
+        .or_else(|| global_config.get("models-dir"))
         .or_else(|| global_config.get("models-path"))
         .and_then(|v| v.as_str())
     {

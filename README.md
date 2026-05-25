@@ -77,17 +77,20 @@ Llama-Herd reads custom parameters from `.toml` files matching your `.gguf` mode
 
 ```toml
 # Llama-Herd Orchestration Settings
-lh-is-default = true
-lh-ctx-size = "32k"
-lh-ngl = "auto"
+[llama-herd]
+is-default = true
+draft = "Qwen2.5-1.5B-Instruct.gguf"
 
-# Speculative Decoding Configurations
-lh-draft = "Qwen2.5-1.5B-Instruct.gguf"
-lh-spec-type = "draft-mtp"
+# llama-server long option parameters (e.g. --ctx-size, --slot-prompt-similarity, and --spec-type)
+[llama-server-long]
+ctx-size = "32k"
+ngl = "auto"
+spec-type = "draft-mtp"
+slot-prompt-similarity = 0.5
 
-# Short/Long Option Passthroughs for llama-server
-s-sps = 0.6                     # short-arg: -sps 0.6
-slot-prompt-similarity = 0.5   # long-arg: --slot-prompt-similarity 0.5
+# llama-server short option parameters (e.g. -sps 0.6)
+[llama-server-short]
+sps = 0.6
 ```
 
 ---

@@ -97,8 +97,9 @@ fn test_find_matching_draft_heuristics() -> TestResult {
     // Then helper tags (assistant, draft, mtp, etc.) are ignored and correct matching draft path is selected
 
     let draft_a = PathBuf::from("gemma-2-draft.gguf");
-    let draft_b = PathBuf::from("llama-3-8b-assistant.gguf");
-    let drafts = vec![draft_a.clone(), draft_b.clone()];
+    let draft_b = PathBuf::from("llama-3-1b-it-draft-q8_0.gguf");
+    let draft_c = PathBuf::from("Qwen2.5-1.5B-Instruct-Draft-Q4_K_M.gguf");
+    let drafts = vec![draft_a.clone(), draft_b.clone(), draft_c.clone()];
 
     // 1. Match based on remaining tokens: "gemma-2-9b-it" matches "gemma-2-draft"
     let matched = find_matching_draft(&PathBuf::from("gemma-2-9b-it.gguf"), &drafts);
@@ -107,6 +108,16 @@ fn test_find_matching_draft_heuristics() -> TestResult {
     // 2. Unmatched returns None
     let matched_none = find_matching_draft(&PathBuf::from("mistral-7b.gguf"), &drafts);
     assert_eq!(matched_none, None);
+
+    // 3. Match with sizes and quantization (Llama family): "llama-3-8b-instruct-q4_k_m.gguf" matches "llama-3-1b-it-draft-q8_0.gguf"
+    let matched_llama =
+        find_matching_draft(&PathBuf::from("llama-3-8b-instruct-q4_k_m.gguf"), &drafts);
+    assert_eq!(matched_llama, Some(draft_b));
+
+    // 4. Match with sizes and quantization (Qwen family): "Qwen2.5-7B-Instruct-Q8_0.gguf" matches "Qwen2.5-1.5B-Instruct-Draft-Q4_K_M.gguf"
+    let matched_qwen =
+        find_matching_draft(&PathBuf::from("Qwen2.5-7B-Instruct-Q8_0.gguf"), &drafts);
+    assert_eq!(matched_qwen, Some(draft_c));
 
     Ok(())
 }
@@ -170,15 +181,18 @@ fn test_generate_presets_ini_generation() -> TestResult {
     // Create main model TOML config
     let main_toml_path = models_dir.join("gemma-2-9b-it.toml");
     let main_toml_content = r#"
+        [llama-herd]
         is-default = true
-        ctx-size = "8k"
         total-layers = 42
+        spec-type = "mtp"
+
+        [llama-server-long]
+        ctx-size = "8k"
         temp = 0.7
-        lh-spec-type = "mtp"
-        
-        # Passthrough keys
-        s-sps = 0.85
         slot-prompt-similarity = 0.9
+
+        [llama-server-short]
+        sps = 0.85
     "#;
     fs::write(&main_toml_path, main_toml_content)?;
 
@@ -189,8 +203,11 @@ fn test_generate_presets_ini_generation() -> TestResult {
     // Create draft model TOML config specifying it is a draft
     let draft_toml_path = models_dir.join("gemma-draft.toml");
     let draft_toml_content = r#"
+        [llama-herd]
         is-draft = true
         total-layers = 8
+
+        [llama-server-long]
         spec-type = "mtp"
         spec-draft-n-max = 5
     "#;
@@ -263,7 +280,7 @@ fn test_generate_presets_hyphenated_keys() {
     let config_path = models_dir.join("test-model.toml");
     std::fs::write(
         &config_path,
-        "is-default = true\nctx-size = \"8k\"\ntotal-layers = 32\n",
+        "[llama-herd]\nis-default = true\ntotal-layers = 32\n\n[llama-server-long]\nctx-size = \"8k\"\n",
     )
     .unwrap();
 
@@ -296,7 +313,7 @@ fn test_generate_presets_draft_hyphenated_keys() {
     let draft_config_path = models_dir.join("draft-model.toml");
     std::fs::write(
         &draft_config_path,
-        "is-draft = true\ntotal-layers = 4\nspec-type = \"mtp\"\n",
+        "[llama-herd]\nis-draft = true\ntotal-layers = 4\n\n[llama-server-long]\nspec-type = \"mtp\"\n",
     )
     .unwrap();
 
