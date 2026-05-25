@@ -4,16 +4,18 @@ This file serves as the design description, architecture guidelines, configurati
 
 ## Project Overview
 
-LlamaHerd is a high-performance, native Rust TUI and CLI wrapper designed as a self-contained multi-model server launcher, preset router, and TUI control center for `llama.cpp`'s `llama-server`. It simplifies the deployment of LLMs by automating model pairing (speculative draft models, vision projectors) and providing a rich, interactive dashboard for real-time monitoring and control.
+LlamaHerd is a high-performance, native Rust TUI designed as a self-contained multi-model server launcher, preset router, and TUI control center for `llama.cpp`'s `llama-server`. It simplifies the deployment of LLMs by automating model pairing (speculative draft models, vision projectors) and providing a rich, interactive dashboard for real-time monitoring and control.
 
 ### Key Architecture Components
 
-- **Entry Point (`src/main.rs`)**: Handles environment resolution (`LLAMA_PATH`), command-line argument parsing (supporting flags like `--cli` and `--ini`), global configuration loading (`config.toml`), and switches between TUI, CLI, and early-exit modes.
+- **Entry Point (`src/main.rs`)**: Handles command-line argument parsing (supporting flags like `--ini`), global configuration loading from platform-specific directories, and switches between TUI and early-exit modes.
 - **Launcher Core (`src/launcher.rs`)**: Orchestrates the `llama-server` subprocess. Builds complex command-line arguments for both Single Model and Router modes.
 - **Configuration & Discovery (`src/config.rs`, `src/discovery.rs`)**:
-  - Automatically scans the `models/` subdirectory in `LLAMA_PATH` for GGUF files and corresponding TOML configurations.
+  - Automatically scans the configured `models_dir` for GGUF files and corresponding TOML configurations.
   - Generates a `models-preset.ini` dynamically if it does not exist.
   - Implements heuristics for auto-pairing main models with compatible draft models or `mmproj` files.
+- **Setup Wizard (`src/setup.rs`)**:
+  - Provides an interactive TUI-based setup flow for first-time initialization or missing path resolution.
 - **Log Management (`src/tui/logs.rs`)**: Streams `stdout` and `stderr` concurrently into background threads. Features a native ANSI parser to convert escape sequences (like SGR color/style codes) into `ratatui::style::Style` spans, preserving native colored logs.
 - **TUI Dashboard (`src/tui/`)**: Implemented with `ratatui` (0.30) and `crossterm` (0.29). Renders panels, lists, parameter override inputs, and a custom log viewer.
 
@@ -23,8 +25,16 @@ LlamaHerd is a high-performance, native Rust TUI and CLI wrapper designed as a s
 
 ### 1. Global Config (`config.toml`)
 
-Placed directly in `LLAMA_PATH` to share parameters across all presets. Supported options include:
+Stored in a platform-specific configuration directory:
+- **Linux/Unix**: `~/.config/llama-herd/config.toml`
+- **Windows**: `%APPDATA%\llama-herd\config.toml`
+- **macOS**: `~/Library/Application Support/llama-herd/config.toml`
 
+The `llama-server` executable path and the `models-dir` (where your models are located) MUST be defined here. If they are missing or invalid, LlamaHerd will launch an interactive **Setup Wizard** to help you configure them.
+
+#### Supported Global Options:
+- `llama-server` (Path to the `llama-server` executable)
+- `models-dir` (Path to the directory containing your GGUF models)
 - `host` (default: `"0.0.0.0"`)
 - `port` (default: `"auto"`) - Binds to 8080 or the first free port sequentially if auto or occupied.
 - `flash-attn` (default: `"auto"`)
@@ -67,11 +77,29 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
   - `lh-spec-draft-n-max`: Override maximum draft tokens to predict per slot (default: `4`).
   - `lh-spec-draft-p-min`: Override minimum speculative decoding probability (default: `0.0`).
 
+### 3. Theme System (`theme.toml`)
+
+The TUI utilizes a Hybrid Theme System (Functional Palette + Procedural UI). It is fully customizable via a `theme.toml` file in the global configuration directory.
+
+- **Functional Palette**: Uses semantic keys (`primary`, `selection`, `accent`, `success`, `error`, etc.) to map colors across the entire UI.
+- **Procedural UI**: Controls aesthetic behaviors like `show-emojis` and `border-type`.
+
+If `theme.toml` is missing, LlamaHerd defaults to an internal **"Borderless Simple"** skin.
+
+See `docs/theming.md` for the full schema, design principles, and examples.
+
 ---
 
 ## Project Mandates & Conventions
 
-### 1. Mandatory Server Parameters
+### 1. Mandatory Theme Adherence
+
+Every UI component in LlamaHerd **must** use the theme system. 
+- **NO HARDCODED COLORS**: Hardcoding colors like `Color::Cyan` or `Color::White` in `src/tui/ui.rs` or any other UI module is strictly prohibited.
+- Always use `state.theme.<property>` or pass a reference to the `Theme` struct to rendering functions.
+- All new visual elements must be mapped to an appropriate semantic field in the `Theme` struct.
+
+### 2. Mandatory Server Parameters
 
 `llama-server` **must** always be launched with `--log-colors on`. This is hard-coded in the launcher (`src/launcher.rs`) to ensure the TUI receives color escape sequences to render.
 

@@ -7,6 +7,7 @@ pub mod tui {
 #[cfg(test)]
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use llama_herd::tui::theme::Theme;
     use llama_herd::tui::{AppScreen, AppState, TuiEvent, handle_key_event};
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -17,9 +18,9 @@ mod tests {
             vec![],
             PathBuf::from("."),
             PathBuf::from("."),
-            PathBuf::from("."),
             HashMap::new(),
             PathBuf::from("."),
+            Theme::default(),
         );
         let key = KeyEvent {
             code: KeyCode::Char('q'),
@@ -40,9 +41,9 @@ mod tests {
             vec![],
             PathBuf::from("."),
             PathBuf::from("."),
-            PathBuf::from("."),
             HashMap::new(),
             PathBuf::from("."),
+            Theme::default(),
         );
         terminal
             .draw(|f| {
@@ -52,15 +53,101 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let mut row_str = String::new();
         for x in 0..80 {
-            row_str.push(buffer[(x, 1)].symbol().chars().next().unwrap_or(' '));
+            row_str.push(buffer[(x, 0)].symbol().chars().next().unwrap_or(' '));
         }
         let expected_version = env!("APP_VERSION");
         assert!(
             row_str.contains(expected_version),
-            "Row 1 string '{}' did not contain version '{}'",
+            "Row 0 string '{}' did not contain version '{}'",
             row_str,
             expected_version
         );
+    }
+
+    #[test]
+    fn test_ui_header_narrow_screen() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let backend = TestBackend::new(30, 24); // Very narrow screen
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        terminal
+            .draw(|f| {
+                llama_herd::tui::ui::draw(f, &mut state);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut row_str = String::new();
+        for x in 0..30 {
+            row_str.push(buffer[(x, 0)].symbol().chars().next().unwrap_or(' '));
+        }
+
+        // In narrow mode (< 60), logo should be just "🦙"
+        assert!(row_str.contains('🦙'));
+        assert!(!row_str.contains("LlamaHerd"));
+
+        // In narrow mode (< 45), version should be hidden
+        let expected_version = env!("APP_VERSION");
+        assert!(!row_str.contains(expected_version));
+    }
+
+    #[test]
+    fn test_ui_dashboard_responsive_layout() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut state = AppState::new(
+            vec![("test".to_string(), PathBuf::from("test.gguf"))],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.screen = AppScreen::Dashboard;
+
+        // 1. Wide screen (>= 110)
+        {
+            let backend = TestBackend::new(120, 30);
+            let mut terminal = Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| {
+                    llama_herd::tui::ui::draw(f, &mut state);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+
+            // Check footer for "Launch Preset" (full text)
+            let mut footer_str = String::new();
+            for x in 0..120 {
+                footer_str.push(buffer[(x, 28)].symbol().chars().next().unwrap_or(' '));
+            }
+            assert!(footer_str.contains("Launch Preset"));
+        }
+
+        // 2. Narrow screen (< 110)
+        {
+            let backend = TestBackend::new(100, 30);
+            let mut terminal = Terminal::new(backend).unwrap();
+            terminal
+                .draw(|f| {
+                    llama_herd::tui::ui::draw(f, &mut state);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+
+            // Check footer for "Launch" (compact text)
+            let mut footer_str = String::new();
+            for x in 0..100 {
+                footer_str.push(buffer[(x, 28)].symbol().chars().next().unwrap_or(' '));
+            }
+            assert!(footer_str.contains("Launch"));
+            assert!(!footer_str.contains("Launch Preset"));
+        }
     }
 
     #[test]
@@ -69,9 +156,9 @@ mod tests {
             vec![],
             PathBuf::from("."),
             PathBuf::from("."),
-            PathBuf::from("."),
             HashMap::new(),
             PathBuf::from("."),
+            Theme::default(),
         );
         state.ctx = 123;
         let key = KeyEvent {
@@ -92,9 +179,9 @@ mod tests {
             vec![],
             PathBuf::from("."),
             PathBuf::from("."),
-            PathBuf::from("."),
             HashMap::new(),
             PathBuf::from("."),
+            Theme::default(),
         );
         state.ui = true;
         let key = KeyEvent {
@@ -116,9 +203,9 @@ mod tests {
             vec![],
             PathBuf::from("."),
             PathBuf::from("."),
-            PathBuf::from("."),
             HashMap::new(),
             PathBuf::from("."),
+            Theme::default(),
         );
         state.screen = AppScreen::EditingNgl;
         state.input_buffer = "auto".to_string();
@@ -153,7 +240,7 @@ mod tests {
             state: KeyEventState::empty(),
         };
         handle_key_event(&mut state, key_enter, &tx);
-        assert_eq!(state.screen, AppScreen::Select);
+        assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.ngl, "auto");
     }
 }

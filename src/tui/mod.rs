@@ -1,14 +1,20 @@
 pub mod app;
 pub mod logs;
+pub mod picker;
+pub mod theme;
 pub mod ui;
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+        MouseButton, MouseEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
+use std::path::PathBuf;
 use std::time::Duration;
 
 pub use app::{AppScreen, AppState};
@@ -17,6 +23,7 @@ pub use logs::ActiveServer;
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
     Input(KeyEvent),
+    Mouse(crossterm::event::MouseEvent),
     Tick,
     LogReceived,
 }
@@ -28,8 +35,62 @@ pub fn handle_key_event(
 ) -> bool {
     let mut should_quit = false;
 
+    // Handle global tab switching if not in an input popup
+    if !matches!(
+        state.screen,
+        AppScreen::EditingCtx
+            | AppScreen::EditingNgl
+            | AppScreen::EditingDraftNgl
+            | AppScreen::EditingPort
+            | AppScreen::PickingServerPath
+            | AppScreen::PickingModelsDir
+    ) {
+        match key.code {
+            KeyCode::Tab => {
+                state.active_tab = (state.active_tab + 1) % 3;
+                state.screen = match state.active_tab {
+                    0 => AppScreen::Dashboard,
+                    1 => AppScreen::Settings,
+                    2 => AppScreen::Logs,
+                    _ => state.screen,
+                };
+                return false;
+            }
+            KeyCode::BackTab => {
+                if state.active_tab == 0 {
+                    state.active_tab = 2;
+                } else {
+                    state.active_tab -= 1;
+                }
+                state.screen = match state.active_tab {
+                    0 => AppScreen::Dashboard,
+                    1 => AppScreen::Settings,
+                    2 => AppScreen::Logs,
+                    _ => state.screen,
+                };
+                return false;
+            }
+            KeyCode::Char('1') => {
+                state.active_tab = 0;
+                state.screen = AppScreen::Dashboard;
+                return false;
+            }
+            KeyCode::Char('2') => {
+                state.active_tab = 1;
+                state.screen = AppScreen::Settings;
+                return false;
+            }
+            KeyCode::Char('3') => {
+                state.active_tab = 2;
+                state.screen = AppScreen::Logs;
+                return false;
+            }
+            _ => {}
+        }
+    }
+
     match state.screen {
-        AppScreen::Select => match key.code {
+        AppScreen::Dashboard => match key.code {
             KeyCode::Char('q') => {
                 should_quit = true;
             }
@@ -80,7 +141,7 @@ pub fn handle_key_event(
                 crate::launcher::kill_existing_servers();
                 let preset_ini_path = crate::discovery::generate_presets_ini(
                     &state.models_dir,
-                    &state.base_dir,
+                    &state.preset_path,
                     &state.global_config,
                 );
                 let resolved_port = crate::launcher::resolve_port(&state.port);
@@ -106,7 +167,8 @@ pub fn handle_key_event(
                 ) {
                     Ok(server) => {
                         state.active_server = Some(server);
-                        state.screen = AppScreen::Running;
+                        state.screen = AppScreen::Logs;
+                        state.active_tab = 2;
                         state.logs_paused = false;
                         state.paused_logs_buffer.clear();
                         state.auto_scroll = true;
@@ -147,7 +209,8 @@ pub fn handle_key_event(
                 ) {
                     Ok(server) => {
                         state.active_server = Some(server);
-                        state.screen = AppScreen::Running;
+                        state.screen = AppScreen::Logs;
+                        state.active_tab = 2;
                         state.logs_paused = false;
                         state.paused_logs_buffer.clear();
                         state.auto_scroll = true;
@@ -159,12 +222,97 @@ pub fn handle_key_event(
             }
             _ => {}
         },
+        AppScreen::Settings => match key.code {
+            KeyCode::Up => {
+                if state.settings_index == 0 {
+                    state.settings_index = 1;
+                } else {
+                    state.settings_index -= 1;
+                }
+            }
+            KeyCode::Down => {
+                state.settings_index = (state.settings_index + 1) % 2;
+            }
+            KeyCode::Enter => {
+                if state.settings_index == 0 {
+                    state.screen = AppScreen::PickingServerPath;
+                    let initial_path = if state.server_exe.as_os_str().is_empty() {
+                        crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
+                    } else {
+                        state
+                            .server_exe
+                            .parent()
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|| PathBuf::from("."))
+                    };
+                    state.picker = Some(crate::tui::picker::FilePicker::new(
+                        initial_path,
+                        crate::tui::picker::PickerMode::File,
+                    ));
+                } else {
+                    state.screen = AppScreen::PickingModelsDir;
+                    let initial_path = if state.models_dir.as_os_str().is_empty() {
+                        crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
+                    } else {
+                        state.models_dir.clone()
+                    };
+                    state.picker = Some(crate::tui::picker::FilePicker::new(
+                        initial_path,
+                        crate::tui::picker::PickerMode::Directory,
+                    ));
+                }
+            }
+            KeyCode::Char('q') => {
+                should_quit = true;
+            }
+            _ => {}
+        },
+        AppScreen::PickingServerPath | AppScreen::PickingModelsDir => {
+            if let Some(picker) = &mut state.picker {
+                if let Some(path) = picker.handle_event(key) {
+                    if state.screen == AppScreen::PickingServerPath {
+                        state.server_exe = path.clone();
+                        state.server_version = crate::launcher::get_server_version(&path);
+                        state.global_config.insert(
+                            "llama-server".to_string(),
+                            serde_json::Value::String(path.to_string_lossy().to_string()),
+                        );
+                    } else {
+                        state.models_dir = path.clone();
+                        state.global_config.insert(
+                            "models-dir".to_string(),
+                            serde_json::Value::String(path.to_string_lossy().to_string()),
+                        );
+                        // Refresh presets list when models dir changes
+                        crate::discovery::generate_presets_ini(
+                            &state.models_dir,
+                            &state.preset_path,
+                            &state.global_config,
+                        );
+                        state.presets =
+                            crate::discovery::discover_presets_from_ini(&state.preset_path);
+                        state.preset_index = 0;
+                        state.load_current_preset_settings();
+                    }
+
+                    // Save config
+                    let config_path = crate::config::get_llama_herd_dir().join("config.toml");
+                    let _ = crate::config::save_config(&config_path, &state.global_config);
+
+                    state.screen = AppScreen::Settings;
+                    state.picker = None;
+                } else if key.code == KeyCode::Esc {
+                    state.screen = AppScreen::Settings;
+                    state.picker = None;
+                }
+            }
+        }
         AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
         | AppScreen::EditingPort => match key.code {
             KeyCode::Esc => {
-                state.screen = AppScreen::Select;
+                state.screen = AppScreen::Dashboard;
             }
             KeyCode::Enter => {
                 match state.screen {
@@ -182,7 +330,7 @@ pub fn handle_key_event(
                     }
                     _ => {}
                 }
-                state.screen = AppScreen::Select;
+                state.screen = AppScreen::Dashboard;
             }
             KeyCode::Backspace => {
                 state.input_buffer.pop();
@@ -192,7 +340,7 @@ pub fn handle_key_event(
             }
             _ => {}
         },
-        AppScreen::Running => match key.code {
+        AppScreen::Logs => match key.code {
             KeyCode::Char('q') => {
                 if let Some(mut server) = state.active_server.take() {
                     server.kill();
@@ -203,7 +351,8 @@ pub fn handle_key_event(
                 if let Some(mut server) = state.active_server.take() {
                     server.kill();
                 }
-                state.screen = AppScreen::Select;
+                state.screen = AppScreen::Dashboard;
+                state.active_tab = 0;
             }
             KeyCode::Char('r') => {
                 // Restart server
@@ -308,10 +457,94 @@ pub fn handle_key_event(
     should_quit
 }
 
+pub fn handle_mouse_event(state: &mut AppState, mouse: crossterm::event::MouseEvent) {
+    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+        && mouse.row == 0
+        && let Ok(size) = crossterm::terminal::size()
+    {
+        let width = size.0;
+
+        // Header layout breakpoints must match ui.rs
+        let show_full_logo = width >= 75;
+        let show_version = width >= 55;
+
+        let version_str_len =
+            if width >= 90 && !state.server_version.is_empty() && state.server_version != "Unknown"
+            {
+                format!("{} (core: {}) ", env!("APP_VERSION"), state.server_version).len() as u16
+            } else {
+                format!("{} ", env!("APP_VERSION")).len() as u16
+            };
+
+        let logo_len = if show_full_logo { 14 } else { 4 };
+        let version_len = if show_version { version_str_len } else { 0 };
+
+        let header_center_x = logo_len;
+        let header_center_width = width.saturating_sub(logo_len + version_len);
+
+        if width >= 70 {
+            // Full Tabs layout: "[ " + "📊 Dashboard" + " | " + "⚙️ Settings" + " | " + "📜 Logs" + " ]"
+            // Widths: 2 + 12 (D) + 3 + 11 (S) + 3 + 7 (L) + 2 = 40
+            const TABS_WIDTH: u16 = 40;
+
+            if header_center_width >= TABS_WIDTH {
+                let tabs_start = header_center_x + (header_center_width - TABS_WIDTH) / 2;
+                let col = mouse.column;
+
+                if col >= tabs_start + 2 && col < tabs_start + 14 {
+                    state.active_tab = 0;
+                    state.screen = AppScreen::Dashboard;
+                } else if col >= tabs_start + 17 && col < tabs_start + 28 {
+                    state.active_tab = 1;
+                    state.screen = AppScreen::Settings;
+                } else if col >= tabs_start + 31 && col < tabs_start + 38 {
+                    state.active_tab = 2;
+                    state.screen = AppScreen::Logs;
+                }
+            }
+        } else {
+            // Compact Tabs layout: "📊 Dash" (7) + "  " (2) + "⚙️ Set" (6) + "  " (2) + "📜 Logs" (7)
+            // Widths: 7 + 2 + 6 + 2 + 7 = 24 (or 11 if only emojis)
+            let use_medium = width >= 45;
+            let tabs_width = if use_medium { 24 } else { 11 };
+
+            if header_center_width >= tabs_width {
+                let tabs_start = header_center_x + (header_center_width - tabs_width) / 2;
+                let col = mouse.column;
+
+                if use_medium {
+                    if col >= tabs_start && col < tabs_start + 7 {
+                        state.active_tab = 0;
+                        state.screen = AppScreen::Dashboard;
+                    } else if col >= tabs_start + 9 && col < tabs_start + 15 {
+                        state.active_tab = 1;
+                        state.screen = AppScreen::Settings;
+                    } else if col >= tabs_start + 17 && col < tabs_start + 24 {
+                        state.active_tab = 2;
+                        state.screen = AppScreen::Logs;
+                    }
+                } else {
+                    // Emoji only
+                    if col >= tabs_start && col < tabs_start + 3 {
+                        state.active_tab = 0;
+                        state.screen = AppScreen::Dashboard;
+                    } else if col >= tabs_start + 5 && col < tabs_start + 7 {
+                        state.active_tab = 1;
+                        state.screen = AppScreen::Settings;
+                    } else if col >= tabs_start + 9 && col < tabs_start + 11 {
+                        state.active_tab = 2;
+                        state.screen = AppScreen::Logs;
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn run_tui(mut state: AppState) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -322,12 +555,21 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
         let event_tx = event_tx.clone();
         std::thread::spawn(move || {
             loop {
-                if let Ok(true) = crossterm::event::poll(Duration::from_millis(100))
-                    && let Ok(Event::Key(key)) = crossterm::event::read()
-                    && key.kind == event::KeyEventKind::Press
-                    && event_tx.send(TuiEvent::Input(key)).is_err()
-                {
-                    break;
+                if let Ok(true) = crossterm::event::poll(Duration::from_millis(100)) {
+                    match crossterm::event::read() {
+                        Ok(Event::Key(key))
+                            if key.kind == event::KeyEventKind::Press
+                                && event_tx.send(TuiEvent::Input(key)).is_err() =>
+                        {
+                            break;
+                        }
+                        Ok(Event::Mouse(mouse))
+                            if event_tx.send(TuiEvent::Mouse(mouse)).is_err() =>
+                        {
+                            break;
+                        }
+                        _ => {}
+                    }
                 }
             }
         });
@@ -364,6 +606,9 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
                     TuiEvent::Input(key) => {
                         should_quit = handle_key_event(&mut state, key, &event_tx);
                     }
+                    TuiEvent::Mouse(mouse) => {
+                        handle_mouse_event(&mut state, mouse);
+                    }
                     TuiEvent::Tick => {}
                     TuiEvent::LogReceived => {}
                 }
@@ -377,7 +622,11 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
 
     // Clean up terminal raw mode and restore screen
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     Ok(())

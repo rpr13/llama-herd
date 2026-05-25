@@ -81,6 +81,7 @@ $RECYCLE.BIN/
 
 # Superpowers
 docs/superpowers/
+.superpowers/
 
 # Antigravity CLI temporary metadata
 /.antigravitycli/

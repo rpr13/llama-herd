@@ -1,755 +1,134 @@
 use crate::tui::app::{AppScreen, AppState};
+use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{
-        Block, BorderType, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap,
-    },
+    widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap},
 };
 
 pub fn draw(f: &mut Frame, state: &mut AppState) {
     let size = f.area();
+    let theme = &state.theme;
+
+    // --- 0. GLOBAL BACKGROUND ---
+    // Force clear the buffer to prevent ghost characters from previous frames
+    f.render_widget(Clear, size);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme.bg).fg(theme.fg)),
+        size,
+    );
 
     // Global background/layout structure
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header
+            Constraint::Length(1), // Header
             Constraint::Min(5),    // Content
-            Constraint::Length(4), // Footer / Hotkeys
+            Constraint::Length(2), // Footer / Hotkeys
         ])
         .split(size);
 
     // --- 1. HEADER PANEL ---
-    let header_text = vec![Line::from(vec![
-        Span::styled(
-            concat!(" 🦙 LLAMA-HERD ", env!("APP_VERSION"), " "),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            " Rust Edition - Native Server Launcher ",
-            Style::default().fg(Color::DarkGray),
-        ),
-    ])];
-    let header_block = Block::default()
-        .borders(Borders::TOP | Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::Cyan));
-    let header = Paragraph::new(header_text)
-        .block(header_block)
-        .alignment(Alignment::Left);
-    f.render_widget(header, main_layout[0]);
+    render_mc_header(f, state, main_layout[0]);
 
-    // --- 2. MAIN CONTENT AREA & EDIT POPUPS ---
+    // --- 2. MAIN CONTENT AREA ---
     match state.screen {
-        AppScreen::Select
+        AppScreen::Dashboard
         | AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
         | AppScreen::EditingPort => {
-            // Split Content Area into Left (Presets List) and Right (Preset Parameters Details)
-            let content_layout = if size.width < 110 {
-                let presets_height = (state.presets.len() as u16 + 2).clamp(5, 8);
-                Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(presets_height), Constraint::Min(5)])
-                    .split(main_layout[1])
-            } else {
-                Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-                    .split(main_layout[1])
-            };
-
-            // LEFT Panel: Presets List
-            let list_val_width = content_layout[0].width.saturating_sub(6) as usize;
-            let items: Vec<ListItem> = state
-                .presets
-                .iter()
-                .enumerate()
-                .map(|(idx, (name, _))| {
-                    let display_name = truncate_middle(name, list_val_width);
-                    if idx == state.preset_index {
-                        ListItem::new(format!(" ➤ {} ", display_name)).style(
-                            Style::default()
-                                .fg(Color::Magenta)
-                                .add_modifier(Modifier::BOLD),
-                        )
-                    } else {
-                        ListItem::new(format!("   {} ", display_name))
-                            .style(Style::default().fg(Color::White))
-                    }
-                })
-                .collect();
-
-            let presets_borders = if size.width < 110 {
-                Borders::TOP
-            } else {
-                Borders::TOP | Borders::RIGHT
-            };
-
-            let presets_block = Block::default()
-                .borders(presets_borders)
-                .title("── Presets ")
-                .border_style(Style::default().fg(Color::Cyan));
-            let presets_list = List::new(items).block(presets_block);
-            f.render_widget(presets_list, content_layout[0]);
-
-            // RIGHT Panel: Parameters Details
-            let right_block = Block::default()
-                .borders(Borders::TOP)
-                .title("── Preset Details & Parameters ")
-                .border_style(Style::default().fg(Color::Cyan));
-
-            let preset_name = if state.presets.is_empty() {
-                "None".to_string()
-            } else {
-                state.presets[state.preset_index].0.clone()
-            };
-
-            let model_name = if state.presets.is_empty() {
-                "None".to_string()
-            } else {
-                state.presets[state.preset_index]
-                    .1
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default()
-            };
-
-            let mmproj_val = match &state.mmproj_list[state.mmproj_index] {
-                Some(p) => p
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "None".to_string()),
-                None => "None (Disabled)".to_string(),
-            };
-
-            let draft_val = match &state.draft_list[state.draft_index] {
-                Some(p) => p
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "None".to_string()),
-                None => "None (Disabled)".to_string(),
-            };
-
-            let val_width = content_layout[1].width.saturating_sub(26) as usize;
-            let display_preset_name = truncate_middle(&preset_name, val_width);
-            let display_model_name = truncate_middle(&model_name, val_width);
-            let display_mmproj_val = truncate_middle(&mmproj_val, val_width);
-            let display_draft_val = truncate_middle(&draft_val, val_width);
-
-            let rows = vec![
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "Preset Name",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(display_preset_name).style(
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Row::new(vec![
-                    Cell::from(""),
-                    Cell::from(Span::styled(
-                        "Model File",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(display_model_name).style(Style::default().fg(Color::LightCyan)),
-                ]),
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "[c]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Context Size",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(format!("{}", state.ctx)).style(Style::default().fg(Color::Green)),
-                ]),
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "[n]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "GPU Layers",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(state.ngl.clone()).style(Style::default().fg(Color::Green)),
-                ]),
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "[v]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "MMProj (Vision)",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(display_mmproj_val).style(Style::default().fg(Color::Yellow)),
-                ]),
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "[d]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Draft Model",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(display_draft_val).style(Style::default().fg(Color::Yellow)),
-                ]),
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "[g]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled(
-                        "Draft GPU Layers",
-                        Style::default().fg(Color::DarkGray),
-                    )),
-                    Cell::from(if state.draft_ngl.is_empty() {
-                        "N/A".to_string()
-                    } else {
-                        state.draft_ngl.clone()
-                    })
-                    .style(Style::default().fg(Color::Yellow)),
-                ]),
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "[u]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled("Web UI", Style::default().fg(Color::DarkGray))),
-                    Cell::from(if state.ui { "ON" } else { "OFF" }).style(
-                        Style::default()
-                            .fg(if state.ui { Color::Green } else { Color::Red })
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Row::new(vec![
-                    Cell::from(Span::styled(
-                        "[p]",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                    Cell::from(Span::styled("Port", Style::default().fg(Color::DarkGray))),
-                    Cell::from(state.port.clone()).style(Style::default().fg(Color::Yellow)),
-                ]),
-            ];
-
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Length(4),
-                    Constraint::Length(20),
-                    Constraint::Min(20),
-                ],
-            )
-            .block(right_block);
-            f.render_widget(table, content_layout[1]);
-
-            // Render Input Prompt Overlays
-            if state.screen != AppScreen::Select {
-                let (title, prompt) = match state.screen {
-                    AppScreen::EditingCtx => (
-                        " Edit Context Size ",
-                        "Enter new context size (e.g. 131072, 8k, 32k):",
-                    ),
-                    AppScreen::EditingNgl => (
-                        " Edit GPU Layers ",
-                        "Enter N-GPU-layers (e.g. auto, 0, 32, --4):",
-                    ),
-                    AppScreen::EditingDraftNgl => (
-                        " Edit Draft GPU Layers ",
-                        "Enter draft N-GPU-layers (e.g. auto, 0, 8):",
-                    ),
-                    AppScreen::EditingPort => (" Edit Port ", "Enter port number or 'auto':"),
-                    _ => ("", ""),
-                };
-
-                let popup_area = centered_rect(60, 20, main_layout[1]);
-                f.render_widget(Clear, popup_area); // clears the background
-
-                let popup_block = Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .title(title)
-                    .border_style(Style::default().fg(Color::Magenta));
-
-                let popup_text = vec![
-                    Line::from(prompt),
-                    Line::from(""),
-                    Line::from(vec![
-                        Span::styled(&state.input_buffer, Style::default().fg(Color::White)),
-                        Span::styled(
-                            "_",
-                            Style::default()
-                                .fg(Color::Magenta)
-                                .add_modifier(Modifier::RAPID_BLINK),
-                        ),
-                    ]),
-                ];
-
-                let popup_para = Paragraph::new(popup_text)
-                    .block(popup_block)
-                    .alignment(Alignment::Center);
-                f.render_widget(popup_para, popup_area);
-            }
+            render_dashboard(f, state, main_layout[1]);
         }
-        AppScreen::Running => {
-            // Running logs viewer view
-            let preset_name = if state.presets.is_empty() {
-                "None".to_string()
-            } else {
-                state.presets[state.preset_index].0.clone()
-            };
-
-            let host = state
-                .global_config
-                .get("host")
-                .and_then(|v| v.as_str())
-                .unwrap_or("0.0.0.0");
-            let port = if let Some(ref _server) = state.active_server {
-                let mut p = "8080".to_string();
-                let mut idx = 0;
-                while idx < state.last_launch_args.len() {
-                    if state.last_launch_args[idx] == "--port"
-                        && idx + 1 < state.last_launch_args.len()
-                    {
-                        p = state.last_launch_args[idx + 1].clone();
-                        break;
-                    }
-                    idx += 1;
-                }
-                p
-            } else {
-                state.port.clone()
-            };
-
-            let status_span = if state.logs_paused {
-                Span::styled(
-                    " PAUSED (LOGS BUFFERED) ",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .bg(Color::Rgb(50, 50, 0))
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled(
-                    " RUNNING ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .bg(Color::Rgb(0, 50, 0))
-                        .add_modifier(Modifier::BOLD),
-                )
-            };
-
-            let (label, display_name) = if state.is_router_mode {
-                (
-                    if size.width < 110 {
-                        "Mode: "
-                    } else {
-                        "Server Mode: "
-                    },
-                    "Router".to_string(),
-                )
-            } else {
-                (
-                    if size.width < 110 {
-                        "Preset: "
-                    } else {
-                        "Server Preset: "
-                    },
-                    preset_name,
-                )
-            };
-
-            let server_info = if size.width < 110 {
-                Line::from(vec![
-                    Span::styled(label, Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("{} ", truncate_middle(&display_name, 15)),
-                        Style::default()
-                            .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(" | URL: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("http://{}:{} ", host, port),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                    Span::styled(" | ", Style::default().fg(Color::DarkGray)),
-                    status_span,
-                ])
-            } else {
-                Line::from(vec![
-                    Span::styled(label, Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("{} ", display_name),
-                        Style::default()
-                            .fg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(" |  Address: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("http://{}:{} ", host, port),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                    Span::styled(" |  Status: ", Style::default().fg(Color::DarkGray)),
-                    status_span,
-                ])
-            };
-
-            let mut raw_logs = std::collections::VecDeque::new();
-            if let Some(ref server) = state.active_server {
-                if state.logs_paused {
-                    raw_logs = state.paused_logs_buffer.clone();
-                } else if let Ok(l) = server.logs.lock() {
-                    raw_logs = l.clone();
-                }
-            }
-
-            let log_block_title = if state.logs_wrap {
-                "── Server Logs (Wrap Enabled) "
-            } else {
-                "── Server Logs (Wrap Disabled - Left/Right arrows to scroll horizontally) "
-            };
-
-            let logs_block = Block::default()
-                .borders(Borders::TOP)
-                .title(log_block_title)
-                .border_style(Style::default().fg(Color::Cyan));
-
-            let full_command = state.last_launch_args.join(" ");
-            let content_width = main_layout[1].width as usize;
-            let cmd_height = if content_width > 0 {
-                (9 + full_command.len()).div_ceil(content_width).min(4) as u16
-            } else {
-                1
-            };
-
-            // Split Running view into Server Info Header + Full Command + Metrics + Logs Scroll Pane
-            let running_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1),          // Server Info line
-                    Constraint::Length(cmd_height), // Full Command line
-                    Constraint::Length(3),          // Metrics Panel
-                    Constraint::Min(2),             // Logs block
-                ])
-                .split(main_layout[1]);
-
-            f.render_widget(Paragraph::new(server_info), running_layout[0]);
-
-            f.render_widget(
-                Paragraph::new(Line::from(vec![
-                    Span::styled("Command: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(full_command, Style::default().fg(Color::Yellow)),
-                ]))
-                .wrap(Wrap { trim: true }),
-                running_layout[1],
-            );
-
-            // Fetch and render server metrics
-            let mut server_metrics = crate::tui::logs::ServerMetrics::default();
-            if let Some(ref server) = state.active_server {
-                if let Ok(m) = server.metrics.lock() {
-                    server_metrics = m.clone();
-                }
-            } else {
-                server_metrics.status = "OFFLINE".to_string();
-            }
-
-            let metrics_block = Block::default()
-                .borders(Borders::TOP | Borders::BOTTOM)
-                .title("── Orchestrator Process & Routing Status ")
-                .border_style(Style::default().fg(Color::Magenta));
-
-            f.render_widget(metrics_block.clone(), running_layout[2]);
-            let metrics_area = metrics_block.inner(running_layout[2]);
-            let metrics_cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(33), // Column 1: Process Status
-                    Constraint::Percentage(33), // Column 2: Server Mode
-                    Constraint::Percentage(34), // Column 3: Routing Details
-                ])
-                .split(metrics_area);
-
-            // Column 1: Process Status & PID
-            let status_color = match server_metrics.status.as_str() {
-                "RUNNING" => Color::Green,
-                "LOADING" => Color::Yellow,
-                "ERROR" => Color::Red,
-                _ => Color::DarkGray,
-            };
-            let col1_text = vec![
-                Line::from(vec![
-                    Span::styled(" Status: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        server_metrics.status.clone(),
-                        Style::default()
-                            .fg(status_color)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled(" PID:    ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        server_metrics
-                            .pid
-                            .map(|p| p.to_string())
-                            .unwrap_or_else(|| "N/A".to_string()),
-                        Style::default().fg(Color::White),
-                    ),
-                ]),
-            ];
-            f.render_widget(Paragraph::new(col1_text), metrics_cols[0]);
-
-            // Column 2: Server Mode & Max Models
-            let mode_str = if server_metrics.is_router {
-                "Router"
-            } else {
-                "Single Model"
-            };
-            let max_models_str = if server_metrics.is_router {
-                server_metrics
-                    .max_models
-                    .map(|m| m.to_string())
-                    .unwrap_or_else(|| "1".to_string())
-            } else {
-                "N/A".to_string()
-            };
-            let col2_text = vec![
-                Line::from(vec![
-                    Span::styled(" Mode:       ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        mode_str,
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled(" Max Active: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(max_models_str, Style::default().fg(Color::White)),
-                ]),
-            ];
-            f.render_widget(Paragraph::new(col2_text), metrics_cols[1]);
-
-            // Column 3: Active Model & Port
-            let active_model_str = server_metrics.active_model.as_deref().unwrap_or("None");
-            let active_port_str = server_metrics
-                .active_port
-                .map(|p| p.to_string())
-                .unwrap_or_else(|| "N/A".to_string());
-            let col3_text = vec![
-                Line::from(vec![
-                    Span::styled(" Active Model: ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(
-                        active_model_str,
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled(" Active Port:  ", Style::default().fg(Color::DarkGray)),
-                    Span::styled(active_port_str, Style::default().fg(Color::White)),
-                ]),
-            ];
-            f.render_widget(Paragraph::new(col3_text), metrics_cols[2]);
-
-            // Calculate inner logs scroll height
-            let logs_rect = running_layout[3];
-            let inner_height = if logs_rect.height > 2 {
-                logs_rect.height - 2
-            } else {
-                1
-            } as usize;
-            let width = if logs_rect.width > 2 {
-                logs_rect.width - 2
-            } else {
-                1
-            } as usize;
-
-            // Compile logs styling and wrapping
-            let mut rendered_lines: Vec<Line> = Vec::new();
-            for line in &raw_logs {
-                if state.logs_wrap {
-                    // Build a flat list of (char, style) to wrap at width boundaries
-                    let mut chars: Vec<(char, Style)> = Vec::new();
-                    for span in &line.spans {
-                        for ch in span.text.chars() {
-                            chars.push((ch, span.style));
-                        }
-                    }
-
-                    if chars.is_empty() {
-                        rendered_lines.push(Line::from(""));
-                    } else {
-                        for chunk in chars.chunks(width.max(1)) {
-                            let mut spans_out: Vec<Span> = Vec::new();
-                            let mut cur_text = String::new();
-                            let mut cur_style = chunk[0].1;
-
-                            for &(ch, st) in chunk {
-                                if st != cur_style {
-                                    if !cur_text.is_empty() {
-                                        spans_out.push(Span::styled(
-                                            std::mem::take(&mut cur_text),
-                                            cur_style,
-                                        ));
-                                    }
-                                    cur_style = st;
-                                }
-                                cur_text.push(ch);
-                            }
-                            if !cur_text.is_empty() {
-                                spans_out.push(Span::styled(cur_text, cur_style));
-                            }
-                            rendered_lines.push(Line::from(spans_out));
-                        }
-                    }
-                } else {
-                    let spans_out: Vec<Span> = line
-                        .spans
-                        .iter()
-                        .map(|s| Span::styled(s.text.clone(), s.style))
-                        .collect();
-                    rendered_lines.push(Line::from(spans_out));
-                }
-            }
-
-            // Auto-scroll logic clamp
-            if state.auto_scroll && !state.logs_paused && rendered_lines.len() > inner_height {
-                state.log_scroll_offset = rendered_lines.len() - inner_height;
-            }
-
-            // Clamping scroll offsets
-            let max_scroll_y = if rendered_lines.len() > inner_height {
-                rendered_lines.len() - inner_height
-            } else {
-                0
-            };
-            if state.log_scroll_offset >= max_scroll_y {
-                state.log_scroll_offset = max_scroll_y;
-                if !state.auto_scroll {
-                    state.auto_scroll = true;
-                }
-            }
-
-            let text = Text {
-                lines: rendered_lines,
-                ..Default::default()
-            };
-
-            let paragraph = Paragraph::new(text)
-                .block(logs_block)
-                .scroll((state.log_scroll_offset as u16, state.log_scroll_x as u16));
-
-            f.render_widget(paragraph, running_layout[3]);
+        AppScreen::Settings | AppScreen::PickingServerPath | AppScreen::PickingModelsDir => {
+            render_settings_tab(f, state, main_layout[1]);
+        }
+        AppScreen::Logs => {
+            render_logs(f, state, main_layout[1]);
         }
     }
 
     // --- 3. FOOTER HINTS PANEL ---
+    let theme = &state.theme;
     let footer_text = match state.screen {
-        AppScreen::Select => {
+        AppScreen::Dashboard => {
             if size.width < 110 {
                 vec![
                     Line::from(vec![
                         Span::styled(
                             " [Enter]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Launch  ", Style::default().fg(Color::White)),
+                        Span::styled(" Launch  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [Ctrl+R]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Router  ", Style::default().fg(Color::White)),
+                        Span::styled(" Router  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [c]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Context  ", Style::default().fg(Color::White)),
+                        Span::styled(" Context  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [n]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" GPU Layers  ", Style::default().fg(Color::White)),
+                        Span::styled(" GPU Layers  ", Style::default().fg(theme.fg)),
                     ]),
                     Line::from(vec![
                         Span::styled(
                             " [v]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" MMProj  ", Style::default().fg(Color::White)),
+                        Span::styled(" MMProj  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [d]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Draft  ", Style::default().fg(Color::White)),
+                        Span::styled(" Draft  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [g]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Draft NGL  ", Style::default().fg(Color::White)),
+                        Span::styled(" Draft NGL  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [u]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Web UI  ", Style::default().fg(Color::White)),
+                        Span::styled(" Web UI  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [p]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Port  ", Style::default().fg(Color::White)),
+                        Span::styled(" Port  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [q]",
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.error)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Quit", Style::default().fg(Color::White)),
+                        Span::styled(" Quit", Style::default().fg(theme.fg)),
                     ]),
                 ]
             } else {
@@ -758,76 +137,140 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         Span::styled(
                             " [Enter]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Launch Preset  ", Style::default().fg(Color::White)),
+                        Span::styled(" Launch Preset  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [Ctrl+R]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Launch Router  ", Style::default().fg(Color::White)),
+                        Span::styled(" Launch Router  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [c]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Edit Context  ", Style::default().fg(Color::White)),
+                        Span::styled(" Edit Context  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [n]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Edit GPU Layers  ", Style::default().fg(Color::White)),
+                        Span::styled(" Edit GPU Layers  ", Style::default().fg(theme.fg)),
                     ]),
                     Line::from(vec![
                         Span::styled(
                             " [v]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Cycle MMProj  ", Style::default().fg(Color::White)),
+                        Span::styled(" Cycle MMProj  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [d]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Cycle Draft  ", Style::default().fg(Color::White)),
+                        Span::styled(" Cycle Draft  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [g]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Edit Draft NGL  ", Style::default().fg(Color::White)),
+                        Span::styled(" Edit Draft NGL  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [u]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Toggle Web UI  ", Style::default().fg(Color::White)),
+                        Span::styled(" Toggle Web UI  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [p]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Edit Port  ", Style::default().fg(Color::White)),
+                        Span::styled(" Edit Port  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [q]",
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.error)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Quit", Style::default().fg(Color::White)),
+                        Span::styled(" Quit", Style::default().fg(theme.fg)),
                     ]),
                 ]
             }
+        }
+        AppScreen::Settings => {
+            vec![Line::from(vec![
+                Span::styled(
+                    " [Up/Down]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Navigate  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [Enter]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Change Path  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [Tab]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Switch Tabs  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [q]",
+                    Style::default()
+                        .fg(theme.error)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Quit", Style::default().fg(theme.fg)),
+            ])]
+        }
+        AppScreen::PickingServerPath | AppScreen::PickingModelsDir => {
+            vec![Line::from(vec![
+                Span::styled(
+                    " [Up/Down]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Navigate  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [Enter]",
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Select  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [Esc]",
+                    Style::default()
+                        .fg(theme.error)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Cancel  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [Backspace]",
+                    Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Parent Dir ", Style::default().fg(theme.fg)),
+            ])]
         }
         AppScreen::EditingCtx
         | AppScreen::EditingNgl
@@ -837,75 +280,81 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 Span::styled(
                     " [Enter]",
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(theme.success)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" Save Settings  ", Style::default().fg(Color::White)),
+                Span::styled(" Save Settings  ", Style::default().fg(theme.fg)),
                 Span::styled(
                     " [Esc]",
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(theme.error)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" Cancel and Go Back", Style::default().fg(Color::White)),
+                Span::styled(" Cancel and Go Back", Style::default().fg(theme.fg)),
             ])]
         }
-        AppScreen::Running => {
+        AppScreen::Logs => {
             if size.width < 110 {
                 vec![
                     Line::from(vec![
                         Span::styled(
                             " [r]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Restart  ", Style::default().fg(Color::White)),
+                        Span::styled(" Restart  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [p]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Pause  ", Style::default().fg(Color::White)),
+                        Span::styled(" Pause  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [c]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Copy  ", Style::default().fg(Color::White)),
+                        Span::styled(" Copy  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [w]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Wrap  ", Style::default().fg(Color::White)),
+                        Span::styled(" Wrap  ", Style::default().fg(theme.fg)),
                     ]),
                     Line::from(vec![
                         Span::styled(
                             " [Up/Dn/PgUp/PgDn]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Scroll V  ", Style::default().fg(Color::White)),
+                        Span::styled(" Scroll V  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [Left/Right]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Scroll H  ", Style::default().fg(Color::White)),
+                        Span::styled(" Scroll H  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [s]",
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.error)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Stop  ", Style::default().fg(Color::White)),
+                        Span::styled(" Stop  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [q]",
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.error)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Quit", Style::default().fg(Color::White)),
+                        Span::styled(" Quit", Style::default().fg(theme.fg)),
                     ]),
                 ]
             } else {
@@ -914,60 +363,61 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         Span::styled(
                             " [r]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Restart Server  ", Style::default().fg(Color::White)),
+                        Span::styled(" Restart Server  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [p]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Pause Logs  ", Style::default().fg(Color::White)),
+                        Span::styled(" Pause Logs  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [c]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Copy Logs  ", Style::default().fg(Color::White)),
+                        Span::styled(" Copy Logs  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [w]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Toggle Wrap  ", Style::default().fg(Color::White)),
+                        Span::styled(" Toggle Wrap  ", Style::default().fg(theme.fg)),
                     ]),
                     Line::from(vec![
                         Span::styled(
                             " [Up/Down/PgUp/PgDn]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(
-                            " Scroll Logs Vertically  ",
-                            Style::default().fg(Color::White),
-                        ),
+                        Span::styled(" Scroll Logs Vertically  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [Left/Right]",
                             Style::default()
-                                .fg(Color::Cyan)
+                                .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Scroll Horizontally  ", Style::default().fg(Color::White)),
+                        Span::styled(" Scroll Horizontally  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [s]",
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.error)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Stop Server  ", Style::default().fg(Color::White)),
+                        Span::styled(" Stop Server  ", Style::default().fg(theme.fg)),
                         Span::styled(
                             " [q]",
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(theme.error)
+                                .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Quit", Style::default().fg(Color::White)),
+                        Span::styled(" Quit", Style::default().fg(theme.fg)),
                     ]),
                 ]
             }
@@ -975,12 +425,206 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     };
 
     let footer_block = Block::default()
-        .borders(Borders::TOP)
-        .border_style(Style::default().fg(Color::Cyan));
+        .borders(Borders::NONE)
+        .style(Style::default().bg(theme.footer_bg).fg(theme.fg))
+        .border_style(Style::default().fg(theme.primary));
     let footer = Paragraph::new(footer_text)
         .block(footer_block)
-        .alignment(Alignment::Center);
+        .alignment(Alignment::Center)
+        .style(Style::default().bg(theme.footer_bg));
     f.render_widget(footer, main_layout[2]);
+}
+
+fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
+    let theme = &state.theme;
+    let logo_full = if theme.show_emojis {
+        " 🦙 LlamaHerd "
+    } else {
+        " LlamaHerd "
+    };
+    let logo_short = if theme.show_emojis { " 🦙 " } else { " LH " };
+
+    let version_str = if area.width >= 90
+        && !state.server_version.is_empty()
+        && state.server_version != "Unknown"
+    {
+        format!("{} (core: {}) ", env!("APP_VERSION"), state.server_version)
+    } else {
+        format!("{} ", env!("APP_VERSION"))
+    };
+
+    // Fill the background of the entire header area
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme.header_bg).fg(theme.fg)),
+        area,
+    );
+
+    // Higher breakpoints to ensure center tabs (40 chars) have enough room
+    let show_full_logo = area.width >= 75;
+    let show_version = area.width >= 55;
+
+    let logo_len = if show_full_logo {
+        logo_full.len() as u16
+    } else {
+        logo_short.len() as u16
+    };
+    let version_len = if show_version {
+        version_str.len() as u16
+    } else {
+        0
+    };
+
+    let header_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(logo_len),
+            Constraint::Min(10),
+            Constraint::Length(version_len),
+        ])
+        .split(area);
+
+    // --- LEFT: LOGO ---
+    let logo_str = if show_full_logo {
+        logo_full
+    } else {
+        logo_short
+    };
+    let logo = Span::styled(
+        logo_str,
+        Style::default()
+            .fg(theme.primary)
+            .bg(theme.header_bg)
+            .add_modifier(Modifier::BOLD),
+    );
+    f.render_widget(Paragraph::new(Line::from(logo)), header_layout[0]);
+
+    // --- CENTER: TABS ---
+    let tabs_text = if area.width >= 70 {
+        vec![
+            Span::styled(
+                "[ ",
+                Style::default().fg(theme.secondary).bg(theme.header_bg),
+            ),
+            render_header_tab(
+                if theme.show_emojis {
+                    "📊 Dashboard"
+                } else {
+                    "Dashboard"
+                },
+                state.active_tab == 0,
+                theme,
+            ),
+            Span::styled(
+                " | ",
+                Style::default().fg(theme.secondary).bg(theme.header_bg),
+            ),
+            render_header_tab(
+                if theme.show_emojis {
+                    "⚙ Settings"
+                } else {
+                    "Settings"
+                },
+                state.active_tab == 1,
+                theme,
+            ),
+            Span::styled(
+                " | ",
+                Style::default().fg(theme.secondary).bg(theme.header_bg),
+            ),
+            render_header_tab(
+                if theme.show_emojis {
+                    "📜 Logs"
+                } else {
+                    "Logs"
+                },
+                state.active_tab == 2,
+                theme,
+            ),
+            Span::styled(
+                " ]",
+                Style::default().fg(theme.secondary).bg(theme.header_bg),
+            ),
+        ]
+    } else {
+        vec![
+            render_header_tab(
+                if area.width >= 45 {
+                    if theme.show_emojis {
+                        "📊 Dash"
+                    } else {
+                        "Dash"
+                    }
+                } else if theme.show_emojis {
+                    "📊"
+                } else {
+                    "D"
+                },
+                state.active_tab == 0,
+                theme,
+            ),
+            Span::styled("  ", Style::default().bg(theme.header_bg)),
+            render_header_tab(
+                if area.width >= 45 {
+                    if theme.show_emojis { "⚙ Set" } else { "Set" }
+                } else if theme.show_emojis {
+                    "⚙"
+                } else {
+                    "S"
+                },
+                state.active_tab == 1,
+                theme,
+            ),
+            Span::styled("  ", Style::default().bg(theme.header_bg)),
+            render_header_tab(
+                if area.width >= 45 {
+                    if theme.show_emojis {
+                        "📜 Logs"
+                    } else {
+                        "Logs"
+                    }
+                } else if theme.show_emojis {
+                    "📜"
+                } else {
+                    "L"
+                },
+                state.active_tab == 2,
+                theme,
+            ),
+        ]
+    };
+    let tabs = Paragraph::new(Line::from(tabs_text))
+        .style(Style::default().bg(theme.header_bg))
+        .alignment(Alignment::Center);
+    f.render_widget(tabs, header_layout[1]);
+
+    // --- RIGHT: VERSION ---
+    if show_version {
+        let version = Span::styled(
+            version_str,
+            Style::default().fg(theme.secondary).bg(theme.header_bg),
+        );
+        let version_para = Paragraph::new(Line::from(version))
+            .style(Style::default().bg(theme.header_bg))
+            .alignment(Alignment::Right);
+        f.render_widget(version_para, header_layout[2]);
+    }
+}
+
+fn render_header_tab<'a>(title: &'a str, is_active: bool, theme: &Theme) -> Span<'a> {
+    if is_active {
+        Span::styled(
+            title,
+            Style::default()
+                .fg(theme.primary)
+                .bg(theme.header_bg)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(
+            title,
+            Style::default().fg(theme.secondary).bg(theme.header_bg),
+        )
+    }
 }
 
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -1015,4 +659,714 @@ pub fn truncate_middle(s: &str, max_len: usize) -> String {
     let start: String = chars[..keep].iter().collect();
     let end: String = chars[chars.len() - (max_len - 3 - keep)..].iter().collect();
     format!("{}...{}", start, end)
+}
+
+fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.theme;
+    let block = Block::default()
+        .borders(Borders::TOP | Borders::BOTTOM)
+        .title(" Global Settings ")
+        .style(Style::default().bg(theme.bg).fg(theme.fg))
+        .border_style(Style::default().fg(theme.primary));
+
+    let inner_area = block.inner(area);
+    f.render_widget(block, area);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Server Path
+            Constraint::Length(3), // Models Dir
+            Constraint::Min(0),
+        ])
+        .split(inner_area);
+
+    // 1. Llama Server Path
+    let server_style = if state.settings_index == 0 {
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.secondary)
+    };
+    let server_title = if theme.show_emojis {
+        format!(" 🚀 Llama Server Path ({}) ", state.server_version)
+    } else {
+        format!(" Llama Server Path ({}) ", state.server_version)
+    };
+    let server_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(server_style)
+        .border_type(theme.border_type)
+        .title(server_title);
+    let server_para = Paragraph::new(state.server_exe.to_string_lossy().to_string())
+        .block(server_block)
+        .style(Style::default().fg(if state.settings_index == 0 {
+            theme.fg
+        } else {
+            theme.secondary
+        }));
+    f.render_widget(server_para, layout[0]);
+
+    // 2. Models Directory
+    let models_style = if state.settings_index == 1 {
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.secondary)
+    };
+    let models_title = if theme.show_emojis {
+        " 📂 Models Directory "
+    } else {
+        " Models Directory "
+    };
+    let models_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(models_style)
+        .border_type(theme.border_type)
+        .title(models_title);
+    let models_para = Paragraph::new(state.models_dir.to_string_lossy().to_string())
+        .block(models_block)
+        .style(Style::default().fg(if state.settings_index == 1 {
+            theme.fg
+        } else {
+            theme.secondary
+        }));
+    f.render_widget(models_para, layout[1]);
+
+    // Render Picker Modal if active
+    if let Some(picker) = &state.picker {
+        let popup_area = centered_rect(80, 80, f.area());
+        f.render_widget(Clear, popup_area);
+        picker.render(f, popup_area, theme);
+    }
+}
+
+fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.theme;
+    let size = f.area();
+    // Split Content Area into Left (Presets List) and Right (Preset Parameters Details)
+    let content_layout = if size.width < 110 {
+        let presets_height = (state.presets.len() as u16 + 2).clamp(5, 8);
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(presets_height), Constraint::Min(5)])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
+            .split(area)
+    };
+
+    // LEFT Panel: Presets List
+    let list_val_width = content_layout[0].width.saturating_sub(6) as usize;
+    let items: Vec<ListItem> = state
+        .presets
+        .iter()
+        .enumerate()
+        .map(|(idx, (name, _))| {
+            let display_name = truncate_middle(name, list_val_width);
+            if idx == state.preset_index {
+                ListItem::new(format!(" ➤ {} ", display_name)).style(
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                ListItem::new(format!("   {} ", display_name)).style(Style::default().fg(theme.fg))
+            }
+        })
+        .collect();
+
+    let presets_borders = if size.width < 110 {
+        Borders::TOP | Borders::BOTTOM
+    } else {
+        Borders::TOP | Borders::RIGHT | Borders::BOTTOM
+    };
+
+    let presets_block = Block::default()
+        .borders(presets_borders)
+        .title(" Presets ")
+        .border_type(theme.border_type)
+        .style(Style::default().bg(theme.bg).fg(theme.fg))
+        .border_style(Style::default().fg(theme.primary));
+    let presets_list = List::new(items).block(presets_block);
+    f.render_widget(presets_list, content_layout[0]);
+
+    // RIGHT Panel: Parameters Details
+    let right_block = Block::default()
+        .borders(Borders::TOP | Borders::BOTTOM)
+        .title(" Preset Details & Parameters ")
+        .border_type(theme.border_type)
+        .style(Style::default().bg(theme.bg).fg(theme.fg))
+        .border_style(Style::default().fg(theme.primary));
+
+    let preset_name = if state.presets.is_empty() {
+        "None".to_string()
+    } else {
+        state.presets[state.preset_index].0.clone()
+    };
+
+    let model_name = if state.presets.is_empty() {
+        "None".to_string()
+    } else {
+        state.presets[state.preset_index]
+            .1
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+
+    let mmproj_val = match &state.mmproj_list[state.mmproj_index] {
+        Some(p) => p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "None".to_string()),
+        None => "None (Disabled)".to_string(),
+    };
+
+    let draft_val = match &state.draft_list[state.draft_index] {
+        Some(p) => p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "None".to_string()),
+        None => "None (Disabled)".to_string(),
+    };
+
+    let val_width = content_layout[1].width.saturating_sub(26) as usize;
+    let display_preset_name = truncate_middle(&preset_name, val_width);
+    let display_model_name = truncate_middle(&model_name, val_width);
+    let display_mmproj_val = truncate_middle(&mmproj_val, val_width);
+    let display_draft_val = truncate_middle(&draft_val, val_width);
+
+    let rows = vec![
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "Preset Name",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(display_preset_name)
+                .style(Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+        ]),
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "Model File",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(display_model_name).style(Style::default().fg(theme.primary)),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled(
+                "[c]",
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(Span::styled(
+                "Context Size",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(format!("{}", state.ctx)).style(Style::default().fg(theme.success)),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled(
+                "[n]",
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(Span::styled(
+                "GPU Layers",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(state.ngl.clone()).style(Style::default().fg(theme.success)),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled(
+                "[v]",
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(Span::styled(
+                "MMProj (Vision)",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(display_mmproj_val).style(Style::default().fg(theme.accent)),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled(
+                "[d]",
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(Span::styled(
+                "Draft Model",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(display_draft_val).style(Style::default().fg(theme.accent)),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled(
+                "[g]",
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(Span::styled(
+                "Draft GPU Layers",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(if state.draft_ngl.is_empty() {
+                "N/A".to_string()
+            } else {
+                state.draft_ngl.clone()
+            })
+            .style(Style::default().fg(theme.accent)),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled(
+                "[u]",
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(Span::styled("Web UI", Style::default().fg(theme.secondary))),
+            Cell::from(if state.ui { "ON" } else { "OFF" }).style(
+                Style::default()
+                    .fg(if state.ui { theme.success } else { theme.error })
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Row::new(vec![
+            Cell::from(Span::styled(
+                "[p]",
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(Span::styled("Port", Style::default().fg(theme.secondary))),
+            Cell::from(state.port.clone()).style(Style::default().fg(theme.accent)),
+        ]),
+    ];
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(4),
+            Constraint::Length(20),
+            Constraint::Min(20),
+        ],
+    )
+    .block(right_block);
+    f.render_widget(table, content_layout[1]);
+
+    // Render Input Prompt Overlays
+    if state.screen != AppScreen::Dashboard {
+        let (title, prompt) = match state.screen {
+            AppScreen::EditingCtx => (
+                " Edit Context Size ",
+                "Enter new context size (e.g. 131072, 8k, 32k):",
+            ),
+            AppScreen::EditingNgl => (
+                " Edit GPU Layers ",
+                "Enter N-GPU-layers (e.g. auto, 0, 32, --4):",
+            ),
+            AppScreen::EditingDraftNgl => (
+                " Edit Draft GPU Layers ",
+                "Enter draft N-GPU-layers (e.g. auto, 0, 8):",
+            ),
+            AppScreen::EditingPort => (" Edit Port ", "Enter port number or 'auto':"),
+            _ => ("", ""),
+        };
+
+        let popup_area = centered_rect(60, 20, area);
+        f.render_widget(Clear, popup_area); // clears the background
+
+        let popup_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(theme.border_type)
+            .title(title)
+            .style(Style::default().bg(theme.bg).fg(theme.fg))
+            .border_style(Style::default().fg(theme.selection));
+
+        let popup_text = vec![
+            Line::from(prompt),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(&state.input_buffer, Style::default().fg(theme.fg)),
+                Span::styled(
+                    "_",
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::RAPID_BLINK),
+                ),
+            ]),
+        ];
+
+        let popup_para = Paragraph::new(popup_text)
+            .block(popup_block)
+            .alignment(Alignment::Center);
+        f.render_widget(popup_para, popup_area);
+    }
+}
+
+fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
+    let theme = &state.theme;
+    let size = f.area();
+    // Running logs viewer view
+    let preset_name = if state.presets.is_empty() {
+        "None".to_string()
+    } else {
+        state.presets[state.preset_index].0.clone()
+    };
+
+    let host = state
+        .global_config
+        .get("host")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.0.0.0");
+    let port = if let Some(ref _server) = state.active_server {
+        let mut p = "8080".to_string();
+        let mut idx = 0;
+        while idx < state.last_launch_args.len() {
+            if state.last_launch_args[idx] == "--port" && idx + 1 < state.last_launch_args.len() {
+                p = state.last_launch_args[idx + 1].clone();
+                break;
+            }
+            idx += 1;
+        }
+        p
+    } else {
+        state.port.clone()
+    };
+
+    let status_span = if state.logs_paused {
+        Span::styled(
+            " PAUSED (LOGS BUFFERED) ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::styled(
+            " RUNNING ",
+            Style::default()
+                .fg(theme.success)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+
+    let (label, display_name) = if state.is_router_mode {
+        (
+            if size.width < 110 {
+                "Mode: "
+            } else {
+                "Server Mode: "
+            },
+            "Router".to_string(),
+        )
+    } else {
+        (
+            if size.width < 110 {
+                "Preset: "
+            } else {
+                "Server Preset: "
+            },
+            preset_name,
+        )
+    };
+
+    let server_info = if size.width < 110 {
+        Line::from(vec![
+            Span::styled(label, Style::default().fg(theme.secondary)),
+            Span::styled(
+                format!("{} ", truncate_middle(&display_name, 15)),
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" | URL: ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                format!("http://{}:{} ", host, port),
+                Style::default().fg(theme.primary),
+            ),
+            Span::styled(" | ", Style::default().fg(theme.secondary)),
+            status_span,
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(label, Style::default().fg(theme.secondary)),
+            Span::styled(
+                format!("{} ", display_name),
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" |  Address: ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                format!("http://{}:{} ", host, port),
+                Style::default().fg(theme.primary),
+            ),
+            Span::styled(" |  Status: ", Style::default().fg(theme.secondary)),
+            status_span,
+        ])
+    };
+
+    let mut raw_logs = std::collections::VecDeque::new();
+    if let Some(ref server) = state.active_server {
+        if state.logs_paused {
+            raw_logs = state.paused_logs_buffer.clone();
+        } else if let Ok(l) = server.logs.lock() {
+            raw_logs = l.clone();
+        }
+    }
+
+    let log_block_title = if state.logs_wrap {
+        " Server Logs (Wrap Enabled) "
+    } else {
+        " Server Logs (Wrap Disabled - Left/Right arrows to scroll horizontally) "
+    };
+
+    let logs_block = Block::default()
+        .borders(Borders::TOP | Borders::BOTTOM)
+        .title(log_block_title)
+        .border_type(theme.border_type)
+        .style(Style::default().bg(theme.bg).fg(theme.fg))
+        .border_style(Style::default().fg(theme.primary));
+
+    let full_command = state.last_launch_args.join(" ");
+    let content_width = area.width as usize;
+    let cmd_height = if content_width > 0 {
+        (9 + full_command.len()).div_ceil(content_width).min(4) as u16
+    } else {
+        1
+    };
+
+    // Split Running view into Server Info Header + Full Command + Metrics + Logs Scroll Pane
+    let running_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),          // Server Info line
+            Constraint::Length(cmd_height), // Full Command line
+            Constraint::Length(3),          // Metrics Panel
+            Constraint::Min(2),             // Logs block
+        ])
+        .split(area);
+
+    f.render_widget(Paragraph::new(server_info), running_layout[0]);
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Command: ", Style::default().fg(theme.secondary)),
+            Span::styled(full_command, Style::default().fg(theme.accent)),
+        ]))
+        .wrap(Wrap { trim: true }),
+        running_layout[1],
+    );
+
+    // Fetch and render server metrics
+    let mut server_metrics = crate::tui::logs::ServerMetrics::default();
+    if let Some(ref server) = state.active_server {
+        if let Ok(m) = server.metrics.lock() {
+            server_metrics = m.clone();
+        }
+    } else {
+        server_metrics.status = "OFFLINE".to_string();
+    }
+
+    let metrics_block = Block::default()
+        .borders(Borders::TOP)
+        .title(" Orchestrator Process & Routing Status ")
+        .border_type(theme.border_type)
+        .style(Style::default().bg(theme.bg).fg(theme.fg))
+        .border_style(Style::default().fg(theme.primary));
+
+    f.render_widget(metrics_block.clone(), running_layout[2]);
+    let metrics_area = metrics_block.inner(running_layout[2]);
+    let metrics_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(33), // Column 1: Process Status
+            Constraint::Percentage(33), // Column 2: Server Mode
+            Constraint::Percentage(34), // Column 3: Routing Details
+        ])
+        .split(metrics_area);
+
+    // Column 1: Process Status & PID
+    let status_color = match server_metrics.status.as_str() {
+        "RUNNING" => theme.success,
+        "LOADING" => theme.accent,
+        "ERROR" => theme.error,
+        _ => theme.secondary,
+    };
+    let col1_text = vec![
+        Line::from(vec![
+            Span::styled(" Status: ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                server_metrics.status.clone(),
+                Style::default()
+                    .fg(status_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(" PID:    ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                server_metrics
+                    .pid
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "N/A".to_string()),
+                Style::default().fg(theme.fg),
+            ),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(col1_text), metrics_cols[0]);
+
+    // Column 2: Server Mode & Max Models
+    let mode_str = if server_metrics.is_router {
+        "Router"
+    } else {
+        "Single Model"
+    };
+    let max_models_str = if server_metrics.is_router {
+        server_metrics
+            .max_models
+            .map(|m| m.to_string())
+            .unwrap_or_else(|| "1".to_string())
+    } else {
+        "N/A".to_string()
+    };
+    let col2_text = vec![
+        Line::from(vec![
+            Span::styled(" Mode:       ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                mode_str,
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(" Max Active: ", Style::default().fg(theme.secondary)),
+            Span::styled(max_models_str, Style::default().fg(theme.fg)),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(col2_text), metrics_cols[1]);
+
+    // Column 3: Active Model & Port
+    let active_model_str = server_metrics.active_model.as_deref().unwrap_or("None");
+    let active_port_str = server_metrics
+        .active_port
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| "N/A".to_string());
+    let col3_text = vec![
+        Line::from(vec![
+            Span::styled(" Active Model: ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                active_model_str,
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(" Active Port:  ", Style::default().fg(theme.secondary)),
+            Span::styled(active_port_str, Style::default().fg(theme.fg)),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(col3_text), metrics_cols[2]);
+
+    // Calculate inner logs scroll height
+    let logs_rect = running_layout[3];
+    let inner_height = if logs_rect.height > 2 {
+        logs_rect.height - 2
+    } else {
+        1
+    } as usize;
+    let width = if logs_rect.width > 2 {
+        logs_rect.width - 2
+    } else {
+        1
+    } as usize;
+
+    // Compile logs styling and wrapping
+    let mut rendered_lines: Vec<Line> = Vec::new();
+    for line in &raw_logs {
+        if state.logs_wrap {
+            // Build a flat list of (char, style) to wrap at width boundaries
+            let mut chars: Vec<(char, Style)> = Vec::new();
+            for span in &line.spans {
+                for ch in span.text.chars() {
+                    chars.push((ch, span.style));
+                }
+            }
+
+            if chars.is_empty() {
+                rendered_lines.push(Line::from(""));
+            } else {
+                for chunk in chars.chunks(width.max(1)) {
+                    let mut spans_out: Vec<Span> = Vec::new();
+                    let mut cur_text = String::new();
+                    let mut cur_style = chunk[0].1;
+
+                    for &(ch, st) in chunk {
+                        if st != cur_style {
+                            if !cur_text.is_empty() {
+                                spans_out
+                                    .push(Span::styled(std::mem::take(&mut cur_text), cur_style));
+                            }
+                            cur_style = st;
+                        }
+                        cur_text.push(ch);
+                    }
+                    if !cur_text.is_empty() {
+                        spans_out.push(Span::styled(cur_text, cur_style));
+                    }
+                    rendered_lines.push(Line::from(spans_out));
+                }
+            }
+        } else {
+            let spans_out: Vec<Span> = line
+                .spans
+                .iter()
+                .map(|s| Span::styled(s.text.clone(), s.style))
+                .collect();
+            rendered_lines.push(Line::from(spans_out));
+        }
+    }
+
+    // Auto-scroll logic clamp
+    if state.auto_scroll && !state.logs_paused && rendered_lines.len() > inner_height {
+        state.log_scroll_offset = rendered_lines.len() - inner_height;
+    }
+
+    // Clamping scroll offsets
+    let max_scroll_y = if rendered_lines.len() > inner_height {
+        rendered_lines.len() - inner_height
+    } else {
+        0
+    };
+    if state.log_scroll_offset >= max_scroll_y {
+        state.log_scroll_offset = max_scroll_y;
+        if !state.auto_scroll {
+            state.auto_scroll = true;
+        }
+    }
+
+    let text = Text {
+        lines: rendered_lines,
+        ..Default::default()
+    };
+
+    let paragraph = Paragraph::new(text)
+        .block(logs_block)
+        .scroll((state.log_scroll_offset as u16, state.log_scroll_x as u16));
+
+    f.render_widget(paragraph, running_layout[3]);
 }

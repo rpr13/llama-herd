@@ -7,6 +7,41 @@ pub fn kill_existing_servers() {
     // LlamaHerd now manages child processes isolated by PID.
 }
 
+pub fn get_server_version(executable_path: &Path) -> String {
+    use std::process::Command;
+    if let Ok(output) = Command::new(executable_path).arg("--version").output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined = format!("{}\n{}", stdout, stderr);
+
+        for line in combined.lines() {
+            let line = line.trim();
+            if !line.is_empty() {
+                if let Some(stripped) = line.strip_prefix("version: ") {
+                    return stripped
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(stripped)
+                        .to_string();
+                } else if let Some(stripped) = line.strip_prefix("llama version ") {
+                    return stripped
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(stripped)
+                        .to_string();
+                }
+            }
+        }
+
+        // Fallback: take the first 20 chars of the first non-empty line
+        if let Some(first_line) = combined.lines().find(|l| !l.trim().is_empty()) {
+            let truncated: String = first_line.trim().chars().take(20).collect();
+            return truncated;
+        }
+    }
+    "Unknown".to_string()
+}
+
 pub fn build_launch_parameters(
     executable_path: &Path,
     model_path: &Path,

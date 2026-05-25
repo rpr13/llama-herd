@@ -35,10 +35,10 @@ n-gpu-layers = 32
     let state = AppState::new(
         presets,
         models_dir,
-        dir.path().to_path_buf(),
         preset_path,
         global_config,
         server_exe,
+        llama_herd::tui::theme::Theme::default(),
     );
 
     assert_eq!(state.ctx, 8192);
@@ -73,10 +73,10 @@ no-ui = true
     let state = AppState::new(
         presets,
         models_dir,
-        dir.path().to_path_buf(),
         preset_path,
         global_config,
         server_exe,
+        llama_herd::tui::theme::Theme::default(),
     );
 
     assert!(!state.ui);
@@ -112,10 +112,10 @@ mmproj = mmproj-model.gguf
     let state = AppState::new(
         presets,
         models_dir,
-        dir.path().to_path_buf(),
         preset_path,
         global_config,
         server_exe,
+        llama_herd::tui::theme::Theme::default(),
     );
 
     // mmproj_list should contain [None, Some(mmproj_path)]
@@ -171,10 +171,10 @@ gpu-layers-draft = 10
     let state = AppState::new(
         presets,
         models_dir,
-        dir.path().to_path_buf(),
         preset_path,
         global_config,
         server_exe,
+        llama_herd::tui::theme::Theme::default(),
     );
 
     assert_eq!(state.draft_list.len(), 2);
@@ -230,10 +230,10 @@ model = Llama-3-8B.gguf
     let state = AppState::new(
         presets,
         models_dir,
-        dir.path().to_path_buf(),
         preset_path,
         global_config,
         server_exe,
+        llama_herd::tui::theme::Theme::default(),
     );
 
     // Heuristic should have selected the draft model
@@ -273,10 +273,10 @@ fn test_app_state_get_user_settings() {
     let mut state = AppState::new(
         presets,
         models_dir.clone(),
-        dir.path().to_path_buf(),
         preset_path,
         HashMap::new(),
         PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
     );
 
     // Mutate state to simulate user interactions

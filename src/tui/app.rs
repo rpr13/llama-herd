@@ -5,25 +5,31 @@ use std::path::{Path, PathBuf};
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum AppScreen {
-    Select,
-    Running,
+    Dashboard,
+    Settings,
+    Logs,
     EditingCtx,
     EditingNgl,
     EditingDraftNgl,
     EditingPort,
+    PickingServerPath,
+    PickingModelsDir,
 }
 
 pub struct AppState {
     pub presets: Vec<(String, PathBuf)>,
     pub models_dir: PathBuf,
-    pub base_dir: PathBuf,
     pub preset_path: PathBuf,
     pub global_config: HashMap<String, serde_json::Value>,
     pub server_exe: PathBuf,
+    pub server_version: String,
 
     // UI state
     pub screen: AppScreen,
+    pub active_tab: usize,
     pub preset_index: usize,
+    pub settings_index: usize,
+    pub picker: Option<crate::tui::picker::FilePicker>,
 
     // Config items for selected preset
     pub ctx: usize,
@@ -51,16 +57,17 @@ pub struct AppState {
     pub last_launch_args: Vec<String>,
     pub is_router_mode: bool,
     pub port: String,
+    pub theme: crate::tui::theme::Theme,
 }
 
 impl AppState {
     pub fn new(
         presets: Vec<(String, PathBuf)>,
         models_dir: PathBuf,
-        base_dir: PathBuf,
         preset_path: PathBuf,
         global_config: HashMap<String, serde_json::Value>,
         server_exe: PathBuf,
+        theme: crate::tui::theme::Theme,
     ) -> Self {
         let port = global_config
             .get("port")
@@ -73,15 +80,20 @@ impl AppState {
             })
             .unwrap_or_else(|| "auto".to_string());
 
+        let server_version = crate::launcher::get_server_version(&server_exe);
+
         let mut state = AppState {
             presets,
             models_dir,
-            base_dir,
             preset_path,
             global_config,
             server_exe,
-            screen: AppScreen::Select,
+            server_version,
+            screen: AppScreen::Dashboard,
+            active_tab: 0,
             preset_index: 0,
+            settings_index: 0,
+            picker: None,
             ctx: 131072,
             ngl: "auto".to_string(),
             ui: true,
@@ -101,6 +113,7 @@ impl AppState {
             last_launch_args: Vec::new(),
             is_router_mode: false,
             port,
+            theme,
         };
 
         state.load_current_preset_settings();

@@ -28,6 +28,7 @@ graph TD
 4. **Configuration Safety Layer ([src/config.rs](file:///home/rpr/dev/llama-herd/src/config.rs))**: Implements strict TOML rule enforcement. It prevents common user-defined key errors (e.g., keys containing underscores or starting with dashes are skipped with warning logs), parses context size keywords (such as `"8k"` to `8192`), and parses local presets.
 5. **Interactive UI Engine ([src/tui/mod.rs](file:///home/rpr/dev/llama-herd/src/tui/mod.rs), [src/tui/app.rs](file:///home/rpr/dev/llama-herd/src/tui/app.rs), [src/tui/ui.rs](file:///home/rpr/dev/llama-herd/src/tui/ui.rs))**: An event-driven interface written on top of `ratatui` and `crossterm` handling keyboard events, overlay screens, parameter overrides, and rendering state transitions.
 6. **Concurrent Log Manager ([src/tui/logs.rs](file:///home/rpr/dev/llama-herd/src/tui/logs.rs))**: Asynchronously consumes stdout and stderr streams of the spawned `llama-server` process. It feeds lines through a regex-based SGR (Select Graphic Rendition) parser to convert raw ANSI coloring escape codes to Ratatui style attributes, keeping background buffers paused or active on demand.
+7. **Interactive Setup Wizard ([src/setup.rs](file:///home/rpr/dev/llama-herd/src/setup.rs))**: An interactive TUI-based initialization flow that prompts users for missing environment paths (like the `llama-server` executable or models directory) and saves them to the global configuration file.
 
 ## Directory Structure
 
@@ -46,6 +47,7 @@ llama-herd/
     ├── config.rs         # Safe config parser & rules validator
     ├── discovery.rs      # Heuristics & model auto-pairing
     ├── launcher.rs       # Subprocess orchestrator
+    ├── setup.rs          # Interactive setup wizard
     └── tui/              # Terminal User Interface modules
         ├── mod.rs        # TUI entry point & event loop
         ├── app.rs        # Application state machine

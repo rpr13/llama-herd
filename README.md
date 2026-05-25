@@ -36,6 +36,7 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 - 🔒 **Configuration Validation**: Enforces TOML constraints, filtering out unsafe flags and normalizing CLI parameter bindings safely.
 - 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing loaded status, resource allocations, and real-time logs.
 - 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with scroll, pause, and export controls.
+- 🎨 **Customizable TUI Theme System**: Features a hybrid functional palette and procedural UI behavior system for a personalized dashboard experience.
 - 🔀 **Dynamic Preset Routing**: Coordinates on-demand model loading and routing configurations (governed by generated `models-preset.ini` files).
 
 ---
@@ -45,7 +46,7 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 ### Prerequisites
 
 1. **Rust Toolchain**: Install stable Rust using [rustup](https://rustup.rs/) (v1.70+ recommended).
-2. **llama-server**: Install `llama.cpp` and build the `llama-server` binary. Set the environment variable `LLAMA_PATH` to the directory containing this binary.
+2. **llama-server**: Install `llama.cpp` and build the `llama-server` binary.
 
 ### Installation
 
@@ -61,13 +62,10 @@ cargo install --path .
 ### Execution Commands
 
 ```bash
-# Start in the default interactive TUI dashboard mode
+# Start LlamaHerd. An interactive wizard will guide you on first launch.
 llama-herd
 
-# Force classic interactive CLI terminal menus
-llama-herd --cli
-
-# Generate models-preset.ini dynamically and exit immediately
+# Generate models-preset.ini dynamically inside your models directory and exit immediately
 llama-herd --ini
 ```
 
@@ -98,8 +96,9 @@ slot-prompt-similarity = 0.5   # long-arg: --slot-prompt-similarity 0.5
 
 For comprehensive details on how to design, configure, or optimize Llama-Herd, refer to:
 
-- 🏛️ **[Architecture & System Design](file:///home/rpr/dev/llama-herd/docs/architecture.md)**: Visual flowchart, directory structures, and module architecture breakdown.
-- ⚙️ **[Configuration & Performance Optimization](file:///home/rpr/dev/llama-herd/docs/configuration.md)**: Global settings, model config keys list, API routing endpoints, and tuning tips.
+- 🏛️ **[Architecture & System Design](docs/architecture.md)**: Visual flowchart, directory structures, and module architecture breakdown.
+- ⚙️ **[Configuration & Performance Optimization](docs/configuration.md)**: Global settings, model config keys list, API routing endpoints, and tuning tips.
+- 🎨 **[TUI Theming & Customization](docs/theming.md)**: Design principles, functional palette schema, and procedural UI behaviors.
 
 ---
 

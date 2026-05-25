@@ -392,37 +392,88 @@ pub fn get_home_dir() -> Option<PathBuf> {
         .ok()
 }
 
-pub fn resolve_base_dir() -> Option<PathBuf> {
-    if let Ok(env_val) = std::env::var("LLAMA_PATH") {
-        let p = PathBuf::from(env_val);
+pub fn get_llama_herd_dir() -> PathBuf {
+    if cfg!(target_os = "windows") {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return PathBuf::from(appdata).join("llama-herd");
+        }
+    } else if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".config").join("llama-herd");
+    }
+    PathBuf::from(".")
+}
+
+pub fn save_config(
+    path: &Path,
+    config: &HashMap<String, serde_json::Value>,
+) -> Result<(), std::io::Error> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let toml_string = toml::to_string(config)
+        .map_err(|e| std::io::Error::other(format!("TOML serialization error: {}", e)))?;
+
+    std::fs::write(path, toml_string)
+}
+
+pub fn resolve_server_executable(
+    global_config: &HashMap<String, serde_json::Value>,
+) -> Option<PathBuf> {
+    // 1. Check config
+    if let Some(s) = global_config
+        .get("llama-server")
+        .or_else(|| global_config.get("server-path"))
+        .and_then(|v| v.as_str())
+    {
+        let p = PathBuf::from(s);
         if p.exists() {
             return Some(p);
         }
     }
 
-    let mut fallbacks = vec![
-        PathBuf::from("d:/llama"),
-        PathBuf::from("c:/llama"),
-        PathBuf::from("C:/llama"),
-    ];
-    if let Some(home) = get_home_dir() {
-        fallbacks.push(home.join("llama"));
-    }
-
-    fallbacks.into_iter().find(|p| p.join("models").is_dir())
-}
-
-pub fn get_server_executable(base_dir: &Path) -> PathBuf {
+    // 2. Search PATH
     let bin_name = if cfg!(target_os = "windows") {
         "llama-server.exe"
     } else {
         "llama-server"
     };
-    base_dir.join(bin_name)
+
+    if let Ok(paths) = std::env::var("PATH") {
+        for path in std::env::split_paths(&paths) {
+            let full_path = path.join(bin_name);
+            if full_path.is_file() {
+                return Some(full_path);
+            }
+        }
+    }
+
+    None
 }
 
-pub fn parse_args(args: &[String]) -> (bool, bool, bool) {
-    let mut use_cli = false;
+pub fn resolve_models_dir(global_config: &HashMap<String, serde_json::Value>) -> Option<PathBuf> {
+    // 1. Check config
+    if let Some(s) = global_config
+        .get("models-dir")
+        .or_else(|| global_config.get("models-path"))
+        .and_then(|v| v.as_str())
+    {
+        let p = PathBuf::from(s);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    // 2. Check current dir
+    let local_models = PathBuf::from("models");
+    if local_models.is_dir() {
+        return Some(local_models);
+    }
+
+    None
+}
+
+pub fn parse_args(args: &[String]) -> (bool, bool) {
     let mut show_help = false;
     let mut generate_ini = false;
 
@@ -430,13 +481,10 @@ pub fn parse_args(args: &[String]) -> (bool, bool, bool) {
         if arg == "-h" || arg == "--help" {
             show_help = true;
         }
-        if arg == "-c" || arg == "--cli" {
-            use_cli = true;
-        }
         if arg == "--ini" {
             generate_ini = true;
         }
     }
 
-    (use_cli, show_help, generate_ini)
+    (show_help, generate_ini)
 }

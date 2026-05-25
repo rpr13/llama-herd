@@ -117,7 +117,7 @@ pub fn discover_presets_from_ini(preset_path: &Path) -> Vec<(String, PathBuf)> {
 
 pub fn generate_presets_ini(
     models_dir: &Path,
-    base_dir: &Path,
+    output_path: &Path,
     global_config: &HashMap<String, serde_json::Value>,
 ) -> PathBuf {
     let mut all_ggufs = Vec::new();
@@ -529,11 +529,9 @@ pub fn generate_presets_ini(
         lines.extend(default_preset_lines);
     }
 
-    let output_path = base_dir.join("models-preset.ini");
-    if let Err(e) = std::fs::write(&output_path, lines.join("\n")) {
-        println!("[!] Failed to write models-preset.ini: {}", e);
-    } else {
-        println!("[*] Dynamically generated router presets: models-preset.ini");
+    if let Err(_e) = std::fs::write(output_path, lines.join("\n")) {
+        // Silently fail or log to a file if a logger is added later.
+        // Cannot use println! here as it corrupts the TUI.
     }
-    output_path
+    output_path.to_path_buf()
 }

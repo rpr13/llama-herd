@@ -204,7 +204,11 @@ fn test_generate_presets_ini_generation() -> TestResult {
     let mut global_config = HashMap::new();
     global_config.insert("kv_quant".to_string(), serde_json::json!("q4_k"));
 
-    let output_ini = generate_presets_ini(&models_dir, dir.path(), &global_config);
+    let output_ini = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    );
     assert!(output_ini.exists());
 
     let ini_content = fs::read_to_string(&output_ini)?;
@@ -264,7 +268,11 @@ fn test_generate_presets_hyphenated_keys() {
     .unwrap();
 
     let global_config = std::collections::HashMap::new();
-    let output_path = generate_presets_ini(&models_dir, dir.path(), &global_config);
+    let output_path = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    );
 
     assert!(output_path.exists());
     let content = std::fs::read_to_string(output_path).unwrap();
@@ -293,7 +301,11 @@ fn test_generate_presets_draft_hyphenated_keys() {
     .unwrap();
 
     let global_config = std::collections::HashMap::new();
-    let output_path = generate_presets_ini(&models_dir, dir.path(), &global_config);
+    let output_path = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    );
 
     let content = std::fs::read_to_string(output_path).unwrap();
     assert!(content.contains("model-draft ="));
