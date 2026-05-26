@@ -42,14 +42,38 @@ impl FilePicker {
         self.entries.clear();
         self.selected_index = 0;
 
-        if self.mode == PickerMode::Directory {
+        #[cfg(target_os = "windows")]
+        let is_empty = self.current_path.to_string_lossy().is_empty();
+        #[cfg(not(target_os = "windows"))]
+        let is_empty = false;
+
+        if self.mode == PickerMode::Directory && !is_empty {
             self.entries.push(PickerEntry {
                 name: ".[Select current directory]".to_string(),
                 is_dir: true,
             });
         }
 
-        if let Some(_parent) = self.current_path.parent() {
+        #[cfg(target_os = "windows")]
+        {
+            if is_empty {
+                for c in b'A'..=b'Z' {
+                    let drive_str = format!("{}:\\", c as char);
+                    if std::path::Path::new(&drive_str).exists() {
+                        self.entries.push(PickerEntry {
+                            name: drive_str,
+                            is_dir: true,
+                        });
+                    }
+                }
+                return;
+            }
+        }
+
+        let has_parent =
+            self.current_path.parent().is_some() || (cfg!(target_os = "windows") && !is_empty);
+
+        if has_parent {
             self.entries.push(PickerEntry {
                 name: "..".to_string(),
                 is_dir: true,
@@ -75,6 +99,11 @@ impl FilePicker {
     }
 
     pub fn handle_event(&mut self, key: KeyEvent) -> Option<PathBuf> {
+        #[cfg(target_os = "windows")]
+        let is_empty = self.current_path.to_string_lossy().is_empty();
+        #[cfg(not(target_os = "windows"))]
+        let is_empty = false;
+
         match key.code {
             KeyCode::Up => {
                 if self.selected_index > 0 {
@@ -91,9 +120,23 @@ impl FilePicker {
                 }
             }
             KeyCode::Backspace => {
-                if let Some(parent) = self.current_path.parent() {
-                    self.current_path = parent.to_path_buf();
-                    self.refresh();
+                #[cfg(target_os = "windows")]
+                {
+                    if !is_empty {
+                        if let Some(parent) = self.current_path.parent() {
+                            self.current_path = parent.to_path_buf();
+                        } else {
+                            self.current_path = PathBuf::from("");
+                        }
+                        self.refresh();
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    if let Some(parent) = self.current_path.parent() {
+                        self.current_path = parent.to_path_buf();
+                        self.refresh();
+                    }
                 }
             }
             KeyCode::Enter => {
@@ -103,14 +146,40 @@ impl FilePicker {
                 let selected = &self.entries[self.selected_index];
 
                 if selected.name == ".[Select current directory]" {
+                    if is_empty {
+                        return None;
+                    }
                     return Some(self.current_path.clone());
                 } else if selected.name == ".." {
-                    if let Some(parent) = self.current_path.parent() {
-                        self.current_path = parent.to_path_buf();
+                    #[cfg(target_os = "windows")]
+                    {
+                        if let Some(parent) = self.current_path.parent() {
+                            self.current_path = parent.to_path_buf();
+                        } else {
+                            self.current_path = PathBuf::from("");
+                        }
                         self.refresh();
                     }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        if let Some(parent) = self.current_path.parent() {
+                            self.current_path = parent.to_path_buf();
+                            self.refresh();
+                        }
+                    }
                 } else if selected.is_dir {
-                    self.current_path.push(&selected.name);
+                    #[cfg(target_os = "windows")]
+                    {
+                        if is_empty {
+                            self.current_path = PathBuf::from(&selected.name);
+                        } else {
+                            self.current_path.push(&selected.name);
+                        }
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        self.current_path.push(&selected.name);
+                    }
                     self.refresh();
                 } else if self.mode == PickerMode::File {
                     let mut path = self.current_path.clone();
@@ -153,12 +222,13 @@ impl FilePicker {
         } else {
             " Path: "
         };
-        let breadcrumbs = Paragraph::new(format!(
-            "{}{}",
-            breadcrumb_prefix,
-            self.current_path.display()
-        ))
-        .style(Style::default().fg(theme.primary));
+        let display_path = if self.current_path.as_os_str().is_empty() {
+            "Drives List".to_string()
+        } else {
+            self.current_path.to_string_lossy().into_owned()
+        };
+        let breadcrumbs = Paragraph::new(format!("{}{}", breadcrumb_prefix, display_path))
+            .style(Style::default().fg(theme.primary));
         f.render_widget(breadcrumbs, chunks[0]);
 
         let items: Vec<ListItem> = self
