@@ -411,7 +411,7 @@ pub fn resolve_server_executable(
         .and_then(|v| v.as_str())
     {
         let p = PathBuf::from(s);
-        if p.exists() {
+        if p.is_file() {
             return Some(p);
         }
     }
@@ -445,7 +445,7 @@ pub fn resolve_models_dir(global_config: &HashMap<String, serde_json::Value>) ->
         .and_then(|v| v.as_str())
     {
         let p = PathBuf::from(s);
-        if p.exists() {
+        if p.is_dir() {
             return Some(p);
         }
     }
