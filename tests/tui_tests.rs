@@ -1,6 +1,7 @@
 pub mod tui {
     pub mod app;
     pub mod logs;
+    pub mod picker;
     pub mod ui;
 }
 

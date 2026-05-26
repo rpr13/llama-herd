@@ -206,12 +206,28 @@ fn parse_border(s: &str) -> Option<BorderType> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_parse_color_named() {
         assert_eq!(parse_color("red"), Some(Color::Red));
         assert_eq!(parse_color("dark-gray"), Some(Color::DarkGray));
         assert_eq!(parse_color("Light_Green"), Some(Color::LightGreen));
+        assert_eq!(parse_color("black"), Some(Color::Black));
+        assert_eq!(parse_color("green"), Some(Color::Green));
+        assert_eq!(parse_color("yellow"), Some(Color::Yellow));
+        assert_eq!(parse_color("blue"), Some(Color::Blue));
+        assert_eq!(parse_color("magenta"), Some(Color::Magenta));
+        assert_eq!(parse_color("cyan"), Some(Color::Cyan));
+        assert_eq!(parse_color("gray"), Some(Color::Gray));
+        assert_eq!(parse_color("white"), Some(Color::White));
+        assert_eq!(parse_color("light-red"), Some(Color::LightRed));
+        assert_eq!(parse_color("light-yellow"), Some(Color::LightYellow));
+        assert_eq!(parse_color("light-blue"), Some(Color::LightBlue));
+        assert_eq!(parse_color("light-magenta"), Some(Color::LightMagenta));
+        assert_eq!(parse_color("light-cyan"), Some(Color::LightCyan));
+        assert_eq!(parse_color("reset"), Some(Color::Reset));
     }
 
     #[test]
@@ -237,6 +253,16 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_border_options() {
+        assert_eq!(parse_border("plain"), Some(BorderType::Plain));
+        assert_eq!(parse_border("rounded"), Some(BorderType::Rounded));
+        assert_eq!(parse_border("thick"), Some(BorderType::Thick));
+        assert_eq!(parse_border("double"), Some(BorderType::Double));
+        assert_eq!(parse_border("none"), Some(BorderType::Plain));
+        assert_eq!(parse_border("unknown"), None);
+    }
+
+    #[test]
     fn test_theme_config_kebab_case() {
         let toml_str = r#"
             [ui]
@@ -247,5 +273,48 @@ mod tests {
         let theme = Theme::from_config(config);
         assert!(!theme.show_emojis);
         assert_eq!(theme.border_type, BorderType::Rounded);
+    }
+
+    #[test]
+    fn test_theme_load_valid_and_invalid() {
+        let dir = tempdir().unwrap();
+        let valid_path = dir.path().join("theme_valid.toml");
+        let malformed_path = dir.path().join("theme_malformed.toml");
+        let missing_path = dir.path().join("missing.toml");
+
+        fs::write(
+            &valid_path,
+            r#"
+            [palette]
+            primary = "cyan"
+            secondary = "gray"
+            accent = "yellow"
+            success = "green"
+            error = "red"
+            selection = "magenta"
+            bg = "black"
+            fg = "white"
+            header-bg = "indexed(234)"
+            footer-bg = "indexed(234)"
+
+            [ui]
+            show-emojis = false
+            border-type = "double"
+        "#,
+        )
+        .unwrap();
+
+        fs::write(&malformed_path, "invalid toml syntax").unwrap();
+
+        let theme_valid = Theme::load(&valid_path);
+        assert_eq!(theme_valid.primary, Color::Cyan);
+        assert!(!theme_valid.show_emojis);
+        assert_eq!(theme_valid.border_type, BorderType::Double);
+
+        let theme_malformed = Theme::load(&malformed_path);
+        assert_eq!(theme_malformed, Theme::default());
+
+        let theme_missing = Theme::load(&missing_path);
+        assert_eq!(theme_missing, Theme::default());
     }
 }
