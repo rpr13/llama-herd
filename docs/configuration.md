@@ -15,17 +15,21 @@ This guide details all available configuration variables, parameters, API endpoi
 
 Placed directly inside the `LLAMA_PATH` directory to define global settings shared across all presets.
 
-| Parameter     | Default          | Type    | Description                                                                |
-| :------------ | :--------------- | :------ | :------------------------------------------------------------------------- |
-| `host`        | `"0.0.0.0"`      | String  | Host binding IP for `llama-server`.                                        |
-| `port`        | `"auto"`         | String/Int | Listen port for incoming inference requests. If set to `"auto"` (or if the configured port is busy), llama-herd dynamically finds the next available TCP port starting at 8080. |
-| `flash-attn`  | `"auto"`         | String  | Enables flash attention processing (`"auto"`, `"1"`, or `"0"`).            |
-| `kv-quant`    | `"q8_0"`         | String  | Configures KV cache quantization type (`"q8_0"`, `"f16"`, `"q4_0"`, etc.). |
-| `models-max`  | `1`              | Integer | Max loaded models concurrently hosted in Router Mode.                      |
-| `batch-size`  | `256`            | Integer | Processing batch size (`-b`).                                              |
-| `ubatch-size` | `256`            | Integer | Processing micro-batch size (`-ub`).                                       |
-| `threads`     | _Physical Cores_ | Integer | Thread count allocation (`-t`). Defaults to physical hardware threads.     |
-| `ui`          | `true`           | Boolean | Enable/Disable standard Web UI host wrapper.                               |
+| Parameter      | Default          | Type    | Description                                                                |
+| :------------- | :--------------- | :------ | :------------------------------------------------------------------------- |
+| `host`         | `"127.0.0.1"`     | String  | Host binding IP for `llama-server`.                                        |
+| `port`         | `"8080"`         | String/Int | Listen port for incoming inference requests. Managed globally in the Settings tab; llama-herd dynamically finds the next available TCP port starting at 8080 if set to `"auto"` or occupied. |
+| `flash-attn`   | `"auto"`         | String  | Enables flash attention processing (`"auto"`, `"1"`, or `"0"`).            |
+| `cache-type-k` | `"f16"`          | String  | Quantization format for KV cache keys (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).  |
+| `cache-type-v` | `"f16"`          | String  | Quantization format for KV cache values (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).|
+| `kv-unified`   | `true`           | Boolean | Enables unified KV cache for keys and values.                              |
+| `models-max`   | `1`              | Integer | Max loaded models concurrently hosted in Router Mode.                      |
+| `batch-size`   | `2048`           | Integer | Processing batch size (`-b`).                                              |
+| `ubatch-size`  | `512`            | Integer | Processing micro-batch size (`-ub`).                                       |
+| `threads`      | `"-1"`           | String/Int | Thread count allocation (`-t`). Defaults to `-1` (auto-detect threads).   |
+| `api-key`      | `"disabled"`     | String  | API key for server authorization. Use `"disabled"` to turn off.            |
+| `metrics`      | `false`          | Boolean | Enable the `/metrics` Prometheus endpoint on `llama-server`.                |
+| `ui`           | `true`           | Boolean | Enable/Disable standard Web UI host wrapper. Managed globally in the Settings tab. |
 
 ---
 
@@ -68,7 +72,11 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B-Instruct.toml` for `Qwen2.5-
 | `top-p`             | `0.95`   | Float      | Top-p sampling probability limit.                                                                  |
 | `top-k`             | `40`     | Integer    | Top-k sampling candidate count.                                                                    |
 | `reasoning`         | `"auto"` | String     | Controls formatting for reasoning outputs (`"on"` maps to deepseek formats, `"off"`, or `"auto"`). |
-| `kv-quant`          | `"q8_0"` | String     | KV quantization override (`"q8_0"`, `"q4_0"`, etc.).                                               |
+| `cache-type-k`      | `"f16"`  | String     | Quantization format for KV cache keys (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                        |
+| `cache-type-v`      | `"f16"`  | String     | Quantization format for KV cache values (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                      |
+| `kv-unified`        | `true`   | Boolean    | Unified KV cache override.                                                                         |
+| `api-key`           | `"disabled"`| String  | API key server authorization.                                                                      |
+| `metrics`           | `false`  | Boolean    | Metrics Prometheus endpoint enablement.                                                            |
 | `spec-type`         | `none`   | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                     |
 | `spec-draft-n-max`  | `4`      | Integer    | Max speculative draft token predictions per slots.                                                 |
 | `spec-draft-p-min`  | `0.0`    | Float      | Minimum probability threshold for speculative tokens.                                              |
@@ -199,7 +207,7 @@ GPU offloading is controlled via the `ngl` option under `[llama-server-long]`. B
 
 ### KV Cache Quantization
 
-By default, standard FP16 KV caches utilize substantial memory as context grows. Enforcing `kv-quant = "q8_0"` (or `"q4_0"`) inside the `[llama-server-long]` configuration table optimizes memory consumption:
+By default, standard FP16 KV caches utilize substantial memory as context grows. Enforcing `cache-type-k = "q8_0"` and `cache-type-v = "q8_0"` (or `"q4_0"`) inside the global config or the `[llama-server-long]` configuration table optimizes memory consumption:
 
 - **`q8_0`**: 50% memory reduction in KV Cache allocation with minimal perplexity degradation.
 - **`q4_0`**: ~75% memory reduction, enabling context lengths of up to `128k` on smaller consumer GPUs.

@@ -1,7 +1,7 @@
 use llama_herd::config::{
-    calculate_ngl, format_arg_name, format_ini_key, get_optimal_threads, is_restricted_key,
-    load_settings_from_ini, load_toml_safe, load_toml_silent, parse_ctx, parse_ctx_str,
-    parse_settings_ini,
+    calculate_ngl, format_arg_name, format_ini_key, get_global_config_string, get_optimal_threads,
+    is_restricted_key, load_settings_from_ini, load_toml_safe, load_toml_silent, parse_ctx,
+    parse_ctx_str, parse_settings_ini, remove_global_config_value, update_global_config_value,
 };
 use serde_json::json;
 use std::fs::File;
@@ -330,4 +330,145 @@ fn test_format_ini_key_internal() {
         format_ini_key("slot-prompt-similarity"),
         Some("slot-prompt-similarity".to_string())
     );
+}
+
+#[test]
+fn test_get_global_config_string() -> TestResult {
+    use std::collections::HashMap;
+
+    let mut config = HashMap::new();
+    config.insert("host".to_string(), serde_json::json!("127.0.0.1"));
+    config.insert("port".to_string(), serde_json::json!(8080));
+    config.insert("ui".to_string(), serde_json::json!(true));
+
+    // Test direct root lookup
+    assert_eq!(
+        get_global_config_string(&config, "host", "0.0.0.0"),
+        "127.0.0.1"
+    );
+    assert_eq!(get_global_config_string(&config, "port", "auto"), "8080");
+    assert_eq!(get_global_config_string(&config, "ui", "false"), "true");
+
+    // Test fallback
+    assert_eq!(
+        get_global_config_string(&config, "missing-key", "fallback-val"),
+        "fallback-val"
+    );
+
+    // Test nesting llama-herd
+    let mut herd_table = serde_json::Map::new();
+    herd_table.insert("ui".to_string(), serde_json::json!(false));
+    config.insert(
+        "llama-herd".to_string(),
+        serde_json::Value::Object(herd_table),
+    );
+
+    // Nested llama-herd has priority over root
+    assert_eq!(get_global_config_string(&config, "ui", "true"), "false");
+
+    // Test nesting llama-server-long
+    let mut long_table = serde_json::Map::new();
+    long_table.insert("host".to_string(), serde_json::json!("192.168.1.1"));
+    config.insert(
+        "llama-server-long".to_string(),
+        serde_json::Value::Object(long_table),
+    );
+
+    // Nested llama-server-long has priority over llama-herd and root
+    assert_eq!(
+        get_global_config_string(&config, "host", "0.0.0.0"),
+        "192.168.1.1"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_update_global_config_value() -> TestResult {
+    use std::collections::HashMap;
+
+    let mut config = HashMap::new();
+
+    // 1. Initial insert (should go to root)
+    update_global_config_value(&mut config, "host", serde_json::json!("127.0.0.1"));
+    assert_eq!(config.get("host").unwrap().as_str().unwrap(), "127.0.0.1");
+
+    // 2. Insert with llama-herd present but key not in llama-herd (should still go to root)
+    let herd_table = serde_json::Map::new();
+    config.insert(
+        "llama-herd".to_string(),
+        serde_json::Value::Object(herd_table),
+    );
+    update_global_config_value(&mut config, "port", serde_json::json!(8080));
+    assert_eq!(config.get("port").unwrap().as_i64().unwrap(), 8080);
+
+    // 3. Update key that is already inside llama-herd
+    let mut herd_table = serde_json::Map::new();
+    herd_table.insert("ui".to_string(), serde_json::json!(true));
+    config.insert(
+        "llama-herd".to_string(),
+        serde_json::Value::Object(herd_table),
+    );
+
+    update_global_config_value(&mut config, "ui", serde_json::json!(false));
+    let updated_herd = config.get("llama-herd").unwrap().as_object().unwrap();
+    assert!(!updated_herd.get("ui").unwrap().as_bool().unwrap());
+    assert!(!config.contains_key("ui")); // should not be at root
+
+    // 4. Update key that is already inside llama-server-long
+    let mut long_table = serde_json::Map::new();
+    long_table.insert("host".to_string(), serde_json::json!("127.0.0.1"));
+    config.insert(
+        "llama-server-long".to_string(),
+        serde_json::Value::Object(long_table),
+    );
+
+    update_global_config_value(&mut config, "host", serde_json::json!("0.0.0.0"));
+    let updated_long = config
+        .get("llama-server-long")
+        .unwrap()
+        .as_object()
+        .unwrap();
+    assert_eq!(
+        updated_long.get("host").unwrap().as_str().unwrap(),
+        "0.0.0.0"
+    );
+    // root "host" is unchanged
+    assert_eq!(config.get("host").unwrap().as_str().unwrap(), "127.0.0.1");
+
+    Ok(())
+}
+
+#[test]
+fn test_remove_global_config_value() -> TestResult {
+    use std::collections::HashMap;
+
+    let mut config = HashMap::new();
+    config.insert("host".to_string(), serde_json::json!("127.0.0.1"));
+
+    // 1. Remove root value
+    remove_global_config_value(&mut config, "host");
+    assert!(!config.contains_key("host"));
+
+    // 2. Remove nested value, verifying table cleanup
+    let mut herd_table = serde_json::Map::new();
+    herd_table.insert("ui".to_string(), serde_json::json!(false));
+    herd_table.insert("models-max".to_string(), serde_json::json!(2));
+    config.insert(
+        "llama-herd".to_string(),
+        serde_json::Value::Object(herd_table),
+    );
+
+    // Remove one nested key (table still has models-max, so table should remain)
+    remove_global_config_value(&mut config, "ui");
+    assert!(config.contains_key("llama-herd"));
+    let updated_herd = config.get("llama-herd").unwrap().as_object().unwrap();
+    assert!(!updated_herd.contains_key("ui"));
+    assert_eq!(updated_herd.get("models-max").unwrap().as_i64().unwrap(), 2);
+
+    // Remove the last nested key (table is now empty, so table should be removed)
+    remove_global_config_value(&mut config, "models-max");
+    assert!(!config.contains_key("llama-herd"));
+
+    Ok(())
 }

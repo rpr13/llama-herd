@@ -20,15 +20,19 @@ fn show_help() {
         "  The 'llama-server' path and 'models-dir' can be configured there.\n",
         "  If missing, an interactive setup wizard will guide you on startup.\n\n",
         "Global Settings in config.toml:\n",
-        "  host = \"0.0.0.0\"        # Host IP to bind the server\n",
+        "  host = \"127.0.0.1\"      # Host IP to bind the server\n",
         "  port = 8080             # Port to listen on\n",
         "  flash_attn = \"auto\"     # Enable flash attention (\"auto\", \"1\", \"0\")\n",
-        "  kv_quant = \"q8_0\"       # KV cache quantization (\"q8_0\", \"f16\", etc.)\n",
+        "  cache_type_k = \"f16\"    # KV cache key quantization (\"f16\", \"q8_0\", etc.)\n",
+        "  cache_type_v = \"f16\"    # KV cache value quantization (\"f16\", \"q8_0\", etc.)\n",
+        "  kv_unified = true       # Enable unified KV cache (\"true\", \"false\")\n",
         "  models_max = 1          # Max active models loaded concurrently in Router Mode\n",
-        "  batch_size = 256        # Prompt processing batch size (-b)\n",
-        "  ubatch_size = 256       # Prompt processing micro-batch size (-ub)\n",
-        "  threads = 8             # Explicit CPU thread count override (-t)\n",
-        "  ui = true                # Global Web UI enablement toggle\n"
+        "  batch_size = 2048       # Prompt processing batch size (-b)\n",
+        "  ubatch_size = 512       # Prompt processing micro-batch size (-ub)\n",
+        "  threads = -1            # Explicit CPU thread count override (-t), -1 = auto\n",
+        "  api_key = \"disabled\"    # API key for authorization (\"disabled\" or key)\n",
+        "  metrics = false         # Enable Prometheus metrics endpoint (\"true\", \"false\")\n",
+        "  ui = true               # Global Web UI enablement toggle\n"
     ));
 
     std::process::exit(0);

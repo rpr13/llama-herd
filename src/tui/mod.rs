@@ -5,10 +5,7 @@ pub mod theme;
 pub mod ui;
 
 use crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
-        MouseButton, MouseEventKind,
-    },
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -23,7 +20,6 @@ pub use logs::ActiveServer;
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
     Input(KeyEvent),
-    Mouse(crossterm::event::MouseEvent),
     Tick,
     LogReceived,
 }
@@ -41,9 +37,12 @@ pub fn handle_key_event(
         AppScreen::EditingCtx
             | AppScreen::EditingNgl
             | AppScreen::EditingDraftNgl
-            | AppScreen::EditingPort
             | AppScreen::PickingServerPath
             | AppScreen::PickingModelsDir
+            | AppScreen::EditingGlobalSetting
+            | AppScreen::SelectingGlobalSettingOption
+            | AppScreen::SelectingMMProj
+            | AppScreen::SelectingDraftModel
     ) {
         match key.code {
             KeyCode::Tab => {
@@ -106,23 +105,13 @@ pub fn handle_key_event(
                 state.screen = AppScreen::EditingDraftNgl;
                 state.input_buffer = state.draft_ngl.clone();
             }
-            KeyCode::Char('u') => {
-                state.ui = !state.ui;
+            KeyCode::Char('v') => {
+                state.mmproj_index_backup = state.mmproj_index;
+                state.screen = AppScreen::SelectingMMProj;
             }
-            KeyCode::Char('p') => {
-                state.screen = AppScreen::EditingPort;
-                state.input_buffer = state.port.clone();
-            }
-            KeyCode::Char('v') if !state.mmproj_list.is_empty() => {
-                state.mmproj_index = (state.mmproj_index + 1) % state.mmproj_list.len();
-            }
-            KeyCode::Char('d') if !state.draft_list.is_empty() => {
-                state.draft_index = (state.draft_index + 1) % state.draft_list.len();
-                if state.draft_list[state.draft_index].is_none() {
-                    state.draft_ngl = "".to_string();
-                } else if state.draft_ngl.is_empty() {
-                    state.draft_ngl = "auto".to_string();
-                }
+            KeyCode::Char('d') => {
+                state.draft_index_backup = state.draft_index;
+                state.screen = AppScreen::SelectingDraftModel;
             }
             KeyCode::Up if !state.presets.is_empty() => {
                 if state.preset_index == 0 {
@@ -144,7 +133,18 @@ pub fn handle_key_event(
                     &state.preset_path,
                     &state.global_config,
                 );
-                let resolved_port = crate::launcher::resolve_port(&state.port);
+                let port_str = state
+                    .global_config
+                    .get("port")
+                    .and_then(|v| {
+                        if let Some(i) = v.as_i64() {
+                            Some(i.to_string())
+                        } else {
+                            v.as_str().map(|s| s.to_string())
+                        }
+                    })
+                    .unwrap_or_else(|| "auto".to_string());
+                let resolved_port = crate::launcher::resolve_port(&port_str);
                 let launch_args = crate::launcher::build_router_launch_parameters(
                     &state.server_exe,
                     &preset_ini_path,
@@ -184,7 +184,18 @@ pub fn handle_key_event(
                 let (_preset_name, model_path) = &state.presets[state.preset_index];
                 let assets = crate::discovery::discover_assets(model_path, &state.models_dir);
                 let settings = state.get_user_settings();
-                let resolved_port = crate::launcher::resolve_port(&state.port);
+                let port_str = state
+                    .global_config
+                    .get("port")
+                    .and_then(|v| {
+                        if let Some(i) = v.as_i64() {
+                            Some(i.to_string())
+                        } else {
+                            v.as_str().map(|s| s.to_string())
+                        }
+                    })
+                    .unwrap_or_else(|| "auto".to_string());
+                let resolved_port = crate::launcher::resolve_port(&port_str);
                 let launch_args = crate::launcher::build_launch_parameters(
                     &state.server_exe,
                     model_path,
@@ -225,41 +236,173 @@ pub fn handle_key_event(
         AppScreen::Settings => match key.code {
             KeyCode::Up => {
                 if state.settings_index == 0 {
-                    state.settings_index = 1;
+                    state.settings_index = crate::tui::ui::SETTINGS.len() - 1;
                 } else {
                     state.settings_index -= 1;
                 }
             }
             KeyCode::Down => {
-                state.settings_index = (state.settings_index + 1) % 2;
+                state.settings_index = (state.settings_index + 1) % crate::tui::ui::SETTINGS.len();
             }
             KeyCode::Enter => {
-                if state.settings_index == 0 {
-                    state.screen = AppScreen::PickingServerPath;
-                    let initial_path = if state.server_exe.as_os_str().is_empty() {
-                        crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
-                    } else {
-                        state
-                            .server_exe
-                            .parent()
-                            .map(|p| p.to_path_buf())
-                            .unwrap_or_else(|| PathBuf::from("."))
-                    };
-                    state.picker = Some(crate::tui::picker::FilePicker::new(
-                        initial_path,
-                        crate::tui::picker::PickerMode::File,
-                    ));
-                } else {
-                    state.screen = AppScreen::PickingModelsDir;
-                    let initial_path = if state.models_dir.as_os_str().is_empty() {
-                        crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
-                    } else {
-                        state.models_dir.clone()
-                    };
-                    state.picker = Some(crate::tui::picker::FilePicker::new(
-                        initial_path,
-                        crate::tui::picker::PickerMode::Directory,
-                    ));
+                match state.settings_index {
+                    0 => {
+                        state.screen = AppScreen::PickingServerPath;
+                        let initial_path = if state.server_exe.as_os_str().is_empty() {
+                            crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
+                        } else {
+                            state
+                                .server_exe
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or_else(|| PathBuf::from("."))
+                        };
+                        state.picker = Some(crate::tui::picker::FilePicker::new(
+                            initial_path,
+                            crate::tui::picker::PickerMode::File,
+                        ));
+                    }
+                    1 => {
+                        state.screen = AppScreen::PickingModelsDir;
+                        let initial_path = if state.models_dir.as_os_str().is_empty() {
+                            crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
+                        } else {
+                            state.models_dir.clone()
+                        };
+                        state.picker = Some(crate::tui::picker::FilePicker::new(
+                            initial_path,
+                            crate::tui::picker::PickerMode::Directory,
+                        ));
+                    }
+                    5..=7 => {
+                        // Option selectors for flash-attn, cache-type-k, cache-type-v
+                        let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                        let option_list = match state.settings_index {
+                            5 => vec![
+                                "auto".to_string(),
+                                "1".to_string(),
+                                "0".to_string(),
+                                "(Custom / Manual...)".to_string(),
+                            ],
+                            _ => vec![
+                                "f16".to_string(),
+                                "q8_0".to_string(),
+                                "q4_0".to_string(),
+                                "q4_1".to_string(),
+                                "iq4_nl".to_string(),
+                                "q5_0".to_string(),
+                                "q5_1".to_string(),
+                                "f32".to_string(),
+                                "bf16".to_string(),
+                                "(Custom / Manual...)".to_string(),
+                            ],
+                        };
+                        let val_str = crate::config::get_global_config_string(
+                            &state.global_config,
+                            selected_item.key,
+                            selected_item.default_val,
+                        );
+                        let mut selected_idx = 0;
+                        for (idx, opt) in option_list.iter().enumerate() {
+                            if opt == &val_str {
+                                selected_idx = idx;
+                                break;
+                            }
+                        }
+                        if selected_idx == 0 && val_str != option_list[0] {
+                            selected_idx = option_list.len() - 1;
+                        }
+                        state.option_selector_index = selected_idx;
+                        state.option_selector_list = option_list;
+                        state.screen = AppScreen::SelectingGlobalSettingOption;
+                    }
+                    8 => {
+                        // Unified KV Cache toggle (default true)
+                        let current_val = state
+                            .global_config
+                            .get("llama-server-long")
+                            .and_then(|l| l.get("kv-unified"))
+                            .or_else(|| state.global_config.get("kv-unified"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
+                        let next_val = !current_val;
+                        if next_val {
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                "kv-unified",
+                            );
+                        } else {
+                            crate::config::update_global_config_value(
+                                &mut state.global_config,
+                                "kv-unified",
+                                serde_json::Value::Bool(next_val),
+                            );
+                        }
+                        let _ =
+                            crate::config::save_config(&state.config_path, &state.global_config);
+                    }
+                    14 => {
+                        // Enable Metrics toggle (default false)
+                        let current_val = state
+                            .global_config
+                            .get("llama-server-long")
+                            .and_then(|l| l.get("metrics"))
+                            .or_else(|| state.global_config.get("metrics"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let next_val = !current_val;
+                        if !next_val {
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                "metrics",
+                            );
+                        } else {
+                            crate::config::update_global_config_value(
+                                &mut state.global_config,
+                                "metrics",
+                                serde_json::Value::Bool(next_val),
+                            );
+                        }
+                        let _ =
+                            crate::config::save_config(&state.config_path, &state.global_config);
+                    }
+                    15 => {
+                        // Enable Web UI toggle
+                        let ui_enabled = state
+                            .global_config
+                            .get("llama-herd")
+                            .and_then(|lh| lh.get("ui"))
+                            .or_else(|| state.global_config.get("ui"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
+
+                        let next_val = !ui_enabled;
+                        if next_val {
+                            // default is true, so remove key to reset to default
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                "ui",
+                            );
+                        } else {
+                            crate::config::update_global_config_value(
+                                &mut state.global_config,
+                                "ui",
+                                serde_json::Value::Bool(next_val),
+                            );
+                        }
+                        let _ =
+                            crate::config::save_config(&state.config_path, &state.global_config);
+                    }
+                    _ => {
+                        let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                        let val_str = crate::config::get_global_config_string(
+                            &state.global_config,
+                            selected_item.key,
+                            selected_item.default_val,
+                        );
+                        state.screen = AppScreen::EditingGlobalSetting;
+                        state.input_buffer = val_str;
+                    }
                 }
             }
             KeyCode::Char('q') => {
@@ -296,8 +439,7 @@ pub fn handle_key_event(
                     }
 
                     // Save config
-                    let config_path = crate::config::get_llama_herd_dir().join("config.toml");
-                    let _ = crate::config::save_config(&config_path, &state.global_config);
+                    let _ = crate::config::save_config(&state.config_path, &state.global_config);
 
                     state.screen = AppScreen::Settings;
                     state.picker = None;
@@ -310,33 +452,249 @@ pub fn handle_key_event(
         AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
-        | AppScreen::EditingPort => match key.code {
+        | AppScreen::EditingGlobalSetting => match key.code {
             KeyCode::Esc => {
-                state.screen = AppScreen::Dashboard;
+                if state.screen == AppScreen::EditingGlobalSetting {
+                    state.screen = AppScreen::Settings;
+                } else {
+                    state.screen = AppScreen::Dashboard;
+                }
             }
             KeyCode::Enter => {
                 match state.screen {
                     AppScreen::EditingCtx => {
                         state.ctx = crate::config::parse_ctx_str(&state.input_buffer);
+                        state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingNgl => {
                         state.ngl = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingDraftNgl => {
                         state.draft_ngl = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
                     }
-                    AppScreen::EditingPort => {
-                        state.port = state.input_buffer.trim().to_string();
+                    AppScreen::EditingGlobalSetting => {
+                        let val_str = state.input_buffer.trim().to_string();
+                        let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                        let key_to_update = selected_item.key;
+
+                        if val_str == selected_item.default_val {
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                key_to_update,
+                            );
+                        } else {
+                            match state.settings_index {
+                                2 => {
+                                    // Host IP
+                                    crate::config::update_global_config_value(
+                                        &mut state.global_config,
+                                        key_to_update,
+                                        serde_json::Value::String(val_str),
+                                    );
+                                }
+                                3 => {
+                                    // Port
+                                    let val = if val_str == "auto" {
+                                        serde_json::Value::String(val_str)
+                                    } else if let Ok(num) = val_str.parse::<i64>() {
+                                        serde_json::Value::Number(num.into())
+                                    } else {
+                                        serde_json::Value::String(val_str)
+                                    };
+                                    crate::config::update_global_config_value(
+                                        &mut state.global_config,
+                                        key_to_update,
+                                        val,
+                                    );
+                                }
+                                4 => {
+                                    // Threads
+                                    let val = if val_str == "auto" {
+                                        serde_json::Value::String(val_str)
+                                    } else if let Ok(num) = val_str.parse::<i64>() {
+                                        serde_json::Value::Number(num.into())
+                                    } else {
+                                        serde_json::Value::String(val_str)
+                                    };
+                                    crate::config::update_global_config_value(
+                                        &mut state.global_config,
+                                        key_to_update,
+                                        val,
+                                    );
+                                }
+                                5..=7 => {
+                                    // Flash Attention, Cache Type K, Cache Type V
+                                    crate::config::update_global_config_value(
+                                        &mut state.global_config,
+                                        key_to_update,
+                                        serde_json::Value::String(val_str),
+                                    );
+                                }
+                                9 => {
+                                    // Parallel Slots
+                                    if let Ok(num) = val_str.parse::<i64>() {
+                                        crate::config::update_global_config_value(
+                                            &mut state.global_config,
+                                            key_to_update,
+                                            serde_json::Value::Number(num.into()),
+                                        );
+                                    }
+                                }
+                                10 => {
+                                    // Batch Size
+                                    if let Ok(num) = val_str.parse::<i64>() {
+                                        crate::config::update_global_config_value(
+                                            &mut state.global_config,
+                                            key_to_update,
+                                            serde_json::Value::Number(num.into()),
+                                        );
+                                    }
+                                }
+                                11 => {
+                                    // Micro-Batch Size
+                                    if let Ok(num) = val_str.parse::<i64>() {
+                                        crate::config::update_global_config_value(
+                                            &mut state.global_config,
+                                            key_to_update,
+                                            serde_json::Value::Number(num.into()),
+                                        );
+                                    }
+                                }
+                                12 => {
+                                    // Max Active Models
+                                    if let Ok(num) = val_str.parse::<i64>() {
+                                        crate::config::update_global_config_value(
+                                            &mut state.global_config,
+                                            key_to_update,
+                                            serde_json::Value::Number(num.into()),
+                                        );
+                                    }
+                                }
+                                13 => {
+                                    // API Key
+                                    crate::config::update_global_config_value(
+                                        &mut state.global_config,
+                                        key_to_update,
+                                        serde_json::Value::String(val_str),
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        // Save config
+                        let _ =
+                            crate::config::save_config(&state.config_path, &state.global_config);
+
+                        state.screen = AppScreen::Settings;
                     }
                     _ => {}
                 }
-                state.screen = AppScreen::Dashboard;
             }
             KeyCode::Backspace => {
                 state.input_buffer.pop();
             }
             KeyCode::Char(c) => {
                 state.input_buffer.push(c);
+            }
+            _ => {}
+        },
+        AppScreen::SelectingGlobalSettingOption => match key.code {
+            KeyCode::Esc => {
+                state.screen = AppScreen::Settings;
+            }
+            KeyCode::Up => {
+                if state.option_selector_index == 0 {
+                    state.option_selector_index = state.option_selector_list.len() - 1;
+                } else {
+                    state.option_selector_index -= 1;
+                }
+            }
+            KeyCode::Down => {
+                state.option_selector_index =
+                    (state.option_selector_index + 1) % state.option_selector_list.len();
+            }
+            KeyCode::Enter => {
+                let selected_opt = state.option_selector_list[state.option_selector_index].clone();
+                let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                let key_to_update = selected_item.key;
+
+                if selected_opt == "(Custom / Manual...)" {
+                    // Transition to manual entry
+                    let val_str = crate::config::get_global_config_string(
+                        &state.global_config,
+                        key_to_update,
+                        selected_item.default_val,
+                    );
+                    state.screen = AppScreen::EditingGlobalSetting;
+                    state.input_buffer = val_str;
+                } else {
+                    // Selected standard option. Save it!
+                    if selected_opt == selected_item.default_val {
+                        crate::config::remove_global_config_value(
+                            &mut state.global_config,
+                            key_to_update,
+                        );
+                    } else {
+                        crate::config::update_global_config_value(
+                            &mut state.global_config,
+                            key_to_update,
+                            serde_json::Value::String(selected_opt),
+                        );
+                    }
+
+                    // Save config
+                    let _ = crate::config::save_config(&state.config_path, &state.global_config);
+
+                    state.screen = AppScreen::Settings;
+                }
+            }
+            _ => {}
+        },
+        AppScreen::SelectingMMProj => match key.code {
+            KeyCode::Esc => {
+                state.mmproj_index = state.mmproj_index_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.mmproj_list.is_empty() => {
+                if state.mmproj_index == 0 {
+                    state.mmproj_index = state.mmproj_list.len() - 1;
+                } else {
+                    state.mmproj_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.mmproj_list.is_empty() => {
+                state.mmproj_index = (state.mmproj_index + 1) % state.mmproj_list.len();
+            }
+            KeyCode::Enter => {
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::SelectingDraftModel => match key.code {
+            KeyCode::Esc => {
+                state.draft_index = state.draft_index_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.draft_list.is_empty() => {
+                if state.draft_index == 0 {
+                    state.draft_index = state.draft_list.len() - 1;
+                } else {
+                    state.draft_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.draft_list.is_empty() => {
+                state.draft_index = (state.draft_index + 1) % state.draft_list.len();
+            }
+            KeyCode::Enter => {
+                if state.draft_list[state.draft_index].is_none() {
+                    state.draft_ngl = "".to_string();
+                } else if state.draft_ngl.is_empty() {
+                    state.draft_ngl = "auto".to_string();
+                }
+                state.screen = AppScreen::Dashboard;
             }
             _ => {}
         },
@@ -457,94 +815,10 @@ pub fn handle_key_event(
     should_quit
 }
 
-pub fn handle_mouse_event(state: &mut AppState, mouse: crossterm::event::MouseEvent) {
-    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
-        && mouse.row == 0
-        && let Ok(size) = crossterm::terminal::size()
-    {
-        let width = size.0;
-
-        // Header layout breakpoints must match ui.rs
-        let show_full_logo = width >= 75;
-        let show_version = width >= 55;
-
-        let version_str_len =
-            if width >= 90 && !state.server_version.is_empty() && state.server_version != "Unknown"
-            {
-                format!("{} (core: {}) ", env!("APP_VERSION"), state.server_version).len() as u16
-            } else {
-                format!("{} ", env!("APP_VERSION")).len() as u16
-            };
-
-        let logo_len = if show_full_logo { 14 } else { 4 };
-        let version_len = if show_version { version_str_len } else { 0 };
-
-        let header_center_x = logo_len;
-        let header_center_width = width.saturating_sub(logo_len + version_len);
-
-        if width >= 70 {
-            // Full Tabs layout: "[ " + "📊 Dashboard" + " | " + "⚙️ Settings" + " | " + "📜 Logs" + " ]"
-            // Widths: 2 + 12 (D) + 3 + 11 (S) + 3 + 7 (L) + 2 = 40
-            const TABS_WIDTH: u16 = 40;
-
-            if header_center_width >= TABS_WIDTH {
-                let tabs_start = header_center_x + (header_center_width - TABS_WIDTH) / 2;
-                let col = mouse.column;
-
-                if col >= tabs_start + 2 && col < tabs_start + 14 {
-                    state.active_tab = 0;
-                    state.screen = AppScreen::Dashboard;
-                } else if col >= tabs_start + 17 && col < tabs_start + 28 {
-                    state.active_tab = 1;
-                    state.screen = AppScreen::Settings;
-                } else if col >= tabs_start + 31 && col < tabs_start + 38 {
-                    state.active_tab = 2;
-                    state.screen = AppScreen::Logs;
-                }
-            }
-        } else {
-            // Compact Tabs layout: "📊 Dash" (7) + "  " (2) + "⚙️ Set" (6) + "  " (2) + "📜 Logs" (7)
-            // Widths: 7 + 2 + 6 + 2 + 7 = 24 (or 11 if only emojis)
-            let use_medium = width >= 45;
-            let tabs_width = if use_medium { 24 } else { 11 };
-
-            if header_center_width >= tabs_width {
-                let tabs_start = header_center_x + (header_center_width - tabs_width) / 2;
-                let col = mouse.column;
-
-                if use_medium {
-                    if col >= tabs_start && col < tabs_start + 7 {
-                        state.active_tab = 0;
-                        state.screen = AppScreen::Dashboard;
-                    } else if col >= tabs_start + 9 && col < tabs_start + 15 {
-                        state.active_tab = 1;
-                        state.screen = AppScreen::Settings;
-                    } else if col >= tabs_start + 17 && col < tabs_start + 24 {
-                        state.active_tab = 2;
-                        state.screen = AppScreen::Logs;
-                    }
-                } else {
-                    // Emoji only
-                    if col >= tabs_start && col < tabs_start + 3 {
-                        state.active_tab = 0;
-                        state.screen = AppScreen::Dashboard;
-                    } else if col >= tabs_start + 5 && col < tabs_start + 7 {
-                        state.active_tab = 1;
-                        state.screen = AppScreen::Settings;
-                    } else if col >= tabs_start + 9 && col < tabs_start + 11 {
-                        state.active_tab = 2;
-                        state.screen = AppScreen::Logs;
-                    }
-                }
-            }
-        }
-    }
-}
-
 pub fn run_tui(mut state: AppState) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -563,11 +837,7 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
                         {
                             break;
                         }
-                        Ok(Event::Mouse(mouse))
-                            if event_tx.send(TuiEvent::Mouse(mouse)).is_err() =>
-                        {
-                            break;
-                        }
+
                         _ => {}
                     }
                 }
@@ -606,9 +876,7 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
                     TuiEvent::Input(key) => {
                         should_quit = handle_key_event(&mut state, key, &event_tx);
                     }
-                    TuiEvent::Mouse(mouse) => {
-                        handle_mouse_event(&mut state, mouse);
-                    }
+
                     TuiEvent::Tick => {}
                     TuiEvent::LogReceived => {}
                 }
@@ -622,11 +890,7 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
 
     // Clean up terminal raw mode and restore screen
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     Ok(())

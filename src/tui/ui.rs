@@ -8,6 +8,129 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap},
 };
 
+pub struct SettingItem {
+    pub label: &'static str,
+    pub key: &'static str,
+    pub default_val: &'static str,
+    pub emoji: &'static str,
+    pub description: &'static str,
+}
+
+pub const SETTINGS: &[SettingItem] = &[
+    SettingItem {
+        label: "Llama Server Path",
+        key: "llama-server",
+        default_val: "(System PATH)",
+        emoji: "🚀",
+        description: "The absolute path to the llama-server executable. If not set, LlamaHerd will search your system PATH.",
+    },
+    SettingItem {
+        label: "Models Directory",
+        key: "models-dir",
+        default_val: "./models",
+        emoji: "📂",
+        description: "The directory where your GGUF models are located. LlamaHerd will automatically discover models and presets in this folder.",
+    },
+    SettingItem {
+        label: "Server Host IP",
+        key: "host",
+        default_val: "127.0.0.1",
+        emoji: "🌐",
+        description: "The host IP address that llama-server binds to. Defaults to '127.0.0.1' for local-only access.",
+    },
+    SettingItem {
+        label: "Server Port",
+        key: "port",
+        default_val: "8080",
+        emoji: "🔌",
+        description: "The port number for llama-server. Defaults to '8080'. If set to 'auto', it binds to the first sequentially free port.",
+    },
+    SettingItem {
+        label: "CPU Threads",
+        key: "threads",
+        default_val: "-1",
+        emoji: "🧠",
+        description: "Number of CPU threads to use for generation. Defaults to '-1' for auto-detection.",
+    },
+    SettingItem {
+        label: "Flash Attention",
+        key: "flash-attn",
+        default_val: "auto",
+        emoji: "⚡",
+        description: "Enable flash attention for faster inference. Options: 'auto', '1' (enable), '0' (disable).",
+    },
+    SettingItem {
+        label: "Cache Type K",
+        key: "cache-type-k",
+        default_val: "f16",
+        emoji: "🔑",
+        description: "Quantization format for the KV cache keys (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
+    },
+    SettingItem {
+        label: "Cache Type V",
+        key: "cache-type-v",
+        default_val: "f16",
+        emoji: "📦",
+        description: "Quantization format for the KV cache values (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
+    },
+    SettingItem {
+        label: "Unified KV Cache",
+        key: "kv-unified",
+        default_val: "true",
+        emoji: "🔗",
+        description: "Enable unified KV cache for keys and values. Maps to llama-server --kv-unified flag.",
+    },
+    SettingItem {
+        label: "Parallel Slots (np)",
+        key: "np",
+        default_val: "-1",
+        emoji: "👥",
+        description: "Number of parallel slots/requests to support simultaneously. Defaults to '-1' (auto).",
+    },
+    SettingItem {
+        label: "Prompt Batch Size",
+        key: "batch-size",
+        default_val: "2048",
+        emoji: "📊",
+        description: "The logical batch size used for prompt processing. Maps to llama-server --batch-size flag.",
+    },
+    SettingItem {
+        label: "Prompt Micro-Batch",
+        key: "ubatch-size",
+        default_val: "512",
+        emoji: "📉",
+        description: "The physical batch size used for prompt processing. Maps to llama-server --ubatch-size flag.",
+    },
+    SettingItem {
+        label: "Max Active Models",
+        key: "models-max",
+        default_val: "1",
+        emoji: "🔀",
+        description: "The maximum number of active models loaded concurrently when running in Router Mode.",
+    },
+    SettingItem {
+        label: "API Key",
+        key: "api-key",
+        default_val: "disabled",
+        emoji: "🔑",
+        description: "Set a static API key for server authorization to secure the HTTP endpoints. Use 'disabled' to turn off.",
+    },
+    SettingItem {
+        label: "Enable Metrics",
+        key: "metrics",
+        default_val: "false",
+        emoji: "📈",
+        description: "Enable the /metrics Prometheus endpoint on llama-server. Maps to --metrics when enabled.",
+    },
+    SettingItem {
+        label: "Enable Web UI",
+        key: "ui",
+        default_val: "true",
+        emoji: "💻",
+        description: "Enable/disable the built-in HTML/web chat interface provided by llama-server. Maps to --no-ui when disabled.",
+    },
+];
+
 pub fn draw(f: &mut Frame, state: &mut AppState) {
     let size = f.area();
     let theme = &state.theme;
@@ -39,10 +162,15 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         | AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
-        | AppScreen::EditingPort => {
+        | AppScreen::SelectingMMProj
+        | AppScreen::SelectingDraftModel => {
             render_dashboard(f, state, main_layout[1]);
         }
-        AppScreen::Settings | AppScreen::PickingServerPath | AppScreen::PickingModelsDir => {
+        AppScreen::Settings
+        | AppScreen::PickingServerPath
+        | AppScreen::PickingModelsDir
+        | AppScreen::EditingGlobalSetting
+        | AppScreen::SelectingGlobalSettingOption => {
             render_settings_tab(f, state, main_layout[1]);
         }
         AppScreen::Logs => {
@@ -109,20 +237,6 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         ),
                         Span::styled(" Draft NGL  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [u]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Web UI  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [p]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Port  ", Style::default().fg(theme.fg)),
-                        Span::styled(
                             " [q]",
                             Style::default()
                                 .fg(theme.error)
@@ -186,20 +300,6 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         ),
                         Span::styled(" Edit Draft NGL  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [u]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Toggle Web UI  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [p]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Edit Port  ", Style::default().fg(theme.fg)),
-                        Span::styled(
                             " [q]",
                             Style::default()
                                 .fg(theme.error)
@@ -225,7 +325,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         .fg(theme.primary)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" Change Path  ", Style::default().fg(theme.fg)),
+                Span::styled(" Edit Setting  ", Style::default().fg(theme.fg)),
                 Span::styled(
                     " [Tab]",
                     Style::default()
@@ -275,7 +375,10 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
-        | AppScreen::EditingPort => {
+        | AppScreen::EditingGlobalSetting
+        | AppScreen::SelectingGlobalSettingOption
+        | AppScreen::SelectingMMProj
+        | AppScreen::SelectingDraftModel => {
             vec![Line::from(vec![
                 Span::styled(
                     " [Enter]",
@@ -283,7 +386,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         .fg(theme.success)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" Save Settings  ", Style::default().fg(theme.fg)),
+                Span::styled(" Save Setting  ", Style::default().fg(theme.fg)),
                 Span::styled(
                     " [Esc]",
                     Style::default()
@@ -672,74 +775,253 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Server Path
-            Constraint::Length(3), // Models Dir
-            Constraint::Min(0),
-        ])
+    // Split Content Area into Left (Settings Table) and Right (Details Pane)
+    let content_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(inner_area);
 
-    // 1. Llama Server Path
-    let server_style = if state.settings_index == 0 {
-        Style::default()
-            .fg(theme.primary)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(theme.secondary)
-    };
-    let server_title = if theme.show_emojis {
-        format!(" 🚀 Llama Server Path ({}) ", state.server_version)
-    } else {
-        format!(" Llama Server Path ({}) ", state.server_version)
-    };
-    let server_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(server_style)
-        .border_type(theme.border_type)
-        .title(server_title);
-    let server_para = Paragraph::new(state.server_exe.to_string_lossy().to_string())
-        .block(server_block)
-        .style(Style::default().fg(if state.settings_index == 0 {
-            theme.fg
-        } else {
-            theme.secondary
-        }));
-    f.render_widget(server_para, layout[0]);
+    let mut rows = Vec::new();
+    for (idx, item) in SETTINGS.iter().enumerate() {
+        let is_selected = idx == state.settings_index;
 
-    // 2. Models Directory
-    let models_style = if state.settings_index == 1 {
+        let label_str = if theme.show_emojis {
+            format!("{} {}", item.emoji, item.label)
+        } else {
+            item.label.to_string()
+        };
+
+        let val_str = match idx {
+            0 => state.server_exe.to_string_lossy().to_string(),
+            1 => state.models_dir.to_string_lossy().to_string(),
+            _ => crate::config::get_global_config_string(
+                &state.global_config,
+                item.key,
+                item.default_val,
+            ),
+        };
+
+        let truncate_len = (content_layout[0].width as usize)
+            .saturating_sub(30)
+            .max(10);
+        let display_val = truncate_middle(&val_str, truncate_len);
+
+        let cell_indicator = if is_selected {
+            Cell::from(" ➤ ").style(
+                Style::default()
+                    .fg(theme.selection)
+                    .add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Cell::from("   ")
+        };
+
+        let cell_label = Cell::from(label_str).style(if is_selected {
+            Style::default()
+                .fg(theme.primary)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.fg)
+        });
+
+        let cell_value = Cell::from(display_val).style(if is_selected {
+            Style::default()
+                .fg(theme.success)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.secondary)
+        });
+
+        rows.push(Row::new(vec![cell_indicator, cell_label, cell_value]));
+    }
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(4),
+            Constraint::Length(25),
+            Constraint::Min(10),
+        ],
+    )
+    .block(
+        Block::default()
+            .borders(Borders::RIGHT)
+            .border_style(Style::default().fg(theme.secondary))
+            .border_type(theme.border_type),
+    );
+    f.render_widget(table, content_layout[0]);
+
+    // Right Column: Details Card
+    let selected_item = &SETTINGS[state.settings_index];
+    let selected_val = match state.settings_index {
+        0 => state.server_exe.to_string_lossy().to_string(),
+        1 => state.models_dir.to_string_lossy().to_string(),
+        _ => crate::config::get_global_config_string(
+            &state.global_config,
+            selected_item.key,
+            selected_item.default_val,
+        ),
+    };
+
+    let detail_block = Block::default()
+        .borders(Borders::NONE)
+        .style(Style::default().bg(theme.bg).fg(theme.fg));
+
+    let detail_area = detail_block.inner(content_layout[1]);
+    f.render_widget(detail_block, content_layout[1]);
+
+    let detail_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2), // Title
+            Constraint::Length(1), // Key
+            Constraint::Length(1), // Default
+            Constraint::Length(1), // Current Value
+            Constraint::Length(1), // Spacer
+            Constraint::Min(5),    // Description
+        ])
+        .split(detail_area);
+
+    let title_span = Span::styled(
+        if theme.show_emojis {
+            format!("{} {}", selected_item.emoji, selected_item.label)
+        } else {
+            selected_item.label.to_string()
+        },
         Style::default()
             .fg(theme.primary)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(theme.secondary)
-    };
-    let models_title = if theme.show_emojis {
-        " 📂 Models Directory "
-    } else {
-        " Models Directory "
-    };
-    let models_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(models_style)
-        .border_type(theme.border_type)
-        .title(models_title);
-    let models_para = Paragraph::new(state.models_dir.to_string_lossy().to_string())
-        .block(models_block)
-        .style(Style::default().fg(if state.settings_index == 1 {
-            theme.fg
-        } else {
-            theme.secondary
-        }));
-    f.render_widget(models_para, layout[1]);
+            .add_modifier(Modifier::BOLD),
+    );
+    f.render_widget(Paragraph::new(Line::from(title_span)), detail_layout[0]);
+
+    let key_line = Line::from(vec![
+        Span::styled(" TOML Key:      ", Style::default().fg(theme.secondary)),
+        Span::styled(selected_item.key, Style::default().fg(theme.accent)),
+    ]);
+    f.render_widget(Paragraph::new(key_line), detail_layout[1]);
+
+    let default_line = Line::from(vec![
+        Span::styled(" Default Value: ", Style::default().fg(theme.secondary)),
+        Span::styled(selected_item.default_val, Style::default().fg(theme.fg)),
+    ]);
+    f.render_widget(Paragraph::new(default_line), detail_layout[2]);
+
+    let val_line = Line::from(vec![
+        Span::styled(" Current Value: ", Style::default().fg(theme.secondary)),
+        Span::styled(
+            truncate_middle(
+                &selected_val,
+                (detail_layout[3].width as usize).saturating_sub(18).max(10),
+            ),
+            Style::default()
+                .fg(theme.success)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    f.render_widget(Paragraph::new(val_line), detail_layout[3]);
+
+    let desc_para = Paragraph::new(selected_item.description)
+        .style(Style::default().fg(theme.fg))
+        .wrap(Wrap { trim: true })
+        .block(
+            Block::default()
+                .borders(Borders::TOP)
+                .title(" Description ")
+                .border_style(Style::default().fg(theme.secondary))
+                .border_type(theme.border_type),
+        );
+    f.render_widget(desc_para, detail_layout[5]);
 
     // Render Picker Modal if active
     if let Some(picker) = &state.picker {
         let popup_area = centered_rect(80, 80, f.area());
         f.render_widget(Clear, popup_area);
         picker.render(f, popup_area, theme);
+    }
+
+    // Render text input popup overlay for EditingGlobalSetting
+    if state.screen == AppScreen::EditingGlobalSetting {
+        let title = format!(" Edit {} ", selected_item.label);
+        let prompt = format!(
+            "Enter new value for {} (Default: {}):",
+            selected_item.label, selected_item.default_val
+        );
+
+        let popup_area = centered_rect(60, 20, f.area());
+        f.render_widget(Clear, popup_area); // clears the background
+
+        let popup_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(theme.border_type)
+            .title(title)
+            .style(Style::default().bg(theme.bg).fg(theme.fg))
+            .border_style(Style::default().fg(theme.selection));
+
+        let popup_text = vec![
+            Line::from(prompt),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(&state.input_buffer, Style::default().fg(theme.fg)),
+                Span::styled(
+                    "_",
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::RAPID_BLINK),
+                ),
+            ]),
+        ];
+
+        let popup_para = Paragraph::new(popup_text)
+            .block(popup_block)
+            .alignment(Alignment::Center);
+        f.render_widget(popup_para, popup_area);
+    }
+
+    // Render option list selector popup overlay for SelectingGlobalSettingOption
+    if state.screen == AppScreen::SelectingGlobalSettingOption {
+        let title = format!(" Select {} ", selected_item.label);
+        let popup_area = centered_rect(50, 40, f.area());
+        f.render_widget(Clear, popup_area); // clears the background
+
+        let popup_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(theme.border_type)
+            .title(title)
+            .style(Style::default().bg(theme.bg).fg(theme.fg))
+            .border_style(Style::default().fg(theme.selection));
+
+        // Draw items as paragraph spans
+        let mut list_spans = Vec::new();
+        list_spans.push(Line::from(""));
+        for (i, opt) in state.option_selector_list.iter().enumerate() {
+            if i == state.option_selector_index {
+                list_spans.push(Line::from(vec![
+                    Span::styled(
+                        " 👉 ",
+                        Style::default()
+                            .fg(theme.selection)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        opt,
+                        Style::default()
+                            .fg(theme.selection)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]));
+            } else {
+                list_spans.push(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(opt, Style::default().fg(theme.fg)),
+                ]));
+            }
+        }
+        list_spans.push(Line::from(""));
+
+        let popup_para = Paragraph::new(list_spans)
+            .block(popup_block)
+            .alignment(Alignment::Left);
+        f.render_widget(popup_para, popup_area);
     }
 }
 
@@ -929,30 +1211,6 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             })
             .style(Style::default().fg(theme.accent)),
         ]),
-        Row::new(vec![
-            Cell::from(Span::styled(
-                "[u]",
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled("Web UI", Style::default().fg(theme.secondary))),
-            Cell::from(if state.ui { "ON" } else { "OFF" }).style(
-                Style::default()
-                    .fg(if state.ui { theme.success } else { theme.error })
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Row::new(vec![
-            Cell::from(Span::styled(
-                "[p]",
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled("Port", Style::default().fg(theme.secondary))),
-            Cell::from(state.port.clone()).style(Style::default().fg(theme.accent)),
-        ]),
     ];
 
     let table = Table::new(
@@ -973,15 +1231,18 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 " Edit Context Size ",
                 "Enter new context size (e.g. 131072, 8k, 32k):",
             ),
-            AppScreen::EditingNgl => (
-                " Edit GPU Layers ",
-                "Enter N-GPU-layers (e.g. auto, 0, 32, --4):",
-            ),
+            AppScreen::EditingNgl => {
+                let prompt = if state.total_layers.is_some() {
+                    "Enter N-GPU-layers (e.g. auto, 0, 32, --4):"
+                } else {
+                    "Enter N-GPU-layers (e.g. auto, 0, 32):"
+                };
+                (" Edit GPU Layers ", prompt)
+            }
             AppScreen::EditingDraftNgl => (
                 " Edit Draft GPU Layers ",
                 "Enter draft N-GPU-layers (e.g. auto, 0, 8):",
             ),
-            AppScreen::EditingPort => (" Edit Port ", "Enter port number or 'auto':"),
             _ => ("", ""),
         };
 
@@ -1014,6 +1275,81 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             .alignment(Alignment::Center);
         f.render_widget(popup_para, popup_area);
     }
+
+    if state.screen == AppScreen::SelectingMMProj || state.screen == AppScreen::SelectingDraftModel
+    {
+        let (title, options_list, current_idx) = if state.screen == AppScreen::SelectingMMProj {
+            let opts: Vec<String> = state
+                .mmproj_list
+                .iter()
+                .map(|opt| match opt {
+                    Some(p) => p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned(),
+                    None => "None (Disabled)".to_string(),
+                })
+                .collect();
+            (" Select MMProj (Vision) ", opts, state.mmproj_index)
+        } else {
+            let opts: Vec<String> = state
+                .draft_list
+                .iter()
+                .map(|opt| match opt {
+                    Some(p) => p
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned(),
+                    None => "None (Disabled)".to_string(),
+                })
+                .collect();
+            (" Select Draft Model ", opts, state.draft_index)
+        };
+
+        let popup_area = centered_rect(50, 40, area);
+        f.render_widget(Clear, popup_area);
+
+        let popup_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(theme.border_type)
+            .title(title)
+            .style(Style::default().bg(theme.bg).fg(theme.fg))
+            .border_style(Style::default().fg(theme.selection));
+
+        let mut list_spans = Vec::new();
+        list_spans.push(Line::from(""));
+        for (i, opt) in options_list.iter().enumerate() {
+            if i == current_idx {
+                list_spans.push(Line::from(vec![
+                    Span::styled(
+                        " 👉 ",
+                        Style::default()
+                            .fg(theme.selection)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        opt,
+                        Style::default()
+                            .fg(theme.selection)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]));
+            } else {
+                list_spans.push(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(opt, Style::default().fg(theme.fg)),
+                ]));
+            }
+        }
+        list_spans.push(Line::from(""));
+
+        let popup_para = Paragraph::new(list_spans)
+            .block(popup_block)
+            .alignment(Alignment::Left);
+        f.render_widget(popup_para, popup_area);
+    }
 }
 
 fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
@@ -1030,7 +1366,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         .global_config
         .get("host")
         .and_then(|v| v.as_str())
-        .unwrap_or("0.0.0.0");
+        .unwrap_or("127.0.0.1");
     let port = if let Some(ref _server) = state.active_server {
         let mut p = "8080".to_string();
         let mut idx = 0;
@@ -1043,7 +1379,17 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         }
         p
     } else {
-        state.port.clone()
+        state
+            .global_config
+            .get("port")
+            .and_then(|v| {
+                if let Some(i) = v.as_i64() {
+                    Some(i.to_string())
+                } else {
+                    v.as_str().map(|s| s.to_string())
+                }
+            })
+            .unwrap_or_else(|| "auto".to_string())
     };
 
     let status_span = if state.logs_paused {

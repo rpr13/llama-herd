@@ -11,9 +11,12 @@ pub enum AppScreen {
     EditingCtx,
     EditingNgl,
     EditingDraftNgl,
-    EditingPort,
     PickingServerPath,
     PickingModelsDir,
+    EditingGlobalSetting,
+    SelectingGlobalSettingOption,
+    SelectingMMProj,
+    SelectingDraftModel,
 }
 
 pub struct AppState {
@@ -34,13 +37,15 @@ pub struct AppState {
     // Config items for selected preset
     pub ctx: usize,
     pub ngl: String,
-    pub ui: bool,
+    pub total_layers: Option<usize>,
 
     // Dropdowns / Cycles
     pub mmproj_list: Vec<Option<PathBuf>>,
     pub mmproj_index: usize,
+    pub mmproj_index_backup: usize,
     pub draft_list: Vec<Option<PathBuf>>,
     pub draft_index: usize,
+    pub draft_index_backup: usize,
     pub draft_ngl: String,
 
     // Input prompts
@@ -56,8 +61,10 @@ pub struct AppState {
     pub auto_scroll: bool,
     pub last_launch_args: Vec<String>,
     pub is_router_mode: bool,
-    pub port: String,
     pub theme: crate::tui::theme::Theme,
+    pub option_selector_index: usize,
+    pub option_selector_list: Vec<String>,
+    pub config_path: PathBuf,
 }
 
 impl AppState {
@@ -69,17 +76,6 @@ impl AppState {
         server_exe: PathBuf,
         theme: crate::tui::theme::Theme,
     ) -> Self {
-        let port = global_config
-            .get("port")
-            .and_then(|v| {
-                if let Some(i) = v.as_i64() {
-                    Some(i.to_string())
-                } else {
-                    v.as_str().map(|s| s.to_string())
-                }
-            })
-            .unwrap_or_else(|| "auto".to_string());
-
         let server_version = crate::launcher::get_server_version(&server_exe);
 
         let mut state = AppState {
@@ -96,11 +92,13 @@ impl AppState {
             picker: None,
             ctx: 131072,
             ngl: "auto".to_string(),
-            ui: true,
+            total_layers: None,
             mmproj_list: vec![None],
             mmproj_index: 0,
+            mmproj_index_backup: 0,
             draft_list: vec![None],
             draft_index: 0,
+            draft_index_backup: 0,
             draft_ngl: "".to_string(),
             input_buffer: String::new(),
             active_server: None,
@@ -112,8 +110,10 @@ impl AppState {
             auto_scroll: true,
             last_launch_args: Vec::new(),
             is_router_mode: false,
-            port,
             theme,
+            option_selector_index: 0,
+            option_selector_list: Vec::new(),
+            config_path: crate::config::get_llama_herd_dir().join("config.toml"),
         };
 
         state.load_current_preset_settings();
@@ -144,6 +144,7 @@ impl AppState {
         let total_layers = get_lh_val("total-layers")
             .or_else(|| get_long_val("total-layers"))
             .and_then(|v| v.as_u64().map(|i| i as usize));
+        self.total_layers = total_layers;
 
         // Context Size
         let ctx_val = ini_settings
@@ -177,10 +178,6 @@ impl AppState {
                             .unwrap_or_else(|| "auto".to_string())
                     })
             });
-
-        // UI
-        self.ui = !ini_settings.contains_key("no-ui")
-            && ini_settings.get("no-ui").map(|s| s.as_str()) != Some("true");
 
         // Populate mmproj list
         let mut mmproj_files = Vec::new();
@@ -326,7 +323,6 @@ impl AppState {
         UserSettings {
             ctx: self.ctx,
             ngl: self.ngl.clone(),
-            ui: self.ui,
             mmproj: self.mmproj_list[self.mmproj_index].clone(),
             draft_model: self.draft_list[self.draft_index].clone(),
             draft_ngl: self.draft_ngl.clone(),

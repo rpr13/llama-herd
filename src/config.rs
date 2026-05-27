@@ -15,7 +15,6 @@ pub struct ModelAssets {
 pub struct UserSettings {
     pub ctx: usize,
     pub ngl: String,
-    pub ui: bool,
     pub mmproj: Option<PathBuf>,
     pub draft_model: Option<PathBuf>,
     pub draft_ngl: String,
@@ -473,4 +472,80 @@ pub fn parse_args(args: &[String]) -> (bool, bool) {
     }
 
     (show_help, generate_ini)
+}
+
+pub fn get_global_config_string(
+    global_config: &HashMap<String, serde_json::Value>,
+    key: &str,
+    default_val: &str,
+) -> String {
+    let val = global_config
+        .get("llama-server-long")
+        .and_then(|obj| obj.get(key))
+        .or_else(|| global_config.get("llama-herd").and_then(|obj| obj.get(key)))
+        .or_else(|| global_config.get(key));
+
+    match val {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Number(n)) => n.to_string(),
+        Some(serde_json::Value::Bool(b)) => {
+            if *b {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        _ => default_val.to_string(),
+    }
+}
+
+pub fn update_global_config_value(
+    global_config: &mut HashMap<String, serde_json::Value>,
+    key: &str,
+    value: serde_json::Value,
+) {
+    if let Some(serde_json::Value::Object(long_obj)) = global_config.get_mut("llama-server-long")
+        && long_obj.contains_key(key)
+    {
+        long_obj.insert(key.to_string(), value);
+        return;
+    }
+
+    if let Some(serde_json::Value::Object(lh_obj)) = global_config.get_mut("llama-herd")
+        && lh_obj.contains_key(key)
+    {
+        lh_obj.insert(key.to_string(), value);
+        return;
+    }
+
+    global_config.insert(key.to_string(), value);
+}
+
+pub fn remove_global_config_value(
+    global_config: &mut HashMap<String, serde_json::Value>,
+    key: &str,
+) {
+    let mut remove_long = false;
+    if let Some(serde_json::Value::Object(long_obj)) = global_config.get_mut("llama-server-long") {
+        long_obj.remove(key);
+        if long_obj.is_empty() {
+            remove_long = true;
+        }
+    }
+    if remove_long {
+        global_config.remove("llama-server-long");
+    }
+
+    let mut remove_lh = false;
+    if let Some(serde_json::Value::Object(lh_obj)) = global_config.get_mut("llama-herd") {
+        lh_obj.remove(key);
+        if lh_obj.is_empty() {
+            remove_lh = true;
+        }
+    }
+    if remove_lh {
+        global_config.remove("llama-herd");
+    }
+
+    global_config.remove(key);
 }

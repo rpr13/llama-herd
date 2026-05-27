@@ -43,43 +43,6 @@ n-gpu-layers = 32
 
     assert_eq!(state.ctx, 8192);
     assert_eq!(state.ngl, "32");
-    assert!(state.ui);
-}
-
-#[test]
-fn test_app_state_no_ui() {
-    let dir = tempdir().unwrap();
-    let models_dir = dir.path().join("models");
-    fs::create_dir(&models_dir).unwrap();
-
-    let model_path = models_dir.join("test-model.gguf");
-    fs::write(&model_path, "dummy").unwrap();
-
-    let preset_path = dir.path().join("models-preset.ini");
-    fs::write(
-        &preset_path,
-        r#"
-[test-preset]
-model = test-model.gguf
-no-ui = true
-"#,
-    )
-    .unwrap();
-
-    let presets = vec![("test-preset".to_string(), model_path)];
-    let global_config = HashMap::new();
-    let server_exe = PathBuf::from("llama-server");
-
-    let state = AppState::new(
-        presets,
-        models_dir,
-        preset_path,
-        global_config,
-        server_exe,
-        llama_herd::tui::theme::Theme::default(),
-    );
-
-    assert!(!state.ui);
 }
 
 #[test]
@@ -344,7 +307,6 @@ fn test_app_state_get_user_settings() {
     // Mutate state to simulate user interactions
     state.ctx = 8192;
     state.ngl = "32".to_string();
-    state.ui = false;
 
     // Add mock paths to list and select them
     let mmproj = models_dir.join("vision.gguf");
@@ -359,7 +321,6 @@ fn test_app_state_get_user_settings() {
 
     assert_eq!(settings.ctx, 8192);
     assert_eq!(settings.ngl, "32");
-    assert!(!settings.ui);
     assert_eq!(settings.mmproj, Some(mmproj));
     assert_eq!(settings.draft_model, Some(draft));
     assert_eq!(settings.draft_ngl, "auto");

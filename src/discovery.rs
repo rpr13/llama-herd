@@ -273,10 +273,17 @@ pub fn generate_presets_ini(
             .or_else(|| global_config.get(key))
     };
 
-    let kv_quant = get_global_long("kv-quant")
+    let cache_type_k = get_global_long("cache-type-k")
+        .or_else(|| get_global_long("kv-quant"))
         .or_else(|| get_global_long("kv_quant"))
         .and_then(|v| v.as_str())
-        .unwrap_or("q8_0");
+        .unwrap_or("f16");
+
+    let cache_type_v = get_global_long("cache-type-v")
+        .or_else(|| get_global_long("kv-quant"))
+        .or_else(|| get_global_long("kv_quant"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("f16");
 
     let mut lines = Vec::new();
     lines.push("version = 1".to_string());
@@ -284,8 +291,8 @@ pub fn generate_presets_ini(
     lines.push("[*]".to_string());
     lines.push("flash-attn = auto".to_string());
     lines.push("jinja = true".to_string());
-    lines.push(format!("cache-type-k = {}", kv_quant));
-    lines.push(format!("cache-type-v = {}", kv_quant));
+    lines.push(format!("cache-type-k = {}", cache_type_k));
+    lines.push(format!("cache-type-v = {}", cache_type_v));
     lines.push("kv-unified = true".to_string());
     lines.push("".to_string());
 

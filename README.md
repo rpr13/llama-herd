@@ -32,7 +32,7 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 
 ### Key Capabilities
 
-- 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics.
+- 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics, providing interactive selector menus directly on the Dashboard.
 - 🔒 **Configuration Validation**: Enforces TOML constraints, filtering out unsafe flags and normalizing CLI parameter bindings safely.
 - 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing loaded status, resource allocations, and real-time logs.
 - 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with scroll, pause, and export controls.

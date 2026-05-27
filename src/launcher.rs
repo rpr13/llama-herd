@@ -71,7 +71,7 @@ pub fn build_launch_parameters(
 
     let host = get_global_long("host")
         .and_then(|v| v.as_str())
-        .unwrap_or("0.0.0.0");
+        .unwrap_or("127.0.0.1");
     params.push("--host".to_string());
     params.push(host.to_string());
 
@@ -113,7 +113,7 @@ pub fn build_launch_parameters(
                 v.as_str().map(|s| s.to_string())
             }
         })
-        .unwrap_or_else(|| "1".to_string());
+        .unwrap_or_else(|| "-1".to_string());
     params.push("-np".to_string());
     params.push(np);
 
@@ -125,11 +125,16 @@ pub fn build_launch_parameters(
                 v.as_str().map(|s| s.to_string())
             }
         })
-        .unwrap_or_else(crate::config::get_optimal_threads);
+        .unwrap_or_else(|| "-1".to_string());
     params.push("-t".to_string());
     params.push(threads);
 
-    params.push("--kv-unified".to_string());
+    let kv_unified = get_global_long("kv-unified")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if kv_unified {
+        params.push("--kv-unified".to_string());
+    }
 
     if let Some(bs) = get_global_long("batch-size").and_then(|v| v.as_i64()) {
         params.push("-b".to_string());
@@ -155,18 +160,51 @@ pub fn build_launch_parameters(
             .or_else(|| assets.config.get(key))
     };
 
-    let kv_quant = get_global_long("kv-quant")
+    let cache_type_k = get_global_long("cache-type-k")
+        .or_else(|| get_lh_val("cache-type-k"))
+        .or_else(|| get_long_val("cache-type-k"))
+        .or_else(|| get_global_long("kv-quant"))
         .or_else(|| get_lh_val("kv-quant"))
         .or_else(|| get_long_val("kv-quant"))
         .and_then(|v| v.as_str())
-        .unwrap_or("q8_0");
+        .unwrap_or("f16");
     params.push("-ctk".to_string());
-    params.push(kv_quant.to_string());
-    params.push("-ctv".to_string());
-    params.push(kv_quant.to_string());
+    params.push(cache_type_k.to_string());
 
-    if !settings.ui {
+    let cache_type_v = get_global_long("cache-type-v")
+        .or_else(|| get_lh_val("cache-type-v"))
+        .or_else(|| get_long_val("cache-type-v"))
+        .or_else(|| get_global_long("kv-quant"))
+        .or_else(|| get_lh_val("kv-quant"))
+        .or_else(|| get_long_val("kv-quant"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("f16");
+    params.push("-ctv".to_string());
+    params.push(cache_type_v.to_string());
+
+    let ui_enabled = global_config
+        .get("llama-herd")
+        .and_then(|lh| lh.get("ui"))
+        .or_else(|| global_config.get("ui"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if !ui_enabled {
         params.push("--no-ui".to_string());
+    }
+
+    let api_key = get_global_long("api-key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("disabled");
+    if api_key != "disabled" && !api_key.is_empty() {
+        params.push("--api-key".to_string());
+        params.push(api_key.to_string());
+    }
+
+    let metrics = get_global_long("metrics")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if metrics {
+        params.push("--metrics".to_string());
     }
 
     // Helper to format and add a long parameter
@@ -379,7 +417,7 @@ pub fn build_router_launch_parameters(
 
     let host = get_global_long("host")
         .and_then(|v| v.as_str())
-        .unwrap_or("0.0.0.0");
+        .unwrap_or("127.0.0.1");
     params.push("--host".to_string());
     params.push(host.to_string());
 
@@ -415,13 +453,13 @@ pub fn build_router_launch_parameters(
 
     let np = get_global_long("np")
         .and_then(|v| v.as_i64().map(|i| i.to_string()))
-        .unwrap_or_else(|| "1".to_string());
+        .unwrap_or_else(|| "-1".to_string());
     params.push("-np".to_string());
     params.push(np);
 
     let threads = get_global_long("threads")
         .and_then(|v| v.as_i64().map(|i| i.to_string()))
-        .unwrap_or_else(crate::config::get_optimal_threads);
+        .unwrap_or_else(|| "-1".to_string());
     params.push("-t".to_string());
     params.push(threads);
 
@@ -445,6 +483,28 @@ pub fn build_router_launch_parameters(
         .unwrap_or(true);
     if !ui_enabled {
         params.push("--no-ui".to_string());
+    }
+
+    let kv_unified = get_global_long("kv-unified")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if kv_unified {
+        params.push("--kv-unified".to_string());
+    }
+
+    let api_key = get_global_long("api-key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("disabled");
+    if api_key != "disabled" && !api_key.is_empty() {
+        params.push("--api-key".to_string());
+        params.push(api_key.to_string());
+    }
+
+    let metrics = get_global_long("metrics")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if metrics {
+        params.push("--metrics".to_string());
     }
 
     params

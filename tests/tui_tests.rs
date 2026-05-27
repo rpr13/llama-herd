@@ -175,30 +175,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_key_event_toggle_ui() {
-        let mut state = AppState::new(
-            vec![],
-            PathBuf::from("."),
-            PathBuf::from("."),
-            HashMap::new(),
-            PathBuf::from("."),
-            Theme::default(),
-        );
-        state.ui = true;
-        let key = KeyEvent {
-            code: KeyCode::Char('u'),
-            modifiers: KeyModifiers::empty(),
-            kind: KeyEventKind::Press,
-            state: KeyEventState::empty(),
-        };
-        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
-        handle_key_event(&mut state, key, &tx);
-        assert!(!state.ui);
-        handle_key_event(&mut state, key, &tx);
-        assert!(state.ui);
-    }
-
-    #[test]
     fn test_handle_key_event_editing_flow() {
         let mut state = AppState::new(
             vec![],
@@ -243,5 +219,215 @@ mod tests {
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.ngl, "auto");
+    }
+
+    #[test]
+    fn test_handle_key_event_selecting_option() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.config_path = config_path;
+        state.screen = AppScreen::Settings;
+        state.settings_index = 5; // Flash Attention
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Enter key -> opens option list popup
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingGlobalSettingOption);
+        assert_eq!(state.option_selector_list.len(), 4);
+        assert_eq!(state.option_selector_list[0], "auto");
+        assert_eq!(state.option_selector_list[1], "1");
+
+        // 2. Down key -> moves selector to the next item
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.option_selector_index, 1); // Selected "1"
+
+        // 3. Enter key -> saves standard option and returns to Settings
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Settings);
+        assert_eq!(
+            state
+                .global_config
+                .get("flash-attn")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "1"
+        );
+
+        // 4. Open option list again
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingGlobalSettingOption);
+
+        // 5. Select "(Custom / Manual...)" (which is the last item: index 3)
+        state.option_selector_index = 3;
+
+        // 6. Enter key -> transitions to text entry
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingGlobalSetting);
+        assert_eq!(state.input_buffer, "1");
+    }
+
+    #[test]
+    fn test_handle_key_event_selecting_mmproj() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.mmproj_list = vec![
+            None,
+            Some(PathBuf::from("mmproj-1.gguf")),
+            Some(PathBuf::from("mmproj-2.gguf")),
+        ];
+        state.mmproj_index = 0;
+        state.screen = AppScreen::Dashboard;
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Press 'v' -> enters MMProj selection popup
+        let key_v = KeyEvent {
+            code: KeyCode::Char('v'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_v, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingMMProj);
+
+        // 2. Down key -> moves selection to index 1
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.mmproj_index, 1);
+
+        // 3. Enter key -> saves & exits selection popup
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.mmproj_index, 1);
+
+        // 4. Press 'v' again -> enters selection popup
+        handle_key_event(&mut state, key_v, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingMMProj);
+        assert_eq!(state.mmproj_index_backup, 1);
+
+        // 5. Down key -> moves selection to index 2
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.mmproj_index, 2);
+
+        // 6. Esc key -> cancels and resets to index 1
+        let key_esc = KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_esc, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.mmproj_index, 1);
+    }
+
+    #[test]
+    fn test_handle_key_event_selecting_draft_model() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.draft_list = vec![None, Some(PathBuf::from("draft-1.gguf"))];
+        state.draft_index = 0;
+        state.draft_ngl = "".to_string();
+        state.screen = AppScreen::Dashboard;
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Press 'd' -> enters Draft model selection popup
+        let key_d = KeyEvent {
+            code: KeyCode::Char('d'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_d, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingDraftModel);
+
+        // 2. Down key -> moves selection to index 1
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.draft_index, 1);
+
+        // 3. Enter key -> saves & exits, sets draft_ngl to "auto" since it is empty
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.draft_index, 1);
+        assert_eq!(state.draft_ngl, "auto");
+
+        // 4. Press 'd' again -> enters selection popup
+        handle_key_event(&mut state, key_d, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingDraftModel);
+        assert_eq!(state.draft_index_backup, 1);
+
+        // 5. Down key -> cycles selection back to index 0
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.draft_index, 0);
+
+        // 6. Esc key -> cancels and resets to index 1
+        let key_esc = KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_esc, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.draft_index, 1);
     }
 }

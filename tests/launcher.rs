@@ -22,7 +22,6 @@ fn test_build_launch_parameters_defaults() -> TestResult {
     let settings = UserSettings {
         ctx: 2048,
         ngl: "32".to_string(),
-        ui: true,
         mmproj: None,
         draft_model: None,
         draft_ngl: "".to_string(),
@@ -48,7 +47,7 @@ fn test_build_launch_parameters_defaults() -> TestResult {
 
     // Default host and port
     let host_idx = params.iter().position(|r| r == "--host").unwrap();
-    assert_eq!(params[host_idx + 1], "0.0.0.0");
+    assert_eq!(params[host_idx + 1], "127.0.0.1");
     let port_idx = params.iter().position(|r| r == "--port").unwrap();
     assert_eq!(params[port_idx + 1], "8080");
 
@@ -63,7 +62,7 @@ fn test_build_launch_parameters_defaults() -> TestResult {
 
     // Cache quantization options
     let ctk_idx = params.iter().position(|r| r == "-ctk").unwrap();
-    assert_eq!(params[ctk_idx + 1], "q8_0");
+    assert_eq!(params[ctk_idx + 1], "f16");
 
     // UI is enabled by default, so --no-ui should not be present
     assert!(!params.contains(&"--no-ui".to_string()));
@@ -109,11 +108,10 @@ fn test_build_launch_parameters_overrides() -> TestResult {
         jinja_template: Some(PathBuf::from("/models/gemma.jinja")),
     };
 
-    // 2. Setup user settings including draft model, mmproj, and ui disabled
+    // 2. Setup user settings including draft model, mmproj
     let settings = UserSettings {
         ctx: 8192,
         ngl: "auto".to_string(),
-        ui: false, // UI disabled
         mmproj: Some(PathBuf::from("/models/mmproj.gguf")),
         draft_model: Some(PathBuf::from("/models/gemma-draft.gguf")),
         draft_ngl: "16".to_string(),
@@ -121,6 +119,7 @@ fn test_build_launch_parameters_overrides() -> TestResult {
 
     // 3. Setup global overrides
     let mut global_config = HashMap::new();
+    global_config.insert("ui".to_string(), serde_json::json!(false));
     global_config.insert("host".to_string(), serde_json::json!("127.0.0.1"));
     global_config.insert("port".to_string(), serde_json::json!(9000));
     global_config.insert("kv-quant".to_string(), serde_json::json!("q4_0"));
@@ -211,7 +210,6 @@ fn test_build_launch_parameters_speculative_types() -> TestResult {
     let settings = UserSettings {
         ctx: 2048,
         ngl: "0".to_string(),
-        ui: true,
         mmproj: None,
         draft_model: Some(PathBuf::from("draft.gguf")),
         draft_ngl: "0".to_string(),
@@ -304,7 +302,6 @@ spec-draft-p-min = 0.85
     let settings = UserSettings {
         ctx: 2048,
         ngl: "0".to_string(),
-        ui: true,
         mmproj: None,
         draft_model: Some(draft_path),
         draft_ngl: "0".to_string(),
@@ -333,6 +330,74 @@ spec-draft-p-min = 0.85
         .position(|r| r == "--spec-draft-p-min")
         .unwrap();
     assert_eq!(params[p_min_idx + 1], "0.85");
+
+    Ok(())
+}
+
+#[test]
+fn test_build_launch_parameters_new_rich_settings() -> TestResult {
+    let exe_path = PathBuf::from("/bin/llama-server");
+    let model_path = PathBuf::from("/models/gemma-2b.gguf");
+
+    let assets = ModelAssets {
+        config: HashMap::new(),
+        jinja_template: None,
+    };
+
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "32".to_string(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "".to_string(),
+    };
+
+    let mut global_config = HashMap::new();
+    global_config.insert("cache-type-k".to_string(), serde_json::json!("q4_0"));
+    global_config.insert("cache-type-v".to_string(), serde_json::json!("q4_1"));
+    global_config.insert("kv-unified".to_string(), serde_json::json!(false));
+    global_config.insert("api-key".to_string(), serde_json::json!("secret-token-123"));
+    global_config.insert("metrics".to_string(), serde_json::json!(true));
+
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &global_config,
+        8080,
+    );
+
+    // Verify cache type options are separate
+    let ctk_idx = params.iter().position(|r| r == "-ctk").unwrap();
+    assert_eq!(params[ctk_idx + 1], "q4_0");
+
+    let ctv_idx = params.iter().position(|r| r == "-ctv").unwrap();
+    assert_eq!(params[ctv_idx + 1], "q4_1");
+
+    // Unified KV cache is disabled (since we passed false)
+    assert!(!params.contains(&"--kv-unified".to_string()));
+
+    // API key and metrics are present
+    let api_idx = params.iter().position(|r| r == "--api-key").unwrap();
+    assert_eq!(params[api_idx + 1], "secret-token-123");
+
+    assert!(params.contains(&"--metrics".to_string()));
+
+    // Now test router mode too
+    let router_params = build_router_launch_parameters(
+        &exe_path,
+        &PathBuf::from("/models/presets.ini"),
+        &global_config,
+        8080,
+    );
+
+    assert!(!router_params.contains(&"--kv-unified".to_string()));
+
+    let r_api_idx = router_params.iter().position(|r| r == "--api-key").unwrap();
+    assert_eq!(router_params[r_api_idx + 1], "secret-token-123");
+
+    assert!(router_params.contains(&"--metrics".to_string()));
 
     Ok(())
 }
