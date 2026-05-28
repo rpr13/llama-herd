@@ -30,6 +30,8 @@ pub struct ServerMetrics {
     pub max_models: Option<usize>,
     pub active_model: Option<String>,
     pub active_port: Option<u16>,
+    pub vram_usage: Option<(u64, u64)>, // (used, total) in MiB
+    pub ram_usage: Option<(u64, u64)>,  // (used, total) in MiB
 }
 
 pub struct ActiveServer {
@@ -85,6 +87,8 @@ impl ActiveServer {
             max_models,
             active_model: if is_router { None } else { model_name.clone() },
             active_port: None,
+            vram_usage: None,
+            ram_usage: None,
         }));
 
         let child = Arc::new(Mutex::new(child));
@@ -95,6 +99,8 @@ impl ActiveServer {
             let metrics = metrics.clone();
             let child_ref = child.clone();
             thread::spawn(move || {
+                let mut sys = sysinfo::System::new();
+                let mut vram_counter = 0u64;
                 while *is_running.lock().unwrap() {
                     let exit_status = {
                         let mut child_lock = child_ref.lock().unwrap();
@@ -119,6 +125,20 @@ impl ActiveServer {
                             break;
                         }
                     }
+
+                    // Query RAM and VRAM usage every 2 seconds
+                    if vram_counter.is_multiple_of(2) {
+                        sys.refresh_memory();
+                        let total_ram = sys.total_memory() / 1024 / 1024;
+                        let used_ram = sys.used_memory() / 1024 / 1024;
+                        let vram = query_vram();
+                        if let Ok(mut m_lock) = metrics.lock() {
+                            m_lock.ram_usage = Some((used_ram, total_ram));
+                            m_lock.vram_usage = vram;
+                        }
+                    }
+                    vram_counter = vram_counter.wrapping_add(1);
+
                     thread::sleep(std::time::Duration::from_secs(1));
                 }
             });
@@ -472,4 +492,44 @@ pub fn parse_active_model(line: &str) -> Option<String> {
         }
     }
     None
+}
+
+pub fn query_vram() -> Option<(u64, u64)> {
+    let output = Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let mut total_used = 0;
+    let mut total_limit = 0;
+    let mut found = false;
+
+    for line in stdout_str.lines() {
+        let parts: Vec<&str> = line.split(',').collect();
+        if parts.len() >= 2 {
+            let parsed = (
+                parts[0].trim().parse::<u64>(),
+                parts[1].trim().parse::<u64>(),
+            );
+            if let (Ok(used), Ok(total)) = parsed {
+                total_used += used;
+                total_limit += total;
+                found = true;
+            }
+        }
+    }
+
+    if found {
+        Some((total_used, total_limit))
+    } else {
+        None
+    }
 }

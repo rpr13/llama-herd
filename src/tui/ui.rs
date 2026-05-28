@@ -1538,9 +1538,10 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
     let metrics_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(33), // Column 1: Process Status
-            Constraint::Percentage(33), // Column 2: Server Mode
-            Constraint::Percentage(34), // Column 3: Routing Details
+            Constraint::Percentage(25), // Column 1: Process Status
+            Constraint::Percentage(25), // Column 2: Server Mode
+            Constraint::Percentage(25), // Column 3: Routing Details
+            Constraint::Percentage(25), // Column 4: Memory Usage
         ])
         .split(metrics_area);
 
@@ -1611,11 +1612,15 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         .active_port
         .map(|p| p.to_string())
         .unwrap_or_else(|| "N/A".to_string());
+    let active_model_truncated = truncate_middle(
+        active_model_str,
+        metrics_cols[2].width.saturating_sub(16) as usize,
+    );
     let col3_text = vec![
         Line::from(vec![
             Span::styled(" Active Model: ", Style::default().fg(theme.secondary)),
             Span::styled(
-                active_model_str,
+                active_model_truncated,
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
@@ -1627,6 +1632,78 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         ]),
     ];
     f.render_widget(Paragraph::new(col3_text), metrics_cols[2]);
+
+    // Column 4: Memory Usage (RAM & VRAM)
+    let col4_width = metrics_cols[3].width as usize;
+    let bar_width = if col4_width > 22 {
+        (col4_width - 20).min(8)
+    } else {
+        0
+    };
+
+    let mut col4_text = Vec::new();
+    if let Some((used, total)) = server_metrics.ram_usage {
+        let pct = if total > 0 {
+            (used as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        let bar = if bar_width > 0 {
+            format!(" {}", get_vram_bar(Some((used, total)), bar_width))
+        } else {
+            "".to_string()
+        };
+        col4_text.push(Line::from(vec![
+            Span::styled(" RAM:  ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                format!(
+                    "{:.1}/{:.1}G ({:.0}%)",
+                    used as f64 / 1024.0,
+                    total as f64 / 1024.0,
+                    pct
+                ),
+                Style::default().fg(theme.success),
+            ),
+            Span::styled(bar, Style::default().fg(theme.accent)),
+        ]));
+    } else {
+        col4_text.push(Line::from(vec![
+            Span::styled(" RAM:  ", Style::default().fg(theme.secondary)),
+            Span::styled("N/A", Style::default().fg(theme.secondary)),
+        ]));
+    }
+
+    if let Some((used, total)) = server_metrics.vram_usage {
+        let pct = if total > 0 {
+            (used as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        let bar = if bar_width > 0 {
+            format!(" {}", get_vram_bar(Some((used, total)), bar_width))
+        } else {
+            "".to_string()
+        };
+        col4_text.push(Line::from(vec![
+            Span::styled(" VRAM: ", Style::default().fg(theme.secondary)),
+            Span::styled(
+                format!(
+                    "{:.1}/{:.1}G ({:.0}%)",
+                    used as f64 / 1024.0,
+                    total as f64 / 1024.0,
+                    pct
+                ),
+                Style::default().fg(theme.success),
+            ),
+            Span::styled(bar, Style::default().fg(theme.accent)),
+        ]));
+    } else {
+        col4_text.push(Line::from(vec![
+            Span::styled(" VRAM: ", Style::default().fg(theme.secondary)),
+            Span::styled("N/A (No GPU)", Style::default().fg(theme.secondary)),
+        ]));
+    }
+    f.render_widget(Paragraph::new(col4_text), metrics_cols[3]);
 
     // Calculate inner logs scroll height
     let logs_rect = running_layout[3];
@@ -1715,4 +1792,24 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         .scroll((state.log_scroll_offset as u16, state.log_scroll_x as u16));
 
     f.render_widget(paragraph, running_layout[3]);
+}
+
+fn get_vram_bar(vram: Option<(u64, u64)>, bar_width: usize) -> String {
+    let Some((used, total)) = vram else {
+        return "-".repeat(bar_width);
+    };
+    if total == 0 {
+        return "-".repeat(bar_width);
+    }
+    let pct = (used as f64 / total as f64).clamp(0.0, 1.0);
+    let filled = (pct * bar_width as f64).round() as usize;
+    let mut bar = String::new();
+    for i in 0..bar_width {
+        if i < filled {
+            bar.push('█');
+        } else {
+            bar.push('░');
+        }
+    }
+    bar
 }
