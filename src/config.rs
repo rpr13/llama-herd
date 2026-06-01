@@ -366,6 +366,49 @@ pub fn discover_assets(selected_model: &Path, models_dir: &Path) -> ModelAssets 
     }
 }
 
+pub fn resolve_toml_path(selected_model: &Path, models_dir: &Path) -> PathBuf {
+    let stem = selected_model
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let mut toml_files = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(ext) = path.extension().and_then(|s| s.to_str())
+                && ext.to_lowercase() == "toml"
+            {
+                toml_files.push(path);
+            }
+        }
+    }
+
+    // Sort descending by length of file name
+    toml_files.sort_by_key(|p| std::cmp::Reverse(p.file_name().unwrap_or_default().len()));
+
+    for f in toml_files {
+        let f_stem = f
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if stem.starts_with(&f_stem) {
+            return f;
+        }
+    }
+
+    // Default fallback: exact model name with .toml extension
+    let file_name = selected_model
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.strip_suffix(".gguf").unwrap_or(s))
+        .unwrap_or("model");
+    models_dir.join(format!("{}.toml", file_name))
+}
+
 pub fn get_home_dir() -> Option<PathBuf> {
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
@@ -548,4 +591,47 @@ pub fn remove_global_config_value(
     }
 
     global_config.remove(key);
+}
+
+pub fn find_similar_config_files(model_path: &Path, models_dir: &Path) -> Vec<String> {
+    let mut results = Vec::new();
+    let stem = model_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    // Determine prefix by taking first hyphenated/underscored parts
+    let parts: Vec<&str> = stem.split(['-', '_']).collect();
+    let prefix = if parts.len() >= 2 {
+        format!("{}-{}", parts[0], parts[1])
+    } else if !parts.is_empty() {
+        parts[0].to_string()
+    } else {
+        String::new()
+    };
+
+    if let Ok(entries) = std::fs::read_dir(models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("toml")
+                && let Some(name) = path.file_name().and_then(|s| s.to_str())
+            {
+                let name_lower = name.to_lowercase();
+                let toml_stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if (!prefix.is_empty()
+                    && (name_lower.starts_with(&prefix) || name_lower.contains(&prefix)))
+                    || stem.starts_with(&toml_stem)
+                {
+                    results.push(name.to_string());
+                }
+            }
+        }
+    }
+    results.sort();
+    results
 }

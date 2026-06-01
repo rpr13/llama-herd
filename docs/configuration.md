@@ -37,6 +37,15 @@ Placed directly inside the `LLAMA_PATH` directory to define global settings shar
 
 Configured next to a `.gguf` file (e.g. `Qwen2.5-7B-Instruct.toml` for `Qwen2.5-7B-Instruct.gguf`).
 
+### TOML Resolution & Prefix Matching Hierarchy
+
+LlamaHerd resolves model configurations using a hierarchy that supports shorthand, shared configurations across multiple quantization variants:
+1. **Exact Match**: Checks for a TOML file matching the exact model filename (e.g., `model-name-q5_0.toml` for `model-name-q5_0.gguf`).
+2. **Prefix Match**: If no exact match is found, LlamaHerd searches for a shortened TOML file whose name matches the model's filename prefix (e.g., `model-name.toml` matching `model-name-q4_0.gguf` and `model-name-q5_0.gguf`).
+3. **Default Fallback**: If neither matches, it defaults to creating/checking the exact match path.
+
+Inside the TUI, you can edit and save the target TOML filename. Selecting the target configuration field opens a modal popup where you can cycle through similar prefix-matching TOML templates in the models directory using the `Up` and `Down` arrow keys.
+
 ### TOML Key Naming Rules
 
 1. Keys must not contain underscores (`_`). Use hyphens instead.

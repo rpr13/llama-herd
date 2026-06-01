@@ -9,7 +9,7 @@ pub mod tui {
 mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use llama_herd::tui::theme::Theme;
-    use llama_herd::tui::{AppScreen, AppState, TuiEvent, handle_key_event};
+    use llama_herd::tui::{AppScreen, AppState, DashboardFocus, TuiEvent, handle_key_event};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -429,5 +429,313 @@ mod tests {
         handle_key_event(&mut state, key_esc, &tx);
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.draft_index, 1);
+    }
+
+    #[test]
+    fn test_model_config_loading_and_saving() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        // Create a fake model file
+        let model_gguf = models_dir.join("test-model-7b.gguf");
+        std::fs::write(&model_gguf, b"").unwrap();
+
+        // Create a matching TOML config file
+        let model_toml = models_dir.join("test-model-7b.toml");
+        let toml_content = r#"
+[llama-herd]
+total-layers = 32
+draft = "test-draft.gguf"
+
+[llama-server-long]
+ctx-size = 4096
+ngl = "auto"
+temp = 0.7
+"#;
+        std::fs::write(&model_toml, toml_content.as_bytes()).unwrap();
+
+        // Generate the preset INI file first
+        llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+
+        let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+        assert_eq!(presets.len(), 2);
+
+        let mut state = AppState::new(
+            presets,
+            models_dir.clone(),
+            preset_path.clone(),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        // 1. Verify config is loaded automatically on AppState creation/preset selection
+        assert_eq!(state.config_file_name, "test-model-7b.toml");
+        assert_eq!(state.ctx_str, "4096");
+        assert_eq!(state.ngl, "32");
+        assert_eq!(state.temp, "0.7");
+        assert_eq!(state.total_layers, Some(32));
+
+        // 2. Modify values in State (simulating the inline editing inputs)
+        state.temp = "0.9".to_string();
+        state.ctx_str = "8192".to_string();
+        state.top_p = "0.99".to_string();
+        state.config_file_name = "shared-prefix-config.toml".to_string();
+
+        // 3. Save config (simulating Enter on ConfirmSaveConfig screen with backup disabled)
+        state.save_current_preset_config(false).unwrap();
+
+        // Verify new TOML file is created
+        let new_toml = models_dir.join("shared-prefix-config.toml");
+        assert!(new_toml.exists());
+
+        // Load new TOML file and check content
+        let new_config = llama_herd::config::load_toml_silent(&new_toml);
+        let long_opts = new_config
+            .get("llama-server-long")
+            .unwrap()
+            .as_object()
+            .unwrap();
+        assert_eq!(long_opts.get("temp").unwrap().as_f64().unwrap(), 0.9);
+        assert_eq!(long_opts.get("ctx-size").unwrap().as_i64().unwrap(), 8192);
+        assert_eq!(long_opts.get("top-p").unwrap().as_f64().unwrap(), 0.99);
+
+        // 4. Modify temp again and save with backup enabled to test backup generation
+        state.temp = "0.95".to_string();
+        state.save_current_preset_config(true).unwrap();
+
+        // Verify that a backup file with suffix .bak.<timestamp> was created
+        let backup_files: Vec<_> = std::fs::read_dir(&models_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("shared-prefix-config.toml.bak.")
+            })
+            .collect();
+        assert!(!backup_files.is_empty(), "Backup file should be created!");
+
+        // Verify presets were regenerated
+        let new_presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+        assert_eq!(new_presets.len(), 2);
+    }
+
+    #[test]
+    fn test_resolve_toml_path_prefix_matching() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+
+        let model_gguf = models_dir.join("my-awesome-model-13b-q5_k_m.gguf");
+        std::fs::write(&model_gguf, b"").unwrap();
+
+        // 1. If no TOML exist, fallback path should be exact matching GGUF stem name with .toml extension
+        let path = llama_herd::config::resolve_toml_path(&model_gguf, &models_dir);
+        assert_eq!(path, models_dir.join("my-awesome-model-13b-q5_k_m.toml"));
+
+        // 2. If a prefix matching TOML exists, use it
+        let shared_toml = models_dir.join("my-awesome-model-13b.toml");
+        std::fs::write(&shared_toml, b"").unwrap();
+
+        let path = llama_herd::config::resolve_toml_path(&model_gguf, &models_dir);
+        assert_eq!(path, shared_toml);
+
+        // 3. If a more specific exact matching TOML exists, use it instead of prefix
+        let exact_toml = models_dir.join("my-awesome-model-13b-q5_k_m.toml");
+        std::fs::write(&exact_toml, b"").unwrap();
+
+        let path = llama_herd::config::resolve_toml_path(&model_gguf, &models_dir);
+        assert_eq!(path, exact_toml);
+    }
+
+    #[test]
+    fn test_dashboard_tab_toggle_and_shortcuts() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        assert_eq!(state.dashboard_focus, DashboardFocus::Left);
+        assert_eq!(state.dashboard_param_index, 0);
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Tab should toggle to right panel focus
+        let key_tab = KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_tab, &tx);
+        assert_eq!(state.dashboard_focus, DashboardFocus::Right);
+
+        // 2. Down key should increment parameter index when focused on right panel
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.dashboard_param_index, 1);
+
+        // 3. Tab should toggle back to left panel focus
+        handle_key_event(&mut state, key_tab, &tx);
+        assert_eq!(state.dashboard_focus, DashboardFocus::Left);
+
+        // 4. Numeric key '2' should switch active tab to Settings
+        let key_2 = KeyEvent {
+            code: KeyCode::Char('2'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_2, &tx);
+        assert_eq!(state.active_tab, 1);
+        assert_eq!(state.screen, AppScreen::Settings);
+    }
+
+    #[test]
+    fn test_config_filename_editing_suggestions() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        // GGUF model
+        let model_gguf = models_dir.join("my-model-7b-q4_0.gguf");
+        std::fs::write(&model_gguf, b"").unwrap();
+
+        // Similar TOMLs
+        let toml1 = models_dir.join("my-model-7b.toml");
+        std::fs::write(&toml1, b"").unwrap();
+        let toml2 = models_dir.join("my-model-7b-q4_0.toml");
+        std::fs::write(&toml2, b"").unwrap();
+
+        llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+
+        let mut state = AppState::new(
+            presets,
+            models_dir.clone(),
+            preset_path.clone(),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // Trigger config filename edit screen
+        let key_f = KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_f, &tx);
+
+        assert_eq!(state.screen, AppScreen::EditingConfigFileName);
+        // Similar config files should contain our two TOMLs
+        assert_eq!(state.similar_config_files.len(), 2);
+        assert!(
+            state
+                .similar_config_files
+                .contains(&"my-model-7b.toml".to_string())
+        );
+        assert!(
+            state
+                .similar_config_files
+                .contains(&"my-model-7b-q4_0.toml".to_string())
+        );
+
+        // Press Down to cycle selection
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+
+        assert!(state.similar_config_index.is_some());
+        assert!(!state.input_buffer.is_empty());
+    }
+
+    #[test]
+    fn test_unsaved_changes_preset_change_warning() {
+        let mut state = AppState::new(
+            vec![
+                ("model-1".to_string(), PathBuf::from("model-1.gguf")),
+                ("model-2".to_string(), PathBuf::from("model-2.gguf")),
+            ],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        assert_eq!(state.preset_index, 0);
+        assert_eq!(state.dashboard_focus, DashboardFocus::Left);
+
+        // Make parameter change (dirty state)
+        state.temp = "0.95".to_string();
+        assert!(state.has_unsaved_changes());
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // Trigger preset selection change Down
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+
+        // Verify warning screen is active and preset index has not changed yet
+        assert_eq!(state.screen, AppScreen::WarnDiscardChanges);
+        assert_eq!(state.preset_index, 0);
+        assert_eq!(state.pending_preset_index, Some(1));
+
+        // Press 'n' to cancel switching
+        let key_n = KeyEvent {
+            code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_n, &tx);
+
+        // Verify back to dashboard, preset index still 0
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.preset_index, 0);
+        assert_eq!(state.pending_preset_index, None);
+
+        // Trigger down again
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.screen, AppScreen::WarnDiscardChanges);
+
+        // Confirm switch using Enter
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+
+        // Verify preset index successfully switched to 1
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.preset_index, 1);
+        assert_eq!(state.pending_preset_index, None);
     }
 }

@@ -49,6 +49,8 @@ The `llama-server` executable path and the `models-dir` (where your models are l
 
 Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`).
 
+- **Prefix-Based Matching Hierarchy**: LlamaHerd resolves configuration paths by searching first for an exact GGUF stem match, then falling back to prefix matching (e.g. `model-name.toml` matching `model-name-q4_0.gguf` and `model-name-q5_0.gguf`), enabling shared config files across different model quantizations.
+
 > [!IMPORTANT]
 > **Strict TOML Key Rules & Categories**:
 >

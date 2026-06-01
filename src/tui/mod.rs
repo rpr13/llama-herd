@@ -14,7 +14,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub use app::{AppScreen, AppState};
+pub use app::{AppScreen, AppState, DashboardFocus};
 pub use logs::ActiveServer;
 
 #[derive(Clone, Debug)]
@@ -31,7 +31,6 @@ pub fn handle_key_event(
 ) -> bool {
     let mut should_quit = false;
 
-    // Handle global tab switching if not in an input popup
     if !matches!(
         state.screen,
         AppScreen::EditingCtx
@@ -43,32 +42,15 @@ pub fn handle_key_event(
             | AppScreen::SelectingGlobalSettingOption
             | AppScreen::SelectingMMProj
             | AppScreen::SelectingDraftModel
+            | AppScreen::EditingTemp
+            | AppScreen::EditingTopP
+            | AppScreen::EditingTopK
+            | AppScreen::EditingTotalLayers
+            | AppScreen::EditingConfigFileName
+            | AppScreen::ConfirmSaveConfig
+            | AppScreen::WarnDiscardChanges
     ) {
         match key.code {
-            KeyCode::Tab => {
-                state.active_tab = (state.active_tab + 1) % 3;
-                state.screen = match state.active_tab {
-                    0 => AppScreen::Dashboard,
-                    1 => AppScreen::Settings,
-                    2 => AppScreen::Logs,
-                    _ => state.screen,
-                };
-                return false;
-            }
-            KeyCode::BackTab => {
-                if state.active_tab == 0 {
-                    state.active_tab = 2;
-                } else {
-                    state.active_tab -= 1;
-                }
-                state.screen = match state.active_tab {
-                    0 => AppScreen::Dashboard,
-                    1 => AppScreen::Settings,
-                    2 => AppScreen::Logs,
-                    _ => state.screen,
-                };
-                return false;
-            }
             KeyCode::Char('1') => {
                 state.active_tab = 0;
                 state.screen = AppScreen::Dashboard;
@@ -95,7 +77,11 @@ pub fn handle_key_event(
             }
             KeyCode::Char('c') => {
                 state.screen = AppScreen::EditingCtx;
-                state.input_buffer = state.ctx.to_string();
+                state.input_buffer = if state.ctx_str.is_empty() {
+                    state.ctx.to_string()
+                } else {
+                    state.ctx_str.clone()
+                };
             }
             KeyCode::Char('n') => {
                 state.screen = AppScreen::EditingNgl;
@@ -113,17 +99,98 @@ pub fn handle_key_event(
                 state.draft_index_backup = state.draft_index;
                 state.screen = AppScreen::SelectingDraftModel;
             }
-            KeyCode::Up if !state.presets.is_empty() => {
-                if state.preset_index == 0 {
-                    state.preset_index = state.presets.len() - 1;
-                } else {
-                    state.preset_index -= 1;
-                }
-                state.load_current_preset_settings();
+            KeyCode::Char('t') => {
+                state.screen = AppScreen::EditingTemp;
+                state.input_buffer = state.temp.clone();
             }
-            KeyCode::Down if !state.presets.is_empty() => {
-                state.preset_index = (state.preset_index + 1) % state.presets.len();
-                state.load_current_preset_settings();
+            KeyCode::Char('p') => {
+                state.screen = AppScreen::EditingTopP;
+                state.input_buffer = state.top_p.clone();
+            }
+            KeyCode::Char('k') => {
+                state.screen = AppScreen::EditingTopK;
+                state.input_buffer = state.top_k.clone();
+            }
+            KeyCode::Char('l') => {
+                state.screen = AppScreen::EditingTotalLayers;
+                state.input_buffer = state
+                    .total_layers
+                    .map(|l| l.to_string())
+                    .unwrap_or_default();
+            }
+            KeyCode::Char('f') => {
+                state.screen = AppScreen::EditingConfigFileName;
+                state.input_buffer = state.config_file_name.clone();
+                if !state.presets.is_empty() {
+                    let (_, model_path) = &state.presets[state.preset_index];
+                    state.similar_config_files =
+                        crate::config::find_similar_config_files(model_path, &state.models_dir);
+                    state.similar_config_index = state
+                        .similar_config_files
+                        .iter()
+                        .position(|f| f == &state.input_buffer);
+                } else {
+                    state.similar_config_files.clear();
+                    state.similar_config_index = None;
+                }
+            }
+            KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                let config_changed = state.ctx_str != state.original_ctx_str
+                    || state.ngl != state.original_ngl
+                    || state.mmproj_index != state.original_mmproj_index
+                    || state.draft_index != state.original_draft_index
+                    || state.draft_ngl != state.original_draft_ngl
+                    || state.temp != state.original_temp
+                    || state.top_p != state.original_top_p
+                    || state.top_k != state.original_top_k
+                    || state.total_layers != state.original_total_layers
+                    || state.config_file_name != state.original_config_file_name;
+                if config_changed {
+                    state.screen = AppScreen::ConfirmSaveConfig;
+                    state.backup_config = true;
+                }
+            }
+            KeyCode::Tab | KeyCode::BackTab => {
+                state.dashboard_focus = match state.dashboard_focus {
+                    DashboardFocus::Left => DashboardFocus::Right,
+                    DashboardFocus::Right => DashboardFocus::Left,
+                };
+            }
+            KeyCode::Up => {
+                if state.dashboard_focus == DashboardFocus::Right {
+                    if state.dashboard_param_index == 0 {
+                        state.dashboard_param_index = 9;
+                    } else {
+                        state.dashboard_param_index -= 1;
+                    }
+                } else if !state.presets.is_empty() {
+                    let target_index = if state.preset_index == 0 {
+                        state.presets.len() - 1
+                    } else {
+                        state.preset_index - 1
+                    };
+                    if state.has_unsaved_changes() {
+                        state.pending_preset_index = Some(target_index);
+                        state.screen = AppScreen::WarnDiscardChanges;
+                    } else {
+                        state.preset_index = target_index;
+                        state.load_current_preset_settings(None);
+                    }
+                }
+            }
+            KeyCode::Down => {
+                if state.dashboard_focus == DashboardFocus::Right {
+                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 10;
+                } else if !state.presets.is_empty() {
+                    let target_index = (state.preset_index + 1) % state.presets.len();
+                    if state.has_unsaved_changes() {
+                        state.pending_preset_index = Some(target_index);
+                        state.screen = AppScreen::WarnDiscardChanges;
+                    } else {
+                        state.preset_index = target_index;
+                        state.load_current_preset_settings(None);
+                    }
+                }
             }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Spawns router mode server
@@ -178,57 +245,125 @@ pub fn handle_key_event(
                     Err(_e) => {}
                 }
             }
-            KeyCode::Enter if !state.presets.is_empty() => {
-                // Spawns preset server
-                crate::launcher::kill_existing_servers();
-                let (_preset_name, model_path) = &state.presets[state.preset_index];
-                let assets = crate::discovery::discover_assets(model_path, &state.models_dir);
-                let settings = state.get_user_settings();
-                let port_str = state
-                    .global_config
-                    .get("port")
-                    .and_then(|v| {
-                        if let Some(i) = v.as_i64() {
-                            Some(i.to_string())
-                        } else {
-                            v.as_str().map(|s| s.to_string())
+            KeyCode::Enter => {
+                if state.dashboard_focus == DashboardFocus::Right {
+                    match state.dashboard_param_index {
+                        0 => {
+                            state.screen = AppScreen::EditingConfigFileName;
+                            state.input_buffer = state.config_file_name.clone();
+                            if !state.presets.is_empty() {
+                                let (_, model_path) = &state.presets[state.preset_index];
+                                state.similar_config_files =
+                                    crate::config::find_similar_config_files(
+                                        model_path,
+                                        &state.models_dir,
+                                    );
+                                state.similar_config_index = state
+                                    .similar_config_files
+                                    .iter()
+                                    .position(|f| f == &state.input_buffer);
+                            } else {
+                                state.similar_config_files.clear();
+                                state.similar_config_index = None;
+                            }
                         }
-                    })
-                    .unwrap_or_else(|| "auto".to_string());
-                let resolved_port = crate::launcher::resolve_port(&port_str);
-                let launch_args = crate::launcher::build_launch_parameters(
-                    &state.server_exe,
-                    model_path,
-                    &assets,
-                    &settings,
-                    &state.global_config,
-                    resolved_port,
-                );
-                state.last_launch_args = launch_args.clone();
-                state.is_router_mode = false;
-                let model_name = if state.presets.is_empty() {
-                    None
-                } else {
-                    Some(state.presets[state.preset_index].0.clone())
-                };
-
-                match ActiveServer::spawn(
-                    &launch_args,
-                    &state.models_dir,
-                    model_name,
-                    Some(event_tx.clone()),
-                ) {
-                    Ok(server) => {
-                        state.active_server = Some(server);
-                        state.screen = AppScreen::Logs;
-                        state.active_tab = 2;
-                        state.logs_paused = false;
-                        state.paused_logs_buffer.clear();
-                        state.auto_scroll = true;
-                        state.log_scroll_offset = 0;
-                        state.log_scroll_x = 0;
+                        1 => {
+                            state.screen = AppScreen::EditingCtx;
+                            state.input_buffer = if state.ctx_str.is_empty() {
+                                state.ctx.to_string()
+                            } else {
+                                state.ctx_str.clone()
+                            };
+                        }
+                        2 => {
+                            state.screen = AppScreen::EditingNgl;
+                            state.input_buffer = state.ngl.clone();
+                        }
+                        3 => {
+                            state.mmproj_index_backup = state.mmproj_index;
+                            state.screen = AppScreen::SelectingMMProj;
+                        }
+                        4 => {
+                            state.draft_index_backup = state.draft_index;
+                            state.screen = AppScreen::SelectingDraftModel;
+                        }
+                        5 => {
+                            state.screen = AppScreen::EditingDraftNgl;
+                            state.input_buffer = state.draft_ngl.clone();
+                        }
+                        6 => {
+                            state.screen = AppScreen::EditingTemp;
+                            state.input_buffer = state.temp.clone();
+                        }
+                        7 => {
+                            state.screen = AppScreen::EditingTopP;
+                            state.input_buffer = state.top_p.clone();
+                        }
+                        8 => {
+                            state.screen = AppScreen::EditingTopK;
+                            state.input_buffer = state.top_k.clone();
+                        }
+                        9 => {
+                            state.screen = AppScreen::EditingTotalLayers;
+                            state.input_buffer = state
+                                .total_layers
+                                .map(|l| l.to_string())
+                                .unwrap_or_default();
+                        }
+                        _ => {}
                     }
-                    Err(_e) => {}
+                } else if !state.presets.is_empty() {
+                    // Spawns preset server
+                    crate::launcher::kill_existing_servers();
+                    let (_preset_name, model_path) = &state.presets[state.preset_index];
+                    let assets = crate::discovery::discover_assets(model_path, &state.models_dir);
+                    let settings = state.get_user_settings();
+                    let port_str = state
+                        .global_config
+                        .get("port")
+                        .and_then(|v| {
+                            if let Some(i) = v.as_i64() {
+                                Some(i.to_string())
+                            } else {
+                                v.as_str().map(|s| s.to_string())
+                            }
+                        })
+                        .unwrap_or_else(|| "auto".to_string());
+                    let resolved_port = crate::launcher::resolve_port(&port_str);
+                    let launch_args = crate::launcher::build_launch_parameters(
+                        &state.server_exe,
+                        model_path,
+                        &assets,
+                        &settings,
+                        &state.global_config,
+                        resolved_port,
+                    );
+                    state.last_launch_args = launch_args.clone();
+                    state.is_router_mode = false;
+                    let model_name = if state.presets.is_empty() {
+                        None
+                    } else {
+                        Some(state.presets[state.preset_index].0.clone())
+                    };
+
+                    match ActiveServer::spawn(
+                        &launch_args,
+                        &state.models_dir,
+                        model_name,
+                        Some(event_tx.clone()),
+                    ) {
+                        Ok(server) => {
+                            state.active_server = Some(server);
+                            state.screen = AppScreen::Logs;
+                            state.active_tab = 2;
+                            state.logs_paused = false;
+                            state.paused_logs_buffer.clear();
+                            state.auto_scroll = true;
+                            state.log_scroll_offset = 0;
+                            state.log_scroll_x = 0;
+                        }
+                        Err(_e) => {}
+                    }
                 }
             }
             _ => {}
@@ -435,7 +570,7 @@ pub fn handle_key_event(
                         state.presets =
                             crate::discovery::discover_presets_from_ini(&state.preset_path);
                         state.preset_index = 0;
-                        state.load_current_preset_settings();
+                        state.load_current_preset_settings(None);
                     }
 
                     // Save config
@@ -452,6 +587,11 @@ pub fn handle_key_event(
         AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
+        | AppScreen::EditingTemp
+        | AppScreen::EditingTopP
+        | AppScreen::EditingTopK
+        | AppScreen::EditingTotalLayers
+        | AppScreen::EditingConfigFileName
         | AppScreen::EditingGlobalSetting => match key.code {
             KeyCode::Esc => {
                 if state.screen == AppScreen::EditingGlobalSetting {
@@ -463,7 +603,9 @@ pub fn handle_key_event(
             KeyCode::Enter => {
                 match state.screen {
                     AppScreen::EditingCtx => {
-                        state.ctx = crate::config::parse_ctx_str(&state.input_buffer);
+                        let val = state.input_buffer.trim().to_string();
+                        state.ctx_str = val.clone();
+                        state.ctx = crate::config::parse_ctx_str(&val);
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingNgl => {
@@ -472,6 +614,31 @@ pub fn handle_key_event(
                     }
                     AppScreen::EditingDraftNgl => {
                         state.draft_ngl = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingTemp => {
+                        state.temp = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingTopP => {
+                        state.top_p = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingTopK => {
+                        state.top_k = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingTotalLayers => {
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() {
+                            state.total_layers = None;
+                        } else if let Ok(num) = val.parse::<usize>() {
+                            state.total_layers = Some(num);
+                        }
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingConfigFileName => {
+                        state.config_file_name = state.input_buffer.trim().to_string();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingGlobalSetting => {
@@ -593,11 +760,57 @@ pub fn handle_key_event(
                     _ => {}
                 }
             }
+            KeyCode::Up => {
+                if state.screen == AppScreen::EditingConfigFileName
+                    && !state.similar_config_files.is_empty()
+                {
+                    let len = state.similar_config_files.len();
+                    state.similar_config_index = Some(match state.similar_config_index {
+                        Some(idx) => {
+                            if idx == 0 {
+                                len - 1
+                            } else {
+                                idx - 1
+                            }
+                        }
+                        None => len - 1,
+                    });
+                    if let Some(idx) = state.similar_config_index {
+                        state.input_buffer = state.similar_config_files[idx].clone();
+                    }
+                }
+            }
+            KeyCode::Down => {
+                if state.screen == AppScreen::EditingConfigFileName
+                    && !state.similar_config_files.is_empty()
+                {
+                    let len = state.similar_config_files.len();
+                    state.similar_config_index = Some(match state.similar_config_index {
+                        Some(idx) => (idx + 1) % len,
+                        None => 0,
+                    });
+                    if let Some(idx) = state.similar_config_index {
+                        state.input_buffer = state.similar_config_files[idx].clone();
+                    }
+                }
+            }
             KeyCode::Backspace => {
                 state.input_buffer.pop();
+                if state.screen == AppScreen::EditingConfigFileName {
+                    state.similar_config_index = state
+                        .similar_config_files
+                        .iter()
+                        .position(|f| f == &state.input_buffer);
+                }
             }
             KeyCode::Char(c) => {
                 state.input_buffer.push(c);
+                if state.screen == AppScreen::EditingConfigFileName {
+                    state.similar_config_index = state
+                        .similar_config_files
+                        .iter()
+                        .position(|f| f == &state.input_buffer);
+                }
             }
             _ => {}
         },
@@ -693,6 +906,33 @@ pub fn handle_key_event(
                     state.draft_ngl = "".to_string();
                 } else if state.draft_ngl.is_empty() {
                     state.draft_ngl = "auto".to_string();
+                }
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::ConfirmSaveConfig => match key.code {
+            KeyCode::Esc => {
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Char(' ') => {
+                state.backup_config = !state.backup_config;
+            }
+            KeyCode::Enter => {
+                let _ = state.save_current_preset_config(state.backup_config);
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::WarnDiscardChanges => match key.code {
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                state.pending_preset_index = None;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Some(target) = state.pending_preset_index.take() {
+                    state.preset_index = target;
+                    state.load_current_preset_settings(None);
                 }
                 state.screen = AppScreen::Dashboard;
             }

@@ -1,4 +1,4 @@
-use crate::tui::app::{AppScreen, AppState};
+use crate::tui::app::{AppScreen, AppState, DashboardFocus};
 use crate::tui::theme::Theme;
 use ratatui::{
     Frame,
@@ -163,7 +163,14 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
         | AppScreen::SelectingMMProj
-        | AppScreen::SelectingDraftModel => {
+        | AppScreen::SelectingDraftModel
+        | AppScreen::EditingTemp
+        | AppScreen::EditingTopP
+        | AppScreen::EditingTopK
+        | AppScreen::EditingTotalLayers
+        | AppScreen::EditingConfigFileName
+        | AppScreen::ConfirmSaveConfig
+        | AppScreen::WarnDiscardChanges => {
             render_dashboard(f, state, main_layout[1]);
         }
         AppScreen::Settings
@@ -182,133 +189,208 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     let theme = &state.theme;
     let footer_text = match state.screen {
         AppScreen::Dashboard => {
-            if size.width < 110 {
-                vec![
-                    Line::from(vec![
-                        Span::styled(
-                            " [Enter]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Launch  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [Ctrl+R]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Router  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [c]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Context  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [n]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" GPU Layers  ", Style::default().fg(theme.fg)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(
-                            " [v]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" MMProj  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [d]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Draft  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [g]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Draft NGL  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [q]",
-                            Style::default()
-                                .fg(theme.error)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Quit", Style::default().fg(theme.fg)),
-                    ]),
-                ]
-            } else {
-                vec![
-                    Line::from(vec![
-                        Span::styled(
-                            " [Enter]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Launch Preset  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [Ctrl+R]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Launch Router  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [c]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Edit Context  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [n]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Edit GPU Layers  ", Style::default().fg(theme.fg)),
-                    ]),
-                    Line::from(vec![
-                        Span::styled(
-                            " [v]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Cycle MMProj  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [d]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Cycle Draft  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [g]",
-                            Style::default()
-                                .fg(theme.primary)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Edit Draft NGL  ", Style::default().fg(theme.fg)),
-                        Span::styled(
-                            " [q]",
-                            Style::default()
-                                .fg(theme.error)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" Quit", Style::default().fg(theme.fg)),
-                    ]),
-                ]
+            let config_changed = state.ctx_str != state.original_ctx_str
+                || state.ngl != state.original_ngl
+                || state.mmproj_index != state.original_mmproj_index
+                || state.draft_index != state.original_draft_index
+                || state.draft_ngl != state.original_draft_ngl
+                || state.temp != state.original_temp
+                || state.top_p != state.original_top_p
+                || state.top_k != state.original_top_k
+                || state.total_layers != state.original_total_layers
+                || state.config_file_name != state.original_config_file_name;
+
+            let mut second_line_spans = vec![
+                Span::styled(
+                    " [t]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Temp  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [p]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Top P  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [k]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Top K  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [l]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Layers  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [f]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Config File  ", Style::default().fg(theme.fg)),
+            ];
+
+            if config_changed {
+                second_line_spans.push(Span::styled(
+                    " [Ctrl+S]",
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                ));
+                second_line_spans.push(Span::styled(
+                    " Save Config  ",
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                ));
             }
+
+            second_line_spans.push(Span::styled(
+                " [q]",
+                Style::default()
+                    .fg(theme.error)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            second_line_spans.push(Span::styled(" Quit", Style::default().fg(theme.fg)));
+
+            let launch_preset_label = if size.width < 110 {
+                " Launch  "
+            } else {
+                " Launch Preset  "
+            };
+
+            let launch_router_label = if size.width < 110 {
+                " Router  "
+            } else {
+                " Launch Router  "
+            };
+
+            let context_label = if size.width < 110 {
+                " Context  "
+            } else {
+                " Edit Context  "
+            };
+
+            let layers_label = if size.width < 110 {
+                " GPU Layers  "
+            } else {
+                " Edit GPU Layers  "
+            };
+
+            let draft_ngl_label = if size.width < 110 {
+                " Draft NGL  "
+            } else {
+                " Edit Draft NGL  "
+            };
+
+            let mmproj_label = if size.width < 110 {
+                " MMProj  "
+            } else {
+                " Cycle MMProj  "
+            };
+
+            let draft_label = if size.width < 110 {
+                " Draft  "
+            } else {
+                " Cycle Draft  "
+            };
+
+            let focus_label = if state.dashboard_focus == DashboardFocus::Left {
+                " Focus Params  "
+            } else {
+                " Focus List  "
+            };
+
+            let mut first_line_spans = vec![
+                Span::styled(
+                    " [Tab]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(focus_label, Style::default().fg(theme.fg)),
+            ];
+
+            if state.dashboard_focus == DashboardFocus::Left {
+                first_line_spans.extend(vec![
+                    Span::styled(
+                        " [Enter]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(launch_preset_label, Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [Ctrl+R]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(launch_router_label, Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [c]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(context_label, Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [n]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(layers_label, Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [v]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(mmproj_label, Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [d]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(draft_label, Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [g]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(draft_ngl_label, Style::default().fg(theme.fg)),
+                ]);
+            } else {
+                first_line_spans.extend(vec![
+                    Span::styled(
+                        " [Up/Down]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Select Param  ", Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [Enter]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Edit Selected  ", Style::default().fg(theme.fg)),
+                ]);
+            }
+
+            vec![Line::from(first_line_spans), Line::from(second_line_spans)]
         }
         AppScreen::Settings => {
             vec![Line::from(vec![
@@ -375,6 +457,11 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
+        | AppScreen::EditingTemp
+        | AppScreen::EditingTopP
+        | AppScreen::EditingTopK
+        | AppScreen::EditingTotalLayers
+        | AppScreen::EditingConfigFileName
         | AppScreen::EditingGlobalSetting
         | AppScreen::SelectingGlobalSettingOption
         | AppScreen::SelectingMMProj
@@ -394,6 +481,55 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" Cancel and Go Back", Style::default().fg(theme.fg)),
+            ])]
+        }
+        AppScreen::ConfirmSaveConfig => {
+            vec![Line::from(vec![
+                Span::styled(
+                    " [Space]",
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Toggle Backup  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [Enter]",
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Save Config  ", Style::default().fg(theme.fg)),
+                Span::styled(
+                    " [Esc]",
+                    Style::default()
+                        .fg(theme.error)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Cancel and Go Back", Style::default().fg(theme.fg)),
+            ])]
+        }
+        AppScreen::WarnDiscardChanges => {
+            vec![Line::from(vec![
+                Span::styled(
+                    " [y] / [Enter]",
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    " Discard changes & switch preset  ",
+                    Style::default().fg(theme.fg),
+                ),
+                Span::styled(
+                    " [n] / [Esc]",
+                    Style::default()
+                        .fg(theme.error)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    " Keep current preset & edit parameters",
+                    Style::default().fg(theme.fg),
+                ),
             ])]
         }
         AppScreen::Logs => {
@@ -602,7 +738,7 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
     f.render_widget(Paragraph::new(Line::from(logo)), header_layout[0]);
 
     // --- CENTER: TABS ---
-    let tabs_text = if area.width >= 70 {
+    let tabs_text = if area.width >= 75 {
         vec![
             Span::styled(
                 "[ ",
@@ -610,9 +746,9 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
             ),
             render_header_tab(
                 if theme.show_emojis {
-                    "📊 Dashboard"
+                    "[1] 📊 Dashboard"
                 } else {
-                    "Dashboard"
+                    "[1] Dashboard"
                 },
                 state.active_tab == 0,
                 theme,
@@ -623,9 +759,9 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
             ),
             render_header_tab(
                 if theme.show_emojis {
-                    "⚙ Settings"
+                    "[2] ⚙ Settings"
                 } else {
-                    "Settings"
+                    "[2] Settings"
                 },
                 state.active_tab == 1,
                 theme,
@@ -636,9 +772,9 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
             ),
             render_header_tab(
                 if theme.show_emojis {
-                    "📜 Logs"
+                    "[3] 📜 Logs"
                 } else {
-                    "Logs"
+                    "[3] Logs"
                 },
                 state.active_tab == 2,
                 theme,
@@ -653,14 +789,14 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
             render_header_tab(
                 if area.width >= 45 {
                     if theme.show_emojis {
-                        "📊 Dash"
+                        "[1] 📊 Dash"
                     } else {
-                        "Dash"
+                        "[1] Dash"
                     }
                 } else if theme.show_emojis {
-                    "📊"
+                    "[1] 📊"
                 } else {
-                    "D"
+                    "[1] D"
                 },
                 state.active_tab == 0,
                 theme,
@@ -668,11 +804,15 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
             Span::styled("  ", Style::default().bg(theme.header_bg)),
             render_header_tab(
                 if area.width >= 45 {
-                    if theme.show_emojis { "⚙ Set" } else { "Set" }
+                    if theme.show_emojis {
+                        "[2] ⚙ Set"
+                    } else {
+                        "[2] Set"
+                    }
                 } else if theme.show_emojis {
-                    "⚙"
+                    "[2] ⚙"
                 } else {
-                    "S"
+                    "[2] S"
                 },
                 state.active_tab == 1,
                 theme,
@@ -681,14 +821,14 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
             render_header_tab(
                 if area.width >= 45 {
                     if theme.show_emojis {
-                        "📜 Logs"
+                        "[3] 📜 Logs"
                     } else {
-                        "Logs"
+                        "[3] Logs"
                     }
                 } else if theme.show_emojis {
-                    "📜"
+                    "[3] 📜"
                 } else {
-                    "L"
+                    "[3] L"
                 },
                 state.active_tab == 2,
                 theme,
@@ -1044,6 +1184,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
 
     // LEFT Panel: Presets List
     let list_val_width = content_layout[0].width.saturating_sub(6) as usize;
+    let is_left_focused = state.dashboard_focus == DashboardFocus::Left;
     let items: Vec<ListItem> = state
         .presets
         .iter()
@@ -1051,11 +1192,19 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         .map(|(idx, (name, _))| {
             let display_name = truncate_middle(name, list_val_width);
             if idx == state.preset_index {
-                ListItem::new(format!(" ➤ {} ", display_name)).style(
-                    Style::default()
-                        .fg(theme.selection)
-                        .add_modifier(Modifier::BOLD),
-                )
+                if is_left_focused {
+                    ListItem::new(format!(" ➤ {} ", display_name)).style(
+                        Style::default()
+                            .fg(theme.selection)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    ListItem::new(format!(" • {} ", display_name)).style(
+                        Style::default()
+                            .fg(theme.secondary)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                }
             } else {
                 ListItem::new(format!("   {} ", display_name)).style(Style::default().fg(theme.fg))
             }
@@ -1068,22 +1217,51 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         Borders::TOP | Borders::RIGHT | Borders::BOTTOM
     };
 
+    let presets_border_color = if state.dashboard_focus == DashboardFocus::Left {
+        theme.primary
+    } else {
+        theme.secondary
+    };
+
     let presets_block = Block::default()
         .borders(presets_borders)
         .title(" Presets ")
         .border_type(theme.border_type)
         .style(Style::default().bg(theme.bg).fg(theme.fg))
-        .border_style(Style::default().fg(theme.primary));
+        .border_style(Style::default().fg(presets_border_color));
     let presets_list = List::new(items).block(presets_block);
     f.render_widget(presets_list, content_layout[0]);
 
     // RIGHT Panel: Parameters Details
+    let config_changed = state.ctx_str != state.original_ctx_str
+        || state.ngl != state.original_ngl
+        || state.mmproj_index != state.original_mmproj_index
+        || state.draft_index != state.original_draft_index
+        || state.draft_ngl != state.original_draft_ngl
+        || state.temp != state.original_temp
+        || state.top_p != state.original_top_p
+        || state.top_k != state.original_top_k
+        || state.total_layers != state.original_total_layers
+        || state.config_file_name != state.original_config_file_name;
+
+    let right_title = if config_changed {
+        " Preset Details & Parameters (Unsaved Changes: Ctrl+S to save) ".to_string()
+    } else {
+        " Preset Details & Parameters ".to_string()
+    };
+
+    let right_border_color = if state.dashboard_focus == DashboardFocus::Right {
+        theme.primary
+    } else {
+        theme.secondary
+    };
+
     let right_block = Block::default()
         .borders(Borders::TOP | Borders::BOTTOM)
-        .title(" Preset Details & Parameters ")
+        .title(right_title)
         .border_type(theme.border_type)
         .style(Style::default().bg(theme.bg).fg(theme.fg))
-        .border_style(Style::default().fg(theme.primary));
+        .border_style(Style::default().fg(right_border_color));
 
     let preset_name = if state.presets.is_empty() {
         "None".to_string()
@@ -1108,8 +1286,22 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             .unwrap_or_else(|| "None".to_string()),
         None => "None (Disabled)".to_string(),
     };
+    let original_mmproj_val = match &state.mmproj_list[state.original_mmproj_index] {
+        Some(p) => p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "None".to_string()),
+        None => "None (Disabled)".to_string(),
+    };
 
     let draft_val = match &state.draft_list[state.draft_index] {
+        Some(p) => p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "None".to_string()),
+        None => "None (Disabled)".to_string(),
+    };
+    let original_draft_val = match &state.draft_list[state.original_draft_index] {
         Some(p) => p
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -1120,8 +1312,97 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
     let val_width = content_layout[1].width.saturating_sub(26) as usize;
     let display_preset_name = truncate_middle(&preset_name, val_width);
     let display_model_name = truncate_middle(&model_name, val_width);
-    let display_mmproj_val = truncate_middle(&mmproj_val, val_width);
-    let display_draft_val = truncate_middle(&draft_val, val_width);
+
+    let make_val_cell = |orig: &str, curr: &str, default_style: Style| -> Cell<'static> {
+        let display_orig = if orig.is_empty() { "none" } else { orig };
+        let display_curr = if curr.is_empty() { "none" } else { curr };
+        if display_orig == display_curr {
+            Cell::from(Span::styled(display_curr.to_string(), default_style))
+        } else {
+            Cell::from(Line::from(vec![
+                Span::styled(
+                    display_orig.to_string(),
+                    Style::default().fg(theme.secondary),
+                ),
+                Span::styled(
+                    " -> ",
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    display_curr.to_string(),
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]))
+        }
+    };
+
+    let make_param_cells =
+        |param_idx: usize, key_char: &str, label: &str| -> (Cell<'static>, Cell<'static>) {
+            let is_selected = state.dashboard_focus == DashboardFocus::Right
+                && state.dashboard_param_index == param_idx;
+            let is_last_selected = state.dashboard_focus != DashboardFocus::Right
+                && state.dashboard_param_index == param_idx;
+
+            let prompt_cell = if is_selected {
+                Cell::from(Span::styled(
+                    format!(" ➤ [{}]", key_char),
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            } else if is_last_selected {
+                Cell::from(Span::styled(
+                    format!(" • [{}]", key_char),
+                    Style::default()
+                        .fg(theme.secondary)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            } else {
+                Cell::from(Span::styled(
+                    format!("    [{}]", key_char),
+                    Style::default()
+                        .fg(theme.primary)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            };
+
+            let label_cell = if is_selected {
+                Cell::from(Span::styled(
+                    label.to_string(),
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            } else if is_last_selected {
+                Cell::from(Span::styled(
+                    label.to_string(),
+                    Style::default()
+                        .fg(theme.secondary)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            } else {
+                Cell::from(Span::styled(
+                    label.to_string(),
+                    Style::default().fg(theme.secondary),
+                ))
+            };
+            (prompt_cell, label_cell)
+        };
+
+    let (f_prompt, f_label) = make_param_cells(0, "f", "Target Config File");
+    let (c_prompt, c_label) = make_param_cells(1, "c", "Context Size");
+    let (n_prompt, n_label) = make_param_cells(2, "n", "GPU Layers");
+    let (v_prompt, v_label) = make_param_cells(3, "v", "MMProj (Vision)");
+    let (d_prompt, d_label) = make_param_cells(4, "d", "Draft Model");
+    let (g_prompt, g_label) = make_param_cells(5, "g", "Draft GPU Layers");
+    let (t_prompt, t_label) = make_param_cells(6, "t", "Temperature");
+    let (p_prompt, p_label) = make_param_cells(7, "p", "Top P");
+    let (k_prompt, k_label) = make_param_cells(8, "k", "Top K");
+    let (l_prompt, l_label) = make_param_cells(9, "l", "Total Layers");
 
     let rows = vec![
         Row::new(vec![
@@ -1142,82 +1423,108 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             Cell::from(display_model_name).style(Style::default().fg(theme.primary)),
         ]),
         Row::new(vec![
-            Cell::from(Span::styled(
-                "[c]",
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "Context Size",
-                Style::default().fg(theme.secondary),
-            )),
-            Cell::from(format!("{}", state.ctx)).style(Style::default().fg(theme.success)),
+            f_prompt,
+            f_label,
+            make_val_cell(
+                &state.original_config_file_name,
+                &state.config_file_name,
+                Style::default().fg(theme.primary),
+            ),
         ]),
         Row::new(vec![
-            Cell::from(Span::styled(
-                "[n]",
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "GPU Layers",
-                Style::default().fg(theme.secondary),
-            )),
-            Cell::from(state.ngl.clone()).style(Style::default().fg(theme.success)),
+            c_prompt,
+            c_label,
+            make_val_cell(
+                &state.original_ctx_str,
+                &state.ctx_str,
+                Style::default().fg(theme.success),
+            ),
         ]),
         Row::new(vec![
-            Cell::from(Span::styled(
-                "[v]",
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "MMProj (Vision)",
-                Style::default().fg(theme.secondary),
-            )),
-            Cell::from(display_mmproj_val).style(Style::default().fg(theme.accent)),
+            n_prompt,
+            n_label,
+            make_val_cell(
+                &state.original_ngl,
+                &state.ngl,
+                Style::default().fg(theme.success),
+            ),
         ]),
         Row::new(vec![
-            Cell::from(Span::styled(
-                "[d]",
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "Draft Model",
-                Style::default().fg(theme.secondary),
-            )),
-            Cell::from(display_draft_val).style(Style::default().fg(theme.accent)),
+            v_prompt,
+            v_label,
+            make_val_cell(
+                &original_mmproj_val,
+                &mmproj_val,
+                Style::default().fg(theme.accent),
+            ),
         ]),
         Row::new(vec![
-            Cell::from(Span::styled(
-                "[g]",
-                Style::default()
-                    .fg(theme.primary)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(Span::styled(
-                "Draft GPU Layers",
-                Style::default().fg(theme.secondary),
-            )),
-            Cell::from(if state.draft_ngl.is_empty() {
-                "N/A".to_string()
-            } else {
-                state.draft_ngl.clone()
-            })
-            .style(Style::default().fg(theme.accent)),
+            d_prompt,
+            d_label,
+            make_val_cell(
+                &original_draft_val,
+                &draft_val,
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            g_prompt,
+            g_label,
+            make_val_cell(
+                &state.original_draft_ngl,
+                &state.draft_ngl,
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            t_prompt,
+            t_label,
+            make_val_cell(
+                &state.original_temp,
+                &state.temp,
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        Row::new(vec![
+            p_prompt,
+            p_label,
+            make_val_cell(
+                &state.original_top_p,
+                &state.top_p,
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        Row::new(vec![
+            k_prompt,
+            k_label,
+            make_val_cell(
+                &state.original_top_k,
+                &state.top_k,
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        Row::new(vec![
+            l_prompt,
+            l_label,
+            make_val_cell(
+                &state
+                    .original_total_layers
+                    .map(|l| l.to_string())
+                    .unwrap_or_default(),
+                &state
+                    .total_layers
+                    .map(|l| l.to_string())
+                    .unwrap_or_default(),
+                Style::default().fg(theme.success),
+            ),
         ]),
     ];
 
     let table = Table::new(
         rows,
         [
-            Constraint::Length(4),
-            Constraint::Length(20),
+            Constraint::Length(7),
+            Constraint::Length(22),
             Constraint::Min(20),
         ],
     )
@@ -1225,7 +1532,12 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
     f.render_widget(table, content_layout[1]);
 
     // Render Input Prompt Overlays
-    if state.screen != AppScreen::Dashboard {
+    if state.screen != AppScreen::Dashboard
+        && state.screen != AppScreen::ConfirmSaveConfig
+        && state.screen != AppScreen::WarnDiscardChanges
+        && state.screen != AppScreen::SelectingMMProj
+        && state.screen != AppScreen::SelectingDraftModel
+    {
         let (title, prompt) = match state.screen {
             AppScreen::EditingCtx => (
                 " Edit Context Size ",
@@ -1243,10 +1555,29 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 " Edit Draft GPU Layers ",
                 "Enter draft N-GPU-layers (e.g. auto, 0, 8):",
             ),
+            AppScreen::EditingTemp => (
+                " Edit Temperature ",
+                "Enter new inference temperature (e.g. 0.8):",
+            ),
+            AppScreen::EditingTopP => (" Edit Top P ", "Enter new Top P threshold (e.g. 0.95):"),
+            AppScreen::EditingTopK => (" Edit Top K ", "Enter new Top K count (e.g. 40):"),
+            AppScreen::EditingTotalLayers => (
+                " Edit Total Model Layers ",
+                "Enter total model layers (e.g. 33):",
+            ),
+            AppScreen::EditingConfigFileName => (
+                " Edit Target Config File ",
+                "Enter config TOML filename (e.g. model.toml):",
+            ),
             _ => ("", ""),
         };
 
-        let popup_area = centered_rect(60, 20, area);
+        let height_pct = if state.screen == AppScreen::EditingConfigFileName {
+            45
+        } else {
+            20
+        };
+        let popup_area = centered_rect(60, height_pct, area);
         f.render_widget(Clear, popup_area); // clears the background
 
         let popup_block = Block::default()
@@ -1256,7 +1587,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             .style(Style::default().bg(theme.bg).fg(theme.fg))
             .border_style(Style::default().fg(theme.selection));
 
-        let popup_text = vec![
+        let mut popup_text = vec![
             Line::from(prompt),
             Line::from(""),
             Line::from(vec![
@@ -1269,6 +1600,42 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 ),
             ]),
         ];
+
+        if state.screen == AppScreen::EditingConfigFileName
+            && !state.similar_config_files.is_empty()
+        {
+            popup_text.push(Line::from(""));
+            popup_text.push(Line::from(Span::styled(
+                "Similar Config Files:",
+                Style::default()
+                    .fg(theme.secondary)
+                    .add_modifier(Modifier::UNDERLINED),
+            )));
+            popup_text.push(Line::from(""));
+            for (idx, filename) in state.similar_config_files.iter().enumerate() {
+                let is_selected = state.similar_config_index == Some(idx);
+                if is_selected {
+                    popup_text.push(Line::from(Span::styled(
+                        format!(" ➤ {} ", filename),
+                        Style::default()
+                            .fg(theme.selection)
+                            .add_modifier(Modifier::BOLD),
+                    )));
+                } else {
+                    popup_text.push(Line::from(Span::styled(
+                        format!("    {} ", filename),
+                        Style::default().fg(theme.fg),
+                    )));
+                }
+            }
+            popup_text.push(Line::from(""));
+            popup_text.push(Line::from(Span::styled(
+                " (Use [Up/Down] to select a file) ",
+                Style::default()
+                    .fg(theme.secondary)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+        }
 
         let popup_para = Paragraph::new(popup_text)
             .block(popup_block)
@@ -1346,6 +1713,267 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         list_spans.push(Line::from(""));
 
         let popup_para = Paragraph::new(list_spans)
+            .block(popup_block)
+            .alignment(Alignment::Left);
+        f.render_widget(popup_para, popup_area);
+    }
+
+    if state.screen == AppScreen::ConfirmSaveConfig {
+        let popup_area = centered_rect(65, 55, area);
+        f.render_widget(Clear, popup_area);
+
+        let popup_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(theme.border_type)
+            .title(" Confirm Save Configuration ")
+            .style(Style::default().bg(theme.bg).fg(theme.fg))
+            .border_style(Style::default().fg(theme.selection));
+
+        let mut changes = Vec::new();
+        let mmproj_val = match &state.mmproj_list[state.mmproj_index] {
+            Some(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "None".to_string()),
+            None => "None (Disabled)".to_string(),
+        };
+        let original_mmproj_val = match &state.mmproj_list[state.original_mmproj_index] {
+            Some(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "None".to_string()),
+            None => "None (Disabled)".to_string(),
+        };
+        let draft_val = match &state.draft_list[state.draft_index] {
+            Some(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "None".to_string()),
+            None => "None (Disabled)".to_string(),
+        };
+        let original_draft_val = match &state.draft_list[state.original_draft_index] {
+            Some(p) => p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "None".to_string()),
+            None => "None (Disabled)".to_string(),
+        };
+
+        if state.config_file_name != state.original_config_file_name {
+            changes.push((
+                "Target Config File",
+                state.original_config_file_name.clone(),
+                state.config_file_name.clone(),
+            ));
+        }
+        if state.ctx_str != state.original_ctx_str {
+            changes.push((
+                "Context Size",
+                state.original_ctx_str.clone(),
+                state.ctx_str.clone(),
+            ));
+        }
+        if state.ngl != state.original_ngl {
+            changes.push(("GPU Layers", state.original_ngl.clone(), state.ngl.clone()));
+        }
+        if mmproj_val != original_mmproj_val {
+            changes.push(("MMProj (Vision)", original_mmproj_val, mmproj_val));
+        }
+        if draft_val != original_draft_val {
+            changes.push(("Draft Model", original_draft_val, draft_val));
+        }
+        if state.draft_ngl != state.original_draft_ngl {
+            changes.push((
+                "Draft GPU Layers",
+                state.original_draft_ngl.clone(),
+                state.draft_ngl.clone(),
+            ));
+        }
+        if state.temp != state.original_temp {
+            changes.push((
+                "Temperature",
+                state.original_temp.clone(),
+                state.temp.clone(),
+            ));
+        }
+        if state.top_p != state.original_top_p {
+            changes.push(("Top P", state.original_top_p.clone(), state.top_p.clone()));
+        }
+        if state.top_k != state.original_top_k {
+            changes.push(("Top K", state.original_top_k.clone(), state.top_k.clone()));
+        }
+        let original_total_layers_str = state
+            .original_total_layers
+            .map(|l| l.to_string())
+            .unwrap_or_default();
+        let total_layers_str = state
+            .total_layers
+            .map(|l| l.to_string())
+            .unwrap_or_default();
+        if total_layers_str != original_total_layers_str {
+            changes.push(("Total Layers", original_total_layers_str, total_layers_str));
+        }
+
+        let mut text_lines = Vec::new();
+        text_lines.push(Line::from(""));
+        text_lines.push(Line::from(Span::styled(
+            " The following configuration properties have changed:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )));
+        text_lines.push(Line::from(""));
+
+        for (label, old, new) in changes {
+            let display_old = if old.is_empty() { "none" } else { &old };
+            let display_new = if new.is_empty() { "none" } else { &new };
+            text_lines.push(Line::from(vec![
+                Span::styled(format!("  • {}: ", label), Style::default().fg(theme.fg)),
+                Span::styled(
+                    display_old.to_string(),
+                    Style::default().fg(theme.secondary),
+                ),
+                Span::styled(
+                    " -> ",
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    display_new.to_string(),
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+
+        text_lines.push(Line::from(""));
+        text_lines.push(Line::from(""));
+
+        let backup_check = if state.backup_config {
+            if theme.show_emojis {
+                " 🔘 [x] Backup previous config (.bak.<timestamp>) "
+            } else {
+                " [x] Backup previous config (.bak.<timestamp>) "
+            }
+        } else {
+            if theme.show_emojis {
+                " ⚪ [ ] Backup previous config (.bak.<timestamp>) "
+            } else {
+                " [ ] Backup previous config (.bak.<timestamp>) "
+            }
+        };
+        let backup_style = if state.backup_config {
+            Style::default()
+                .fg(theme.success)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme.secondary)
+        };
+        text_lines.push(Line::from(Span::styled(backup_check, backup_style)));
+        text_lines.push(Line::from(""));
+        text_lines.push(Line::from(Span::styled(
+            "   (Press [Space] to toggle backup option)",
+            Style::default()
+                .fg(theme.secondary)
+                .add_modifier(Modifier::ITALIC),
+        )));
+
+        text_lines.push(Line::from(""));
+        text_lines.push(Line::from(vec![
+            Span::styled("   Press ", Style::default().fg(theme.fg)),
+            Span::styled(
+                "[Enter]",
+                Style::default()
+                    .fg(theme.success)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" to save to ", Style::default().fg(theme.fg)),
+            Span::styled(
+                format!("{}.toml", state.config_file_name),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" or ", Style::default().fg(theme.fg)),
+            Span::styled(
+                "[Esc]",
+                Style::default()
+                    .fg(theme.error)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" to cancel.", Style::default().fg(theme.fg)),
+        ]));
+
+        let popup_para = Paragraph::new(text_lines)
+            .block(popup_block)
+            .alignment(Alignment::Left);
+        f.render_widget(popup_para, popup_area);
+    }
+
+    if state.screen == AppScreen::WarnDiscardChanges {
+        let popup_area = centered_rect(60, 25, area);
+        f.render_widget(Clear, popup_area);
+
+        let title = if theme.show_emojis {
+            " ⚠️  Unsaved Parameter Changes "
+        } else {
+            " Unsaved Parameter Changes "
+        };
+
+        let popup_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(theme.border_type)
+            .title(title)
+            .style(Style::default().bg(theme.bg).fg(theme.fg))
+            .border_style(Style::default().fg(theme.error));
+
+        let mut text_lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                " You have unsaved configuration changes in the right panel.",
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                " Moving to another model/preset will discard all temporary values.",
+                Style::default().fg(theme.secondary),
+            )),
+            Line::from(""),
+            Line::from(""),
+        ];
+
+        let confirm_spans = vec![
+            Span::styled("   Press ", Style::default().fg(theme.fg)),
+            Span::styled(
+                "[Enter] / [y]",
+                Style::default()
+                    .fg(theme.success)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " to discard changes and switch model.",
+                Style::default().fg(theme.fg),
+            ),
+        ];
+        text_lines.push(Line::from(confirm_spans));
+
+        let cancel_spans = vec![
+            Span::styled("   Press ", Style::default().fg(theme.fg)),
+            Span::styled(
+                "[Esc] / [n]",
+                Style::default()
+                    .fg(theme.error)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                " to return to editing parameters.",
+                Style::default().fg(theme.fg),
+            ),
+        ];
+        text_lines.push(Line::from(cancel_spans));
+        text_lines.push(Line::from(""));
+
+        let popup_para = Paragraph::new(text_lines)
             .block(popup_block)
             .alignment(Alignment::Left);
         f.render_widget(popup_para, popup_area);

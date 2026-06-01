@@ -17,9 +17,24 @@ pub enum AppScreen {
     SelectingGlobalSettingOption,
     SelectingMMProj,
     SelectingDraftModel,
+    EditingTemp,
+    EditingTopP,
+    EditingTopK,
+    EditingTotalLayers,
+    EditingConfigFileName,
+    ConfirmSaveConfig,
+    WarnDiscardChanges,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashboardFocus {
+    Left,
+    Right,
 }
 
 pub struct AppState {
+    pub dashboard_focus: DashboardFocus,
+    pub dashboard_param_index: usize,
     pub presets: Vec<(String, PathBuf)>,
     pub models_dir: PathBuf,
     pub preset_path: PathBuf,
@@ -65,6 +80,30 @@ pub struct AppState {
     pub option_selector_index: usize,
     pub option_selector_list: Vec<String>,
     pub config_path: PathBuf,
+    pub similar_config_files: Vec<String>,
+    pub similar_config_index: Option<usize>,
+
+    // Overrides / Editable parameters
+    pub temp: String,
+    pub top_p: String,
+    pub top_k: String,
+    pub config_file_name: String,
+    pub ctx_str: String,
+    pub backup_config: bool,
+    pub pending_preset_index: Option<usize>,
+
+    // Original values for comparison / diff
+    pub original_ctx_str: String,
+    pub original_ctx: usize,
+    pub original_ngl: String,
+    pub original_mmproj_index: usize,
+    pub original_draft_index: usize,
+    pub original_draft_ngl: String,
+    pub original_temp: String,
+    pub original_top_p: String,
+    pub original_top_k: String,
+    pub original_total_layers: Option<usize>,
+    pub original_config_file_name: String,
 }
 
 impl AppState {
@@ -79,6 +118,8 @@ impl AppState {
         let server_version = crate::launcher::get_server_version(&server_exe);
 
         let mut state = AppState {
+            dashboard_focus: DashboardFocus::Left,
+            dashboard_param_index: 0,
             presets,
             models_dir,
             preset_path,
@@ -114,13 +155,33 @@ impl AppState {
             option_selector_index: 0,
             option_selector_list: Vec::new(),
             config_path: crate::config::get_llama_herd_dir().join("config.toml"),
+            similar_config_files: Vec::new(),
+            similar_config_index: None,
+            temp: String::new(),
+            top_p: String::new(),
+            top_k: String::new(),
+            config_file_name: String::new(),
+            ctx_str: String::new(),
+            backup_config: true,
+            pending_preset_index: None,
+            original_ctx_str: String::new(),
+            original_ctx: 131072,
+            original_ngl: "auto".to_string(),
+            original_mmproj_index: 0,
+            original_draft_index: 0,
+            original_draft_ngl: "".to_string(),
+            original_temp: String::new(),
+            original_top_p: String::new(),
+            original_top_k: String::new(),
+            original_total_layers: None,
+            original_config_file_name: String::new(),
         };
 
-        state.load_current_preset_settings();
+        state.load_current_preset_settings(None);
         state
     }
 
-    pub fn load_current_preset_settings(&mut self) {
+    pub fn load_current_preset_settings(&mut self, toml_path_override: Option<PathBuf>) {
         if self.presets.is_empty() {
             return;
         }
@@ -129,7 +190,10 @@ impl AppState {
         let ini_settings = crate::config::load_settings_from_ini(preset_name, &self.preset_path)
             .unwrap_or_default();
 
-        let assets = crate::discovery::discover_assets(model_path, &self.models_dir);
+        let mut assets = crate::discovery::discover_assets(model_path, &self.models_dir);
+        if let Some(ref path) = toml_path_override {
+            assets.config = crate::config::load_toml_silent(path);
+        }
         let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
             assets.config.get("llama-herd").and_then(|lh| lh.get(key))
         };
@@ -317,6 +381,247 @@ impl AppState {
                 }
             }
         }
+
+        let toml_path = toml_path_override
+            .unwrap_or_else(|| crate::config::resolve_toml_path(model_path, &self.models_dir));
+        let config_file_name = toml_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("model.toml")
+            .to_string();
+
+        let config = crate::config::load_toml_silent(&toml_path);
+        let get_long_val = |key: &str| -> Option<&serde_json::Value> {
+            config
+                .get("llama-server-long")
+                .and_then(|l| l.get(key))
+                .or_else(|| config.get(key))
+        };
+        let get_string_val = |v: Option<&serde_json::Value>| -> String {
+            match v {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Number(n)) => n.to_string(),
+                Some(serde_json::Value::Bool(b)) => b.to_string(),
+                _ => String::new(),
+            }
+        };
+
+        // Context representation
+        let ctx_str_val = match &ctx_val {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Number(n) => n.to_string(),
+            _ => "131072".to_string(),
+        };
+
+        let temp_val = get_string_val(get_long_val("temp"));
+        let top_p_val = get_string_val(get_long_val("top-p"));
+        let top_k_val = get_string_val(get_long_val("top-k"));
+
+        self.config_file_name = config_file_name.clone();
+        self.original_config_file_name = config_file_name;
+
+        self.ctx_str = ctx_str_val.clone();
+        self.original_ctx_str = ctx_str_val;
+        self.original_ctx = self.ctx;
+
+        self.original_ngl = self.ngl.clone();
+
+        self.original_mmproj_index = self.mmproj_index;
+        self.original_draft_index = self.draft_index;
+        self.original_draft_ngl = self.draft_ngl.clone();
+
+        self.temp = temp_val.clone();
+        self.original_temp = temp_val;
+
+        self.top_p = top_p_val.clone();
+        self.original_top_p = top_p_val;
+
+        self.top_k = top_k_val.clone();
+        self.original_top_k = top_k_val;
+
+        self.original_total_layers = self.total_layers;
+    }
+
+    pub fn save_current_preset_config(
+        &mut self,
+        create_backup: bool,
+    ) -> Result<(), std::io::Error> {
+        let filename = self.config_file_name.clone();
+        if filename.trim().is_empty() {
+            return Err(std::io::Error::other("Config file name cannot be empty"));
+        }
+        let filename = if filename.to_lowercase().ends_with(".toml") {
+            filename
+        } else {
+            format!("{}.toml", filename)
+        };
+
+        let target_path = self.models_dir.join(&filename);
+
+        if create_backup && target_path.exists() {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let backup_path = self
+                .models_dir
+                .join(format!("{}.bak.{}", filename, timestamp));
+            let _ = std::fs::copy(&target_path, &backup_path);
+        }
+
+        let mut current_config = crate::config::load_toml_silent(&target_path);
+
+        let mut herd_obj = current_config
+            .remove("llama-herd")
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+
+        let mut long_obj = current_config
+            .remove("llama-server-long")
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+
+        // 1. ctx-size
+        if !self.ctx_str.is_empty() {
+            if let Ok(num) = self.ctx_str.parse::<i64>() {
+                long_obj.insert(
+                    "ctx-size".to_string(),
+                    serde_json::Value::Number(num.into()),
+                );
+            } else {
+                long_obj.insert(
+                    "ctx-size".to_string(),
+                    serde_json::Value::String(self.ctx_str.clone()),
+                );
+            }
+        } else {
+            long_obj.remove("ctx-size");
+        }
+
+        // 2. ngl
+        if !self.ngl.is_empty() {
+            if let Ok(num) = self.ngl.parse::<i64>() {
+                long_obj.insert("ngl".to_string(), serde_json::Value::Number(num.into()));
+            } else {
+                long_obj.insert(
+                    "ngl".to_string(),
+                    serde_json::Value::String(self.ngl.clone()),
+                );
+            }
+        } else {
+            long_obj.remove("ngl");
+        }
+
+        // 3. temp
+        if !self.temp.is_empty() {
+            if let Ok(f) = self.temp.parse::<f64>()
+                && let Some(num) = serde_json::Number::from_f64(f)
+            {
+                long_obj.insert("temp".to_string(), serde_json::Value::Number(num));
+            }
+        } else {
+            long_obj.remove("temp");
+        }
+
+        // 4. top-p
+        if !self.top_p.is_empty() {
+            if let Ok(f) = self.top_p.parse::<f64>()
+                && let Some(num) = serde_json::Number::from_f64(f)
+            {
+                long_obj.insert("top-p".to_string(), serde_json::Value::Number(num));
+            }
+        } else {
+            long_obj.remove("top-p");
+        }
+
+        // 5. top-k
+        if !self.top_k.is_empty() {
+            if let Ok(num) = self.top_k.parse::<i64>() {
+                long_obj.insert("top-k".to_string(), serde_json::Value::Number(num.into()));
+            }
+        } else {
+            long_obj.remove("top-k");
+        }
+
+        // 6. total-layers
+        if let Some(num) = self.total_layers {
+            herd_obj.insert(
+                "total-layers".to_string(),
+                serde_json::Value::Number((num as i64).into()),
+            );
+        } else {
+            herd_obj.remove("total-layers");
+        }
+
+        // 7. draft
+        let draft_val = match self.draft_list.get(self.draft_index) {
+            Some(Some(path)) => path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        if !draft_val.is_empty() && draft_val != "None (Disabled)" {
+            herd_obj.insert("draft".to_string(), serde_json::Value::String(draft_val));
+        } else {
+            herd_obj.remove("draft");
+        }
+
+        // 8. mmproj
+        let mmproj_val = match self.mmproj_list.get(self.mmproj_index) {
+            Some(Some(path)) => path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        if !mmproj_val.is_empty() && mmproj_val != "None (Disabled)" {
+            herd_obj.insert("mmproj".to_string(), serde_json::Value::String(mmproj_val));
+        } else {
+            herd_obj.remove("mmproj");
+        }
+
+        if !herd_obj.is_empty() {
+            current_config.insert(
+                "llama-herd".to_string(),
+                serde_json::Value::Object(herd_obj),
+            );
+        }
+        if !long_obj.is_empty() {
+            current_config.insert(
+                "llama-server-long".to_string(),
+                serde_json::Value::Object(long_obj),
+            );
+        }
+
+        let current_model_path = if self.presets.is_empty() {
+            None
+        } else {
+            Some(self.presets[self.preset_index].1.clone())
+        };
+
+        crate::config::save_config(&target_path, &current_config)?;
+
+        // Regenerate presets and reload list
+        crate::discovery::generate_presets_ini(
+            &self.models_dir,
+            &self.preset_path,
+            &self.global_config,
+        );
+        self.presets = crate::discovery::discover_presets_from_ini(&self.preset_path);
+
+        if let Some(ref model_path) = current_model_path {
+            if let Some(idx) = self.presets.iter().position(|(_, path)| path == model_path) {
+                self.preset_index = idx;
+            } else {
+                self.preset_index = 0;
+            }
+        } else {
+            self.preset_index = 0;
+        }
+
+        self.load_current_preset_settings(Some(target_path));
+        Ok(())
     }
 
     pub fn get_user_settings(&self) -> UserSettings {
@@ -327,5 +632,18 @@ impl AppState {
             draft_model: self.draft_list[self.draft_index].clone(),
             draft_ngl: self.draft_ngl.clone(),
         }
+    }
+
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.ctx_str != self.original_ctx_str
+            || self.ngl != self.original_ngl
+            || self.mmproj_index != self.original_mmproj_index
+            || self.draft_index != self.original_draft_index
+            || self.draft_ngl != self.original_draft_ngl
+            || self.temp != self.original_temp
+            || self.top_p != self.original_top_p
+            || self.top_k != self.original_top_k
+            || self.total_layers != self.original_total_layers
+            || self.config_file_name != self.original_config_file_name
     }
 }
