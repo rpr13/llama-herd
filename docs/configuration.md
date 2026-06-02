@@ -6,14 +6,16 @@ This guide details all available configuration variables, parameters, API endpoi
 
 ## Environment Variables
 
-- `LLAMA_PATH`: The location containing the `llama-server` binary, the `models/` folder, the global `config.toml` and the generated `models-preset.ini`.
 - `TERM`: Defines the terminal capabilities. Needs to be set to a 256-color profile (e.g., `xterm-256color` or `screen-256color`) to properly display TUI borders and styled ANSI logs.
 
 ---
 
 ## Global Configuration (`config.toml`)
 
-Placed directly inside the `LLAMA_PATH` directory to define global settings shared across all presets.
+Placed inside the platform-specific global configuration directory to define global settings shared across all presets:
+- **Linux/Unix**: `~/.config/llama-herd/config.toml`
+- **Windows**: `%APPDATA%\llama-herd\config.toml`
+- **macOS**: `~/Library/Application Support/llama-herd/config.toml`
 
 | Parameter      | Default          | Type    | Description                                                                |
 | :------------- | :--------------- | :------ | :------------------------------------------------------------------------- |
@@ -146,9 +148,16 @@ slot-prompt-similarity = 0.5   # Translates to long-arg --slot-prompt-similarity
 sps = 0.6                       # Translates to short-arg -sps 0.6
 ```
 
-### 2. Auto-Generated `models-preset.ini`
+On execution and dynamically during runtime, Llama-Herd parses models and local configurations to output `models-preset.ini` directly inside the configured `models_dir` directory. 
 
-On execution, Llama-Herd parses models and local configurations to output `models-preset.ini` in the `LLAMA_PATH` directory. Below is an example of what is generated:
+### Runtime Preset Invalidation & Background Checking
+During TUI operation, Llama-Herd scans the models directory every 1 second:
+- **Automatic Regeneration**: If files are added, modified, or removed, the `models-preset.ini` is recreated and presets are hot-reloaded automatically.
+- **Settle Check (Active Downloads/Writes)**: To prevent file thrashing, Llama-Herd delays preset regeneration during active file writes (e.g. models downloading or being copied directly into the folder). Regeneration triggers once all file sizes have stabilized.
+- **Unsaved Edits Safety**: If the directory changes while you have unsaved parameter overrides in the TUI, Llama-Herd reloads the presets in the background but preserves your active inputs, displaying a `⚠️ NOTICE: Models folder changed` status bar. Reverting or saving changes clears the warning.
+- **Invalid Path Warning**: If the models directory becomes inaccessible or deleted, a `⚠️ WARNING: Models directory is invalid` bar is shown.
+
+Below is an example of what is generated:
 
 ```ini
 version = 1

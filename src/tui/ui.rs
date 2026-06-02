@@ -143,15 +143,31 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         size,
     );
 
+    let show_dir_warning = state.models_dir_invalid;
+    let show_dirty_warning = state.models_dir_changed_dirty;
+    let has_warning = show_dir_warning || show_dirty_warning;
+
     // Global background/layout structure
-    let main_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Header
-            Constraint::Min(5),    // Content
-            Constraint::Length(2), // Footer / Hotkeys
-        ])
-        .split(size);
+    let main_layout = if has_warning {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Header
+                Constraint::Min(5),    // Content
+                Constraint::Length(1), // Warning Bar
+                Constraint::Length(2), // Footer / Hotkeys
+            ])
+            .split(size)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Header
+                Constraint::Min(5),    // Content
+                Constraint::Length(2), // Footer / Hotkeys
+            ])
+            .split(size)
+    };
 
     // --- 1. HEADER PANEL ---
     render_mc_header(f, state, main_layout[0]);
@@ -671,7 +687,32 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         .block(footer_block)
         .alignment(Alignment::Center)
         .style(Style::default().bg(theme.footer_bg));
-    f.render_widget(footer, main_layout[2]);
+    if show_dir_warning || show_dirty_warning {
+        let warning_text = if show_dir_warning {
+            if theme.show_emojis {
+                "⚠️  WARNING: Models directory is invalid or inaccessible!"
+            } else {
+                "WARNING: Models directory is invalid or inaccessible!"
+            }
+        } else {
+            if theme.show_emojis {
+                "⚠️  NOTICE: Models folder changed (unsaved edits override automatic reload)"
+            } else {
+                "NOTICE: Models folder changed (unsaved edits override automatic reload)"
+            }
+        };
+        let warning_paragraph = Paragraph::new(Span::styled(
+            warning_text,
+            Style::default()
+                .fg(theme.error)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center)
+        .style(Style::default().bg(theme.header_bg));
+        f.render_widget(warning_paragraph, main_layout[2]);
+    }
+
+    f.render_widget(footer, main_layout[main_layout.len() - 1]);
 }
 
 fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {

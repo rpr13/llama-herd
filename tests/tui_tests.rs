@@ -738,4 +738,81 @@ temp = 0.7
         assert_eq!(state.preset_index, 1);
         assert_eq!(state.pending_preset_index, None);
     }
+
+    #[test]
+    fn test_get_models_dir_state_and_stability() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+
+        // Initially empty
+        let state1 = llama_herd::tui::app::get_models_dir_state(&models_dir).unwrap();
+        assert!(state1.files.is_empty());
+
+        // Create a model file
+        let gguf_path = models_dir.join("model1.gguf");
+        std::fs::write(&gguf_path, b"hello").unwrap();
+
+        let state2 = llama_herd::tui::app::get_models_dir_state(&models_dir).unwrap();
+        assert_eq!(state2.files.len(), 1);
+        assert_eq!(state2.files[0].0, gguf_path);
+        assert_eq!(state2.files[0].2, 5); // size
+    }
+
+    #[test]
+    fn test_check_models_dir_changes_invalidation() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("/non/existent/path/for/sure"),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        state.check_models_dir_changes();
+        assert!(state.models_dir_invalid);
+    }
+
+    #[test]
+    fn test_check_models_dir_changes_dirty_state() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        let gguf_path = models_dir.join("model1.gguf");
+        std::fs::write(&gguf_path, b"test").unwrap();
+
+        llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+
+        let mut state = AppState::new(
+            presets,
+            models_dir.clone(),
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        // Make state dirty
+        state.temp = "0.95".to_string();
+        assert!(state.has_unsaved_changes());
+
+        // Introduce a new file and simulate ticks to settle
+        let gguf_path2 = models_dir.join("model2.gguf");
+        std::fs::write(&gguf_path2, b"test").unwrap();
+
+        // First check sees the new file, directory is not stable (new file appearing)
+        state.check_models_dir_changes();
+        assert!(!state.models_dir_changed_dirty);
+
+        // Second check sees file is now stable
+        state.check_models_dir_changes();
+        assert!(state.models_dir_changed_dirty);
+
+        // Revert dirty state manually
+        state.temp = "".to_string();
+        state.check_models_dir_changes();
+        assert!(!state.models_dir_changed_dirty);
+    }
 }

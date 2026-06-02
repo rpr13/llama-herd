@@ -38,6 +38,7 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 - 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with scroll, pause, and export controls.
 - 🎨 **Customizable TUI Theme System**: Features a hybrid functional palette and procedural UI behavior system for a personalized dashboard experience.
 - 🔀 **Dynamic Preset Routing**: Coordinates on-demand model loading and routing configurations (governed by generated `models-preset.ini` files).
+- 🔄 **Dynamic Hot Reloading**: Automatically scans the models directory at runtime with active-writes stability checks (deferring updates during downloads) and alerts users with TUI warning bars when edits are unsaved.
 
 ---
 
@@ -110,5 +111,7 @@ For comprehensive details on how to design, configure, or optimize Llama-Herd, r
 - **llama.cpp**: The core execution engine for high-performance GGUF quantization inference.
 - **Ratatui**: The excellent Terminal UI framework enabling the interactive dashboard interface.
 - **Crossterm**: Safe, cross-platform terminal control backend.
-- **serde & toml-rs**: Standard libraries for type-safe configuration loading and validation.
-- **tokio**: Powering concurrent log parsing and subprocess process lifecycle management.
+- **serde & toml**: Type-safe configuration loading, serialization, and validation.
+- **regex**: Powering log parsing, ANSI graphic sequence stripping, and tokenizer heuristic matching.
+- **arboard**: Cross-platform system clipboard access for log copying.
+- **sysinfo**: Local system checks and subprocess health metrics.

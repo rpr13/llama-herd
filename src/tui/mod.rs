@@ -570,6 +570,9 @@ pub fn handle_key_event(
                         state.presets =
                             crate::discovery::discover_presets_from_ini(&state.preset_path);
                         state.preset_index = 0;
+                        let new_state = crate::tui::app::get_models_dir_state(&state.models_dir);
+                        state.last_models_dir_state = new_state.clone();
+                        state.last_stable_models_dir_state = new_state;
                         state.load_current_preset_settings(None);
                     }
 
@@ -1117,7 +1120,12 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
                         should_quit = handle_key_event(&mut state, key, &event_tx);
                     }
 
-                    TuiEvent::Tick => {}
+                    TuiEvent::Tick => {
+                        state.tick_count += 1;
+                        if state.tick_count.is_multiple_of(4) {
+                            state.check_models_dir_changes();
+                        }
+                    }
                     TuiEvent::LogReceived => {}
                 }
             }

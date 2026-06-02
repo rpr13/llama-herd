@@ -32,6 +32,32 @@ pub enum DashboardFocus {
     Right,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelsDirState {
+    pub files: Vec<(PathBuf, std::time::SystemTime, u64)>,
+}
+
+pub fn get_models_dir_state(models_dir: &Path) -> Option<ModelsDirState> {
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                let ext_lower = ext.to_lowercase();
+                if (ext_lower == "gguf" || ext_lower == "toml")
+                    && let Ok(meta) = path.metadata()
+                {
+                    let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                    let size = meta.len();
+                    files.push((path, mtime, size));
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    Some(ModelsDirState { files })
+}
+
 pub struct AppState {
     pub dashboard_focus: DashboardFocus,
     pub dashboard_param_index: usize,
@@ -104,6 +130,11 @@ pub struct AppState {
     pub original_top_k: String,
     pub original_total_layers: Option<usize>,
     pub original_config_file_name: String,
+    pub tick_count: u64,
+    pub last_models_dir_state: Option<ModelsDirState>,
+    pub last_stable_models_dir_state: Option<ModelsDirState>,
+    pub models_dir_changed_dirty: bool,
+    pub models_dir_invalid: bool,
 }
 
 impl AppState {
@@ -116,6 +147,8 @@ impl AppState {
         theme: crate::tui::theme::Theme,
     ) -> Self {
         let server_version = crate::launcher::get_server_version(&server_exe);
+        let last_models_dir_state = get_models_dir_state(&models_dir);
+        let models_dir_invalid = std::fs::read_dir(&models_dir).is_err();
 
         let mut state = AppState {
             dashboard_focus: DashboardFocus::Left,
@@ -175,6 +208,11 @@ impl AppState {
             original_top_k: String::new(),
             original_total_layers: None,
             original_config_file_name: String::new(),
+            tick_count: 0,
+            last_models_dir_state: last_models_dir_state.clone(),
+            last_stable_models_dir_state: last_models_dir_state,
+            models_dir_changed_dirty: false,
+            models_dir_invalid,
         };
 
         state.load_current_preset_settings(None);
@@ -182,6 +220,7 @@ impl AppState {
     }
 
     pub fn load_current_preset_settings(&mut self, toml_path_override: Option<PathBuf>) {
+        self.models_dir_changed_dirty = false;
         if self.presets.is_empty() {
             return;
         }
@@ -446,6 +485,7 @@ impl AppState {
         &mut self,
         create_backup: bool,
     ) -> Result<(), std::io::Error> {
+        self.models_dir_changed_dirty = false;
         let filename = self.config_file_name.clone();
         if filename.trim().is_empty() {
             return Err(std::io::Error::other("Config file name cannot be empty"));
@@ -645,5 +685,90 @@ impl AppState {
             || self.top_k != self.original_top_k
             || self.total_layers != self.original_total_layers
             || self.config_file_name != self.original_config_file_name
+    }
+
+    pub fn check_models_dir_changes(&mut self) {
+        if self.models_dir_changed_dirty && !self.has_unsaved_changes() {
+            self.models_dir_changed_dirty = false;
+            self.load_current_preset_settings(None);
+        }
+
+        if let Ok(_entries) = std::fs::read_dir(&self.models_dir) {
+            self.models_dir_invalid = false;
+        } else {
+            self.models_dir_invalid = true;
+            return;
+        }
+
+        let current_state = get_models_dir_state(&self.models_dir);
+        if let Some(new_state) = current_state {
+            if let Some(ref prev_state) = self.last_models_dir_state {
+                // Check if the directory is stable (i.e. no file sizes or mtimes changed since the last check)
+                let mut is_stable = true;
+                for (path, mtime, size) in &new_state.files {
+                    if let Some((_, prev_mtime, prev_size)) =
+                        prev_state.files.iter().find(|(p, _, _)| p == path)
+                    {
+                        if prev_size != size || prev_mtime != mtime {
+                            is_stable = false;
+                            break;
+                        }
+                    } else {
+                        // Brand new file in this check interval - wait for next tick to see if it stabilizes
+                        is_stable = false;
+                    }
+                }
+
+                if is_stable {
+                    if let Some(ref stable_state) = self.last_stable_models_dir_state {
+                        if stable_state != &new_state {
+                            if self.has_unsaved_changes() {
+                                self.models_dir_changed_dirty = true;
+                            }
+                            self.regenerate_and_reload_presets();
+                            self.last_stable_models_dir_state = Some(new_state.clone());
+                        }
+                    } else {
+                        self.last_stable_models_dir_state = Some(new_state.clone());
+                    }
+                }
+            }
+            self.last_models_dir_state = Some(new_state);
+        }
+    }
+
+    pub fn regenerate_and_reload_presets(&mut self) {
+        let current_preset_name = if self.presets.is_empty() {
+            None
+        } else {
+            Some(self.presets[self.preset_index].0.clone())
+        };
+
+        crate::discovery::generate_presets_ini(
+            &self.models_dir,
+            &self.preset_path,
+            &self.global_config,
+        );
+
+        let new_presets = crate::discovery::discover_presets_from_ini(&self.preset_path);
+        self.presets = new_presets;
+
+        let mut should_reload = true;
+        if let Some(ref name) = current_preset_name {
+            if let Some(pos) = self.presets.iter().position(|(p_name, _)| p_name == name) {
+                self.preset_index = pos;
+                if self.has_unsaved_changes() {
+                    should_reload = false;
+                }
+            } else {
+                self.preset_index = 0;
+            }
+        } else {
+            self.preset_index = 0;
+        }
+
+        if should_reload {
+            self.load_current_preset_settings(None);
+        }
     }
 }

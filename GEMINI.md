@@ -69,6 +69,12 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
   - `mmproj`: Explicitly define the vision projector model filename to pair with this model.
   - `total-layers`: Total number of layers for layers-based computations.
 
+### 3. Dynamic Configuration Scanning & Active Writes Settling
+- **Background Scanner**: The TUI runs a background check on event ticks to scan the `models-dir` files every 1 second.
+- **Settle Logic**: When a GGUF or TOML file size or mtime is actively changing (e.g. during model copy/download), preset regeneration is deferred to prevent partial preset loading and lock contention. Presets are only regenerated when the directory state stabilizes.
+- **Dirty State Indicator**: If a background change is detected while the user has unsaved dashboard parameter overrides, settings reloading is skipped to protect active edits, and a TUI warning notification bar is rendered.
+- **Invalid Directory Status**: If the directory is removed or becomes inaccessible, the TUI displays a warning bar and suspends scanning until resolved.
+
 ---
 
 ## Theme System (`theme.toml`)
