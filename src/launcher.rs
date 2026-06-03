@@ -2,9 +2,70 @@ use crate::config::{ModelAssets, UserSettings};
 use std::collections::HashMap;
 use std::path::Path;
 
+pub fn add_active_pid(pid: u32) {
+    let lh_dir = crate::config::get_llama_herd_dir();
+    let _ = std::fs::create_dir_all(&lh_dir);
+    let pids_file = lh_dir.join("active_pids.txt");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&pids_file)
+    {
+        use std::io::Write;
+        let _ = writeln!(file, "{}", pid);
+    }
+}
+
+pub fn remove_active_pid(pid: u32) {
+    let pids_file = crate::config::get_llama_herd_dir().join("active_pids.txt");
+    if !pids_file.exists() {
+        return;
+    }
+    if let Ok(content) = std::fs::read_to_string(&pids_file) {
+        let mut new_lines = Vec::new();
+        for line in content.lines() {
+            if let Ok(val) = line.trim().parse::<u32>()
+                && val != pid
+            {
+                new_lines.push(line.to_string());
+            }
+        }
+        let _ = std::fs::write(&pids_file, new_lines.join("\n"));
+    }
+}
+
 pub fn kill_existing_servers() {
-    // Left empty to prevent killing unrelated global llama-server instances.
-    // LlamaHerd now manages child processes isolated by PID.
+    let pids_file = crate::config::get_llama_herd_dir().join("active_pids.txt");
+    if !pids_file.exists() {
+        return;
+    }
+    if let Ok(content) = std::fs::read_to_string(&pids_file) {
+        use sysinfo::{Pid, System};
+        let mut sys = System::new();
+        sys.refresh_all();
+
+        for line in content.lines() {
+            if let Ok(pid_val) = line.trim().parse::<u32>() {
+                let pid = Pid::from_u32(pid_val);
+                if let Some(process) = sys.process(pid) {
+                    let name = process.name().to_string_lossy().to_lowercase();
+                    if name.contains("llama-server") {
+                        #[cfg(target_os = "windows")]
+                        {
+                            let _ = std::process::Command::new("taskkill")
+                                .args(["/F", "/PID", &pid_val.to_string(), "/T"])
+                                .output();
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            let _ = process.kill();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(pids_file);
 }
 
 pub fn get_server_version(executable_path: &Path) -> String {
@@ -212,6 +273,9 @@ pub fn build_launch_parameters(
         if crate::config::is_restricted_key(arg) {
             return;
         }
+        if !crate::config::is_safe_value(val) {
+            return;
+        }
         let arg_name = format!("--{}", arg);
         if let Some(b) = val.as_bool() {
             if b {
@@ -276,6 +340,9 @@ pub fn build_launch_parameters(
                 continue;
             }
             let val = &short_obj[k];
+            if !crate::config::is_safe_value(val) {
+                continue;
+            }
             let arg_name = format!("-{}", k);
             if let Some(b) = val.as_bool() {
                 if b {
@@ -514,29 +581,45 @@ pub fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
-pub fn resolve_port(port_str: &str) -> u16 {
+pub fn resolve_port(port_str: &str) -> Result<u16, std::io::Error> {
     if port_str == "auto" {
         let mut port = 8080;
         while port < 65535 {
             if is_port_available(port) {
-                return port;
+                return Ok(port);
             }
             port += 1;
         }
-        8080
+        Err(std::io::Error::new(
+            std::io::ErrorKind::AddrInUse,
+            "No available ports found in range 8080-65535".to_string(),
+        ))
     } else {
-        let parsed: u16 = port_str.parse().unwrap_or(8080);
+        let parsed: u16 = port_str.parse().map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Failed to parse port: {}", e),
+            )
+        })?;
+
         if is_port_available(parsed) {
-            parsed
+            Ok(parsed)
         } else {
+            let max_limit = parsed.saturating_add(10);
             let mut port = parsed + 1;
-            while port < 65535 {
+            while port <= max_limit && port < 65535 {
                 if is_port_available(port) {
-                    return port;
+                    return Ok(port);
                 }
                 port += 1;
             }
-            parsed
+            Err(std::io::Error::new(
+                std::io::ErrorKind::AddrInUse,
+                format!(
+                    "Requested port {} and its subsequent retries (+10) are all occupied.",
+                    parsed
+                ),
+            ))
         }
     }
 }

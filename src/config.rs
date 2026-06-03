@@ -22,32 +22,66 @@ pub struct UserSettings {
 
 // --- PURE PARSERS & HELPERS ---
 
-pub fn parse_ctx(value: &serde_json::Value) -> usize {
-    let fallback = 131072;
+pub fn parse_ctx(value: &serde_json::Value) -> Result<usize, String> {
     match value {
         serde_json::Value::Number(num) => {
             if let Some(i) = num.as_u64() {
-                i as usize
+                Ok(i as usize)
             } else if let Some(f) = num.as_f64() {
-                f as usize
+                if f < 0.0 {
+                    Err(format!("Invalid negative context size: {}", f))
+                } else {
+                    Ok(f as usize)
+                }
             } else {
-                fallback
+                Err(format!("Invalid number format for context size: {}", num))
             }
         }
         serde_json::Value::String(s) => parse_ctx_str(s),
-        _ => fallback,
+        _ => Err(format!("Invalid type for context size: {:?}", value)),
     }
 }
 
-pub fn parse_ctx_str(s: &str) -> usize {
-    let fallback = 131072;
-    let s_lower = s.to_lowercase();
-    if s_lower.contains('k')
-        && let Ok(val) = s_lower.replace('k', "").trim().parse::<usize>()
-    {
-        return val * 1024;
+pub fn parse_ctx_str(s: &str) -> Result<usize, String> {
+    let s_trimmed = s.trim();
+    if s_trimmed.is_empty() {
+        return Err("Context size cannot be empty".to_string());
     }
-    s.trim().parse::<usize>().unwrap_or(fallback)
+    let s_lower = s_trimmed.to_lowercase();
+
+    if s_lower.ends_with('k') {
+        let val = s_lower[..s_lower.len() - 1]
+            .trim()
+            .parse::<usize>()
+            .map_err(|e| format!("Failed to parse context size digits: {}", e))?;
+        return Ok(val * 1024);
+    }
+
+    let val = s_trimmed
+        .parse::<usize>()
+        .map_err(|e| format!("Failed to parse context size: {}", e))?;
+    Ok(val)
+}
+
+pub fn is_safe_value(val: &serde_json::Value) -> bool {
+    match val {
+        serde_json::Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.starts_with("--") {
+                return false;
+            }
+            if let Some(after_dash) = trimmed.strip_prefix('-')
+                && (after_dash.is_empty()
+                    || !after_dash.chars().all(|c| c.is_ascii_digit() || c == '.'))
+            {
+                return false;
+            }
+            true
+        }
+        serde_json::Value::Array(arr) => arr.iter().all(is_safe_value),
+        serde_json::Value::Object(_) => false,
+        _ => true,
+    }
 }
 
 pub fn get_optimal_threads() -> String {
@@ -164,38 +198,20 @@ pub fn load_toml_silent(path: &Path) -> HashMap<String, serde_json::Value> {
     HashMap::new()
 }
 
-pub fn load_toml_safe(path: &Path) -> HashMap<String, serde_json::Value> {
-    match File::open(path) {
-        Ok(mut file) => {
-            let mut contents = String::new();
-            if file.read_to_string(&mut contents).is_ok() {
-                match toml::from_str::<toml::Value>(&contents) {
-                    Ok(value) => {
-                        println!(
-                            "[*] Loaded parameters from: {}",
-                            path.file_name().unwrap_or_default().to_string_lossy()
-                        );
-                        return toml_to_json(value, true);
-                    }
-                    Err(e) => {
-                        println!(
-                            "[!] Parse error on {}: {}",
-                            path.file_name().unwrap_or_default().to_string_lossy(),
-                            e
-                        );
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            println!(
-                "[!] Read error on {}: {}",
-                path.file_name().unwrap_or_default().to_string_lossy(),
-                e
-            );
-        }
-    }
-    HashMap::new()
+pub fn load_toml_safe(path: &Path) -> Result<HashMap<String, serde_json::Value>, std::io::Error> {
+    let mut file = File::open(path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    let value = toml::from_str::<toml::Value>(&contents)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+
+    println!(
+        "[*] Loaded parameters from: {}",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    );
+
+    Ok(toml_to_json(value, true))
 }
 
 fn toml_to_json(toml: toml::Value, warn: bool) -> HashMap<String, serde_json::Value> {

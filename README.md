@@ -1,7 +1,7 @@
 # 🦙 Llama-Herd (`llama-herd`)
 
 > [!IMPORTANT]
-> 🤖✨ **AI-First Software**: This project was designed and built with **very heavy use of agentic AI coding assistants** working in partnership with human developers. 🦾💻
+> 🤖✨ **AI-First Software**: This project was designed and built with **very heavy use of agentic AI coding assistants** (including Antigravity, Gemini, and Claude) working in partnership with human developers to coordinate and route local Large Language Models (including many models sourced from Hugging Face). 🦾💻
 
 <p align="center">
   <a href="https://github.com/rpr13/llama-herd/actions"><img src="https://github.com/rpr13/llama-herd/actions/workflows/rust.yml/badge.svg" alt="Build Status"></a>
@@ -33,7 +33,8 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 ### Key Capabilities
 
 - 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics, providing interactive selector menus directly on the Dashboard.
-- 🔒 **Configuration Validation**: Enforces TOML constraints, filtering out unsafe flags and normalizing CLI parameter bindings safely.
+- 🔒 **Configuration & Option Safety**: Enforces strict TOML key/value validation, filtering out option/command injection flags, restricting context size suffixes strictly to `'k'`/`'K'`, and performing safe sequential port searches (retrying up to +10).
+- ⚙️ **Robust Process Orchestration**: Spawns and monitors `llama-server` subprocesses, tracking active PIDs in a configuration-resident `active_pids.txt` file and terminating zombie instances cleanly using the `sysinfo` library.
 - 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing loaded status, resource allocations, and real-time logs.
 - 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with scroll, pause, and export controls.
 - 🎨 **Customizable TUI Theme System**: Features a hybrid functional palette and procedural UI behavior system for a personalized dashboard experience.
@@ -115,3 +116,4 @@ For comprehensive details on how to design, configure, or optimize Llama-Herd, r
 - **regex**: Powering log parsing, ANSI graphic sequence stripping, and tokenizer heuristic matching.
 - **arboard**: Cross-platform system clipboard access for log copying.
 - **sysinfo**: Local system checks and subprocess health metrics.
+- **AI Assistants**: Deepmind's Antigravity agent, Google's Gemini, and Anthropic's Claude, which were heavily involved in the codebase design, refactoring, and testing.

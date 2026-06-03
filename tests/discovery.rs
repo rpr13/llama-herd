@@ -225,7 +225,8 @@ fn test_generate_presets_ini_generation() -> TestResult {
         &models_dir,
         &dir.path().join("models-preset.ini"),
         &global_config,
-    );
+    )
+    .unwrap();
     assert!(output_ini.exists());
 
     let ini_content = fs::read_to_string(&output_ini)?;
@@ -289,7 +290,8 @@ fn test_generate_presets_hyphenated_keys() {
         &models_dir,
         &dir.path().join("models-preset.ini"),
         &global_config,
-    );
+    )
+    .unwrap();
 
     assert!(output_path.exists());
     let content = std::fs::read_to_string(output_path).unwrap();
@@ -322,7 +324,8 @@ fn test_generate_presets_draft_hyphenated_keys() {
         &models_dir,
         &dir.path().join("models-preset.ini"),
         &global_config,
-    );
+    )
+    .unwrap();
 
     let content = std::fs::read_to_string(output_path).unwrap();
     assert!(content.contains("model-draft ="));

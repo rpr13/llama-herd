@@ -129,7 +129,7 @@ pub fn generate_presets_ini(
     models_dir: &Path,
     output_path: &Path,
     global_config: &HashMap<String, serde_json::Value>,
-) -> PathBuf {
+) -> Result<PathBuf, std::io::Error> {
     let mut all_ggufs = Vec::new();
     if let Ok(entries) = std::fs::read_dir(models_dir) {
         for entry in entries.flatten() {
@@ -318,7 +318,7 @@ pub fn generate_presets_ini(
             .or_else(|| get_long_val("ctx-size"))
             .unwrap_or(&serde_json::Value::String("131072".to_string()))
             .clone();
-        let ctx_size = crate::config::parse_ctx(&ctx_val);
+        let ctx_size = crate::config::parse_ctx(&ctx_val).unwrap_or(131072);
 
         let mut ngl = get_lh_val("ngl")
             .or_else(|| get_long_val("ngl"))
@@ -601,9 +601,6 @@ pub fn generate_presets_ini(
         lines.extend(default_preset_lines);
     }
 
-    if let Err(_e) = std::fs::write(output_path, lines.join("\n")) {
-        // Silently fail or log to a file if a logger is added later.
-        // Cannot use println! here as it corrupts the TUI.
-    }
-    output_path.to_path_buf()
+    std::fs::write(output_path, lines.join("\n"))?;
+    Ok(output_path.to_path_buf())
 }

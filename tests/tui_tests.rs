@@ -456,7 +456,8 @@ temp = 0.7
         std::fs::write(&model_toml, toml_content.as_bytes()).unwrap();
 
         // Generate the preset INI file first
-        llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let _ =
+            llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
 
         let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
         assert_eq!(presets.len(), 2);
@@ -619,7 +620,8 @@ temp = 0.7
         let toml2 = models_dir.join("my-model-7b-q4_0.toml");
         std::fs::write(&toml2, b"").unwrap();
 
-        llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let _ =
+            llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
         let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
 
         let mut state = AppState::new(
@@ -782,7 +784,8 @@ temp = 0.7
         let gguf_path = models_dir.join("model1.gguf");
         std::fs::write(&gguf_path, b"test").unwrap();
 
-        llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let _ =
+            llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
         let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
 
         let mut state = AppState::new(

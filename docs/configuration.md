@@ -13,25 +13,26 @@ This guide details all available configuration variables, parameters, API endpoi
 ## Global Configuration (`config.toml`)
 
 Placed inside the platform-specific global configuration directory to define global settings shared across all presets:
+
 - **Linux/Unix**: `~/.config/llama-herd/config.toml`
 - **Windows**: `%APPDATA%\llama-herd\config.toml`
 - **macOS**: `~/Library/Application Support/llama-herd/config.toml`
 
-| Parameter      | Default          | Type    | Description                                                                |
-| :------------- | :--------------- | :------ | :------------------------------------------------------------------------- |
-| `host`         | `"127.0.0.1"`     | String  | Host binding IP for `llama-server`.                                        |
-| `port`         | `"8080"`         | String/Int | Listen port for incoming inference requests. Managed globally in the Settings tab; llama-herd dynamically finds the next available TCP port starting at 8080 if set to `"auto"` or occupied. |
-| `flash-attn`   | `"auto"`         | String  | Enables flash attention processing (`"auto"`, `"1"`, or `"0"`).            |
-| `cache-type-k` | `"f16"`          | String  | Quantization format for KV cache keys (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).  |
-| `cache-type-v` | `"f16"`          | String  | Quantization format for KV cache values (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).|
-| `kv-unified`   | `true`           | Boolean | Enables unified KV cache for keys and values.                              |
-| `models-max`   | `1`              | Integer | Max loaded models concurrently hosted in Router Mode.                      |
-| `batch-size`   | `2048`           | Integer | Processing batch size (`-b`).                                              |
-| `ubatch-size`  | `512`            | Integer | Processing micro-batch size (`-ub`).                                       |
-| `threads`      | `"-1"`           | String/Int | Thread count allocation (`-t`). Defaults to `-1` (auto-detect threads).   |
-| `api-key`      | `"disabled"`     | String  | API key for server authorization. Use `"disabled"` to turn off.            |
-| `metrics`      | `false`          | Boolean | Enable the `/metrics` Prometheus endpoint on `llama-server`.                |
-| `ui`           | `true`           | Boolean | Enable/Disable standard Web UI host wrapper. Managed globally in the Settings tab. |
+| Parameter      | Default       | Type       | Description                                                                                                                                                                                                                                                                                            |
+| :------------- | :------------ | :--------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`         | `"127.0.0.1"` | String     | Host binding IP for `llama-server`.                                                                                                                                                                                                                                                                    |
+| `port`         | `"8080"`      | String/Int | Listen port for incoming inference requests. Managed globally in the Settings tab; llama-herd dynamically finds the next available TCP port sequentially (up to 10 consecutive ports starting at 8080 or the requested port) if set to `"auto"` or occupied, returning an error if none are available. |
+| `flash-attn`   | `"auto"`      | String     | Enables flash attention processing (`"auto"`, `"1"`, or `"0"`).                                                                                                                                                                                                                                        |
+| `cache-type-k` | `"f16"`       | String     | Quantization format for KV cache keys (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).                                                                                                                                                                                                                              |
+| `cache-type-v` | `"f16"`       | String     | Quantization format for KV cache values (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).                                                                                                                                                                                                                            |
+| `kv-unified`   | `true`        | Boolean    | Enables unified KV cache for keys and values.                                                                                                                                                                                                                                                          |
+| `models-max`   | `1`           | Integer    | Max loaded models concurrently hosted in Router Mode.                                                                                                                                                                                                                                                  |
+| `batch-size`   | `2048`        | Integer    | Processing batch size (`-b`).                                                                                                                                                                                                                                                                          |
+| `ubatch-size`  | `512`         | Integer    | Processing micro-batch size (`-ub`).                                                                                                                                                                                                                                                                   |
+| `threads`      | `"-1"`        | String/Int | Thread count allocation (`-t`). Defaults to `-1` (auto-detect threads).                                                                                                                                                                                                                                |
+| `api-key`      | `"disabled"`  | String     | API key for server authorization. Use `"disabled"` to turn off.                                                                                                                                                                                                                                        |
+| `metrics`      | `false`       | Boolean    | Enable the `/metrics` Prometheus endpoint on `llama-server`.                                                                                                                                                                                                                                           |
+| `ui`           | `true`        | Boolean    | Enable/Disable standard Web UI host wrapper. Managed globally in the Settings tab.                                                                                                                                                                                                                     |
 
 ---
 
@@ -42,17 +43,18 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B-Instruct.toml` for `Qwen2.5-
 ### TOML Resolution & Prefix Matching Hierarchy
 
 LlamaHerd resolves model configurations using a hierarchy that supports shorthand, shared configurations across multiple quantization variants:
+
 1. **Exact Match**: Checks for a TOML file matching the exact model filename (e.g., `model-name-q5_0.toml` for `model-name-q5_0.gguf`).
 2. **Prefix Match**: If no exact match is found, LlamaHerd searches for a shortened TOML file whose name matches the model's filename prefix (e.g., `model-name.toml` matching `model-name-q4_0.gguf` and `model-name-q5_0.gguf`).
 3. **Default Fallback**: If neither matches, it defaults to creating/checking the exact match path.
 
 Inside the TUI, you can edit and save the target TOML filename. Selecting the target configuration field opens a modal popup where you can cycle through similar prefix-matching TOML templates in the models directory using the `Up` and `Down` arrow keys.
 
-### TOML Key Naming Rules
+### TOML Key & Value Validation Rules
 
-1. Keys must not contain underscores (`_`). Use hyphens instead.
-2. Keys must not start with a dash (`-`).
-3. Keys that violate these rules are ignored at parse-time to guarantee command line safety.
+1. **Keys Rules**: Keys must not contain underscores (`_`) (use hyphens instead) and must not start with a dash (`-`). Violating keys are ignored at parse-time to guarantee command line safety.
+2. **Values Injection Guard**: All option values are checked to prevent option/command injection. Values starting with a double dash (`--`), starting with a single dash followed by alphabetic characters (e.g., `-v`), containing shell metacharacters (e.g., `;`, `&`, `|`), or using objects are rejected. Single negative numeric values or decimals (e.g. `-1`, `-0.5`) are allowed.
+3. **Context Size Suffix Restriction**: The `ctx-size` parser strictly accepts numeric values or strings with a `'k'` or `'K'` suffix (multiplying by 1024), rejecting other suffixes (like `'M'` or `'G'`) or non-numeric/negative values to prevent massive VRAM over-allocation.
 
 ### Configuration Tables
 
@@ -65,32 +67,32 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 
 #### Llama-Herd Orchestration Settings (`[llama-herd]`)
 
-| Key                            | Default | Type    | Description                                                                          |
-| :----------------------------- | :------ | :------ | :----------------------------------------------------------------------------------- |
-| `is-draft` / `is-draft-only`   | `false` | Boolean | Designates the GGUF file as a speculative draft (hides it from the primary lists).   |
-| `is-default`                   | `false` | Boolean | Declares this model the default startup preset.                                      |
-| `draft` / `draft-model`        | `none`  | String  | Specific draft model file to pair with (use `"none"` or `"false"` to block pairing). |
-| `mmproj`                       | `none`  | String  | Explicit vision projector filename to couple with this model.                        |
-| `total-layers`                 | `none`  | Integer | Total structural layers of the neural network (used to resolve `"auto"` offloading). |
+| Key                          | Default | Type    | Description                                                                          |
+| :--------------------------- | :------ | :------ | :----------------------------------------------------------------------------------- |
+| `is-draft` / `is-draft-only` | `false` | Boolean | Designates the GGUF file as a speculative draft (hides it from the primary lists).   |
+| `is-default`                 | `false` | Boolean | Declares this model the default startup preset.                                      |
+| `draft` / `draft-model`      | `none`  | String  | Specific draft model file to pair with (use `"none"` or `"false"` to block pairing). |
+| `mmproj`                     | `none`  | String  | Explicit vision projector filename to couple with this model.                        |
+| `total-layers`               | `none`  | Integer | Total structural layers of the neural network (used to resolve `"auto"` offloading). |
 
 #### Llama-Server Option Overrides (`[llama-server-long]` or `[llama-server-short]`)
 
-| Key                 | Default  | Type       | Description                                                                                        |
-| :------------------ | :------- | :--------- | :------------------------------------------------------------------------------------------------- |
-| `ctx-size`          | `none`   | String/Int | Overrides context size (supports standard human shorthand: e.g., `"8k"`, `"32k"`).                 |
-| `ngl`               | `none`   | String/Int | GPU offloaded layers count (supports `"auto"`).                                                    |
-| `temp`              | `0.8`    | Float      | Fallback model temperature parameter.                                                              |
-| `top-p`             | `0.95`   | Float      | Top-p sampling probability limit.                                                                  |
-| `top-k`             | `40`     | Integer    | Top-k sampling candidate count.                                                                    |
-| `reasoning`         | `"auto"` | String     | Controls formatting for reasoning outputs (`"on"` maps to deepseek formats, `"off"`, or `"auto"`). |
-| `cache-type-k`      | `"f16"`  | String     | Quantization format for KV cache keys (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                        |
-| `cache-type-v`      | `"f16"`  | String     | Quantization format for KV cache values (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                      |
-| `kv-unified`        | `true`   | Boolean    | Unified KV cache override.                                                                         |
-| `api-key`           | `"disabled"`| String  | API key server authorization.                                                                      |
-| `metrics`           | `false`  | Boolean    | Metrics Prometheus endpoint enablement.                                                            |
-| `spec-type`         | `none`   | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                     |
-| `spec-draft-n-max`  | `4`      | Integer    | Max speculative draft token predictions per slots.                                                 |
-| `spec-draft-p-min`  | `0.0`    | Float      | Minimum probability threshold for speculative tokens.                                              |
+| Key                | Default      | Type       | Description                                                                                                  |
+| :----------------- | :----------- | :--------- | :----------------------------------------------------------------------------------------------------------- |
+| `ctx-size`         | `none`       | String/Int | Overrides context size (supports standard human shorthand with `'k'`/`'K'` suffixes: e.g., `"8k"`, `"32k"`). |
+| `ngl`              | `none`       | String/Int | GPU offloaded layers count (supports `"auto"`).                                                              |
+| `temp`             | `0.8`        | Float      | Fallback model temperature parameter.                                                                        |
+| `top-p`            | `0.95`       | Float      | Top-p sampling probability limit.                                                                            |
+| `top-k`            | `40`         | Integer    | Top-k sampling candidate count.                                                                              |
+| `reasoning`        | `"auto"`     | String     | Controls formatting for reasoning outputs (`"on"` maps to deepseek formats, `"off"`, or `"auto"`).           |
+| `cache-type-k`     | `"f16"`      | String     | Quantization format for KV cache keys (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                                   |
+| `cache-type-v`     | `"f16"`      | String     | Quantization format for KV cache values (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                                 |
+| `kv-unified`       | `true`       | Boolean    | Unified KV cache override.                                                                                   |
+| `api-key`          | `"disabled"` | String     | API key server authorization.                                                                                |
+| `metrics`          | `false`      | Boolean    | Metrics Prometheus endpoint enablement.                                                                      |
+| `spec-type`        | `none`       | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                               |
+| `spec-draft-n-max` | `4`          | Integer    | Max speculative draft token predictions per slots.                                                           |
+| `spec-draft-p-min` | `0.0`        | Float      | Minimum probability threshold for speculative tokens.                                                        |
 
 ---
 
@@ -148,10 +150,12 @@ slot-prompt-similarity = 0.5   # Translates to long-arg --slot-prompt-similarity
 sps = 0.6                       # Translates to short-arg -sps 0.6
 ```
 
-On execution and dynamically during runtime, Llama-Herd parses models and local configurations to output `models-preset.ini` directly inside the configured `models_dir` directory. 
+On execution and dynamically during runtime, Llama-Herd parses models and local configurations to output `models-preset.ini` directly inside the configured `models_dir` directory.
 
 ### Runtime Preset Invalidation & Background Checking
+
 During TUI operation, Llama-Herd scans the models directory every 1 second:
+
 - **Automatic Regeneration**: If files are added, modified, or removed, the `models-preset.ini` is recreated and presets are hot-reloaded automatically.
 - **Settle Check (Active Downloads/Writes)**: To prevent file thrashing, Llama-Herd delays preset regeneration during active file writes (e.g. models downloading or being copied directly into the folder). Regeneration triggers once all file sizes have stabilized.
 - **Unsaved Edits Safety**: If the directory changes while you have unsaved parameter overrides in the TUI, Llama-Herd reloads the presets in the background but preserves your active inputs, displaying a `⚠️ NOTICE: Models folder changed` status bar. Reverting or saving changes clears the warning.

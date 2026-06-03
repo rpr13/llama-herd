@@ -259,7 +259,7 @@ impl AppState {
                     .cloned()
                     .unwrap_or_else(|| serde_json::Value::String("131072".to_string()))
             });
-        self.ctx = crate::config::parse_ctx(&ctx_val);
+        self.ctx = crate::config::parse_ctx(&ctx_val).unwrap_or(131072);
 
         // NGL
         self.ngl = ini_settings
@@ -647,7 +647,7 @@ impl AppState {
             &self.models_dir,
             &self.preset_path,
             &self.global_config,
-        );
+        )?;
         self.presets = crate::discovery::discover_presets_from_ini(&self.preset_path);
 
         if let Some(ref model_path) = current_model_path {
@@ -725,7 +725,7 @@ impl AppState {
                             if self.has_unsaved_changes() {
                                 self.models_dir_changed_dirty = true;
                             }
-                            self.regenerate_and_reload_presets();
+                            let _ = self.regenerate_and_reload_presets();
                             self.last_stable_models_dir_state = Some(new_state.clone());
                         }
                     } else {
@@ -737,7 +737,7 @@ impl AppState {
         }
     }
 
-    pub fn regenerate_and_reload_presets(&mut self) {
+    pub fn regenerate_and_reload_presets(&mut self) -> Result<(), std::io::Error> {
         let current_preset_name = if self.presets.is_empty() {
             None
         } else {
@@ -748,7 +748,7 @@ impl AppState {
             &self.models_dir,
             &self.preset_path,
             &self.global_config,
-        );
+        )?;
 
         let new_presets = crate::discovery::discover_presets_from_ini(&self.preset_path);
         self.presets = new_presets;
@@ -770,5 +770,6 @@ impl AppState {
         if should_reload {
             self.load_current_preset_settings(None);
         }
+        Ok(())
     }
 }

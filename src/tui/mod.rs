@@ -195,11 +195,14 @@ pub fn handle_key_event(
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // Spawns router mode server
                 crate::launcher::kill_existing_servers();
-                let preset_ini_path = crate::discovery::generate_presets_ini(
+                let preset_ini_path = match crate::discovery::generate_presets_ini(
                     &state.models_dir,
                     &state.preset_path,
                     &state.global_config,
-                );
+                ) {
+                    Ok(p) => p,
+                    Err(_) => return false,
+                };
                 let port_str = state
                     .global_config
                     .get("port")
@@ -211,7 +214,10 @@ pub fn handle_key_event(
                         }
                     })
                     .unwrap_or_else(|| "auto".to_string());
-                let resolved_port = crate::launcher::resolve_port(&port_str);
+                let resolved_port = match crate::launcher::resolve_port(&port_str) {
+                    Ok(p) => p,
+                    Err(_) => return false,
+                };
                 let launch_args = crate::launcher::build_router_launch_parameters(
                     &state.server_exe,
                     &preset_ini_path,
@@ -329,7 +335,10 @@ pub fn handle_key_event(
                             }
                         })
                         .unwrap_or_else(|| "auto".to_string());
-                    let resolved_port = crate::launcher::resolve_port(&port_str);
+                    let resolved_port = match crate::launcher::resolve_port(&port_str) {
+                        Ok(p) => p,
+                        Err(_) => return false,
+                    };
                     let launch_args = crate::launcher::build_launch_parameters(
                         &state.server_exe,
                         model_path,
@@ -562,7 +571,7 @@ pub fn handle_key_event(
                             serde_json::Value::String(path.to_string_lossy().to_string()),
                         );
                         // Refresh presets list when models dir changes
-                        crate::discovery::generate_presets_ini(
+                        let _ = crate::discovery::generate_presets_ini(
                             &state.models_dir,
                             &state.preset_path,
                             &state.global_config,
@@ -607,9 +616,11 @@ pub fn handle_key_event(
                 match state.screen {
                     AppScreen::EditingCtx => {
                         let val = state.input_buffer.trim().to_string();
-                        state.ctx_str = val.clone();
-                        state.ctx = crate::config::parse_ctx_str(&val);
-                        state.screen = AppScreen::Dashboard;
+                        if let Ok(parsed) = crate::config::parse_ctx_str(&val) {
+                            state.ctx_str = val;
+                            state.ctx = parsed;
+                            state.screen = AppScreen::Dashboard;
+                        }
                     }
                     AppScreen::EditingNgl => {
                         state.ngl = state.input_buffer.trim().to_string();

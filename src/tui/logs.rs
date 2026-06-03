@@ -56,6 +56,7 @@ impl ActiveServer {
             .stderr(Stdio::piped());
 
         let mut child = cmd.spawn()?;
+        crate::launcher::add_active_pid(child.id());
 
         let stdout = child
             .stdout
@@ -114,6 +115,8 @@ impl ActiveServer {
                             } else {
                                 "ERROR".to_string()
                             };
+                            let pid = child_ref.lock().unwrap().id();
+                            crate::launcher::remove_active_pid(pid);
                             *is_running.lock().unwrap() = false;
                             break;
                         }
@@ -121,6 +124,8 @@ impl ActiveServer {
                         Err(_) => {
                             let mut m_lock = metrics.lock().unwrap();
                             m_lock.status = "ERROR".to_string();
+                            let pid = child_ref.lock().unwrap().id();
+                            crate::launcher::remove_active_pid(pid);
                             *is_running.lock().unwrap() = false;
                             break;
                         }
@@ -271,10 +276,10 @@ impl ActiveServer {
 
     pub fn kill(&mut self) {
         *self.is_running.lock().unwrap() = false;
-        if let Ok(mut child) = self.child.lock() {
+        let pid = if let Ok(mut child) = self.child.lock() {
+            let pid = child.id();
             #[cfg(target_os = "windows")]
             {
-                let pid = child.id();
                 let _ = Command::new("taskkill")
                     .args(["/F", "/PID", &pid.to_string(), "/T"])
                     .output();
@@ -284,6 +289,12 @@ impl ActiveServer {
                 let _ = child.kill();
             }
             let _ = child.wait();
+            Some(pid)
+        } else {
+            None
+        };
+        if let Some(pid) = pid {
+            crate::launcher::remove_active_pid(pid);
         }
     }
 }

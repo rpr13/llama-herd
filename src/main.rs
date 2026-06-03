@@ -53,7 +53,16 @@ fn main() {
 
     let global_config_path = lh_dir.join("config.toml");
     let global_config = if global_config_path.exists() {
-        config::load_toml_safe(&global_config_path)
+        match config::load_toml_safe(&global_config_path) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                eprintln!(
+                    "CRITICAL: Failed to load config.toml: {}. Aborting to prevent unsafe defaults.",
+                    e
+                );
+                std::process::exit(1);
+            }
+        }
     } else {
         HashMap::new()
     };
@@ -87,7 +96,12 @@ fn main() {
     let preset_ini_path = models_dir.join("models-preset.ini");
 
     if generate_ini {
-        discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config);
+        if let Err(e) =
+            discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config)
+        {
+            eprintln!("CRITICAL: Failed to generate presets configuration: {}.", e);
+            std::process::exit(1);
+        }
         println!(
             "Generated presets configuration at '{}'",
             preset_ini_path.to_string_lossy()
@@ -99,7 +113,10 @@ fn main() {
     launcher::kill_existing_servers();
 
     // Dynamically scan model directories and generate settings
-    discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config);
+    if let Err(e) = discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config) {
+        eprintln!("CRITICAL: Failed to generate presets configuration: {}.", e);
+        std::process::exit(1);
+    }
 
     // Retrieve active presets list
     let presets = discovery::discover_presets_from_ini(&preset_ini_path);

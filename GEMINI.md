@@ -26,6 +26,7 @@ LlamaHerd is a high-performance, native Rust TUI designed as a self-contained mu
 ### 1. Global Config (`config.toml`)
 
 Stored in a platform-specific configuration directory:
+
 - **Linux/Unix**: `~/.config/llama-herd/config.toml`
 - **Windows**: `%APPDATA%\llama-herd\config.toml`
 - **macOS**: `~/Library/Application Support/llama-herd/config.toml`
@@ -33,10 +34,11 @@ Stored in a platform-specific configuration directory:
 The `llama-server` executable path and the `models-dir` (where your models are located) MUST be defined here. If they are missing or invalid, LlamaHerd will launch an interactive **Setup Wizard** to help you configure them.
 
 #### Supported Global Options:
+
 - `llama-server` (Path to the `llama-server` executable)
 - `models-dir` (Path to the directory containing your GGUF models)
 - `host` (default: `"0.0.0.0"`)
-- `port` (default: `"auto"`) - Binds to 8080 or the first free port sequentially if auto or occupied.
+- `port` (default: `"auto"`) - Binds to 8080 or the first free port sequentially (retrying up to +10 ports) if auto or occupied.
 - `flash-attn` (default: `"auto"`)
 - `kv-quant` (default: `"q8_0"`)
 - `models-max` (default: `1`) - Maximum active models loaded concurrently in Router Mode
@@ -52,9 +54,11 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
 - **Prefix-Based Matching Hierarchy**: LlamaHerd resolves configuration paths by searching first for an exact GGUF stem match, then falling back to prefix matching (e.g. `model-name.toml` matching `model-name-q4_0.gguf` and `model-name-q5_0.gguf`), enabling shared config files across different model quantizations.
 
 > [!IMPORTANT]
-> **Strict TOML Key Rules & Categories**:
+> **Strict TOML Key/Value Rules & Categories**:
 >
 > - **Strict Keys**: Keys in TOML configurations must not contain underscores (`_`) or start with a dash (`-`). Violating keys are rejected at parse/load time, with warning logs emitted in `load_toml_safe`.
+> - **Strict Values / Injection Guard**: Option values must not start with a double dash (`--`), single dash followed by non-digits, or contain control/shell metacharacters to prevent option/command injection.
+> - **Context Size Parsing**: Suffixes for context size (`ctx-size`) are strictly restricted to `'k'`/`'K'` (multiplying by 1024), rejecting other suffixes (like `'M'`/`'G'`) or non-numeric/negative values to prevent massive VRAM over-allocations.
 > - **Table `[llama-herd]`**: Reserved for `llama-herd` custom settings (e.g. `is-default`, `is-draft`). These are handled internally and not passed to `llama-server`.
 > - **Table `[llama-server-long]`**: Mapped directly to double-dash long options for `llama-server`. For example, `ctx-size = "32k"` maps to `--ctx-size 32768`.
 > - **Table `[llama-server-short]`**: Mapped directly to single-dash short options for `llama-server`. For example, `sps = 0.5` maps to `-sps 0.5`.
@@ -70,6 +74,7 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
   - `total-layers`: Total number of layers for layers-based computations.
 
 ### 3. Dynamic Configuration Scanning & Active Writes Settling
+
 - **Background Scanner**: The TUI runs a background check on event ticks to scan the `models-dir` files every 1 second.
 - **Settle Logic**: When a GGUF or TOML file size or mtime is actively changing (e.g. during model copy/download), preset regeneration is deferred to prevent partial preset loading and lock contention. Presets are only regenerated when the directory state stabilizes.
 - **Dirty State Indicator**: If a background change is detected while the user has unsaved dashboard parameter overrides, settings reloading is skipped to protect active edits, and a TUI warning notification bar is rendered.
@@ -94,7 +99,8 @@ See `docs/theming.md` for the full schema, design principles, and examples.
 
 ### 1. Mandatory Theme Adherence
 
-Every UI component in LlamaHerd **must** use the theme system. 
+Every UI component in LlamaHerd **must** use the theme system.
+
 - **NO HARDCODED COLORS**: Hardcoding colors like `Color::Cyan` or `Color::White` in `src/tui/ui.rs` or any other UI module is strictly prohibited.
 - Always use `state.theme.<property>` or pass a reference to the `Theme` struct to rendering functions.
 - All new visual elements must be mapped to an appropriate semantic field in the `Theme` struct.
@@ -130,5 +136,7 @@ The project enforces code quality via Git pre-commit hooks managed by `cargo-hus
 ### 6. Local Process Metrics & Orchestrator Status
 
 The TUI must not use network-scraping or HTTP requests to poll performance metrics/slots from `llama-server`. Instead, status tracking is handled locally:
+
 - Subprocess `stdout`/`stderr` output streams are parsed dynamically to extract runtime info (e.g. startup completion, sub-instance routing details, port mapping).
 - Subprocess state and PID are monitored directly via local OS child processes check (e.g. `try_wait`).
+- Lingering or zombie instances are cleaned up by tracking subprocess PIDs in `active_pids.txt` within the global configuration directory and terminating them using the `sysinfo` library upon startup or exit.

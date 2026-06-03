@@ -17,18 +17,18 @@ fn test_parse_ctx_values() -> TestResult {
     // Then correct context size integers are returned
 
     // 1. Valid numbers
-    assert_eq!(parse_ctx(&json!(4096)), 4096);
-    assert_eq!(parse_ctx(&json!(8192.0)), 8192);
+    assert_eq!(parse_ctx(&json!(4096)).unwrap(), 4096);
+    assert_eq!(parse_ctx(&json!(8192.0)).unwrap(), 8192);
 
     // 2. String representation with suffix 'k' or 'K'
-    assert_eq!(parse_ctx(&json!("128k")), 131072);
-    assert_eq!(parse_ctx(&json!("8K")), 8192);
-    assert_eq!(parse_ctx(&json!("  4096  ")), 4096);
+    assert_eq!(parse_ctx(&json!("128k")).unwrap(), 131072);
+    assert_eq!(parse_ctx(&json!("8K")).unwrap(), 8192);
+    assert_eq!(parse_ctx(&json!("  4096  ")).unwrap(), 4096);
 
     // 3. Fallbacks for invalid/null types
-    assert_eq!(parse_ctx(&json!(null)), 131072);
-    assert_eq!(parse_ctx(&json!([])), 131072);
-    assert_eq!(parse_ctx(&json!({})), 131072);
+    assert!(parse_ctx(&json!(null)).is_err());
+    assert!(parse_ctx(&json!([])).is_err());
+    assert!(parse_ctx(&json!({})).is_err());
 
     Ok(())
 }
@@ -40,18 +40,21 @@ fn test_parse_ctx_str_edge_cases() -> TestResult {
     // Then it returns either the parsed value or the fallback context size (131072)
 
     // 1. Empty and invalid inputs
-    assert_eq!(parse_ctx_str(""), 131072);
-    assert_eq!(parse_ctx_str("abc"), 131072);
-    assert_eq!(parse_ctx_str("k"), 131072);
+    assert!(parse_ctx_str("").is_err());
+    assert!(parse_ctx_str("abc").is_err());
+    assert!(parse_ctx_str("k").is_err());
 
     // 2. Extraneous whitespaces & mixed casing
-    assert_eq!(parse_ctx_str("  32K  "), 32768);
-    assert_eq!(parse_ctx_str("\n64k\t"), 65536);
+    assert_eq!(parse_ctx_str("  32K  ").unwrap(), 32768);
+    assert_eq!(parse_ctx_str("\n64k\t").unwrap(), 65536);
 
     // 3. Upper bounds/Overflows (saturating or fallback depending on parse outcome)
     // Very large string numbers that fail to parse as usize will trigger fallback
-    assert_eq!(parse_ctx_str(&format!("{}00000000000", usize::MAX)), 131072);
-    assert_eq!(parse_ctx_str(&format!("{}", usize::MAX)), usize::MAX);
+    assert!(parse_ctx_str(&format!("{}00000000000", usize::MAX)).is_err());
+    assert_eq!(
+        parse_ctx_str(&format!("{}", usize::MAX)).unwrap(),
+        usize::MAX
+    );
 
     Ok(())
 }
@@ -269,7 +272,7 @@ fn test_load_toml_skips_invalid_keys() -> TestResult {
     assert!(!loaded_silent.contains_key("-invalid-dash-start"));
 
     // 2. Using safe loader
-    let loaded_safe = load_toml_safe(&path);
+    let loaded_safe = load_toml_safe(&path).unwrap();
     assert_eq!(
         loaded_safe.get("host").unwrap().as_str().unwrap(),
         "127.0.0.1"
@@ -280,7 +283,7 @@ fn test_load_toml_skips_invalid_keys() -> TestResult {
     // Non-existent file safety
     let missing_path = dir.path().join("missing.toml");
     assert!(load_toml_silent(&missing_path).is_empty());
-    assert!(load_toml_safe(&missing_path).is_empty());
+    assert!(load_toml_safe(&missing_path).is_err());
 
     Ok(())
 }
