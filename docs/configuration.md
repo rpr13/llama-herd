@@ -26,7 +26,10 @@ Placed inside the platform-specific global configuration directory to define glo
 | `cache-type-k` | `"f16"`       | String     | Quantization format for KV cache keys (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).                                                                                                                                                                                                                              |
 | `cache-type-v` | `"f16"`       | String     | Quantization format for KV cache values (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).                                                                                                                                                                                                                            |
 | `kv-unified`   | `true`        | Boolean    | Enables unified KV cache for keys and values.                                                                                                                                                                                                                                                          |
-| `models-max`   | `1`           | Integer    | Max loaded models concurrently hosted in Router Mode.                                                                                                                                                                                                                                                  |
+| `ctx-checkpoints` | `32`          | Integer    | Max number of context checkpoints to create per slot.                                                                                                                                                                                                                  |
+| `checkpoint-min-step` | `256`      | Integer    | Minimum spacing between context checkpoints in tokens (0 = no minimum).                                                                                                                                                                                                |
+| `no-mmap`         | `false`       | Boolean    | Disable memory-mapping for model files, loading everything directly into physical RAM.                                                                                                                                                                                |
+| `models-max`   | `1`           | Integer    | Max loaded models concurrently hosted in Router Mode.                                                                                                                                                                                                                   |
 | `batch-size`   | `2048`        | Integer    | Processing batch size (`-b`).                                                                                                                                                                                                                                                                          |
 | `ubatch-size`  | `512`         | Integer    | Processing micro-batch size (`-ub`).                                                                                                                                                                                                                                                                   |
 | `threads`      | `"-1"`        | String/Int | Thread count allocation (`-t`). Defaults to `-1` (auto-detect threads).                                                                                                                                                                                                                                |
@@ -88,6 +91,9 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 | `cache-type-k`     | `"f16"`      | String     | Quantization format for KV cache keys (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                                   |
 | `cache-type-v`     | `"f16"`      | String     | Quantization format for KV cache values (`"f16"`, `"q8_0"`, `"q4_0"`, etc.).                                 |
 | `kv-unified`       | `true`       | Boolean    | Unified KV cache override.                                                                                   |
+| `ctx-checkpoints`  | `32`         | Integer    | Overrides the max number of context checkpoints to create per slot.                                          |
+| `checkpoint-min-step` | `256`    | Integer    | Overrides the minimum spacing between context checkpoints in tokens.                                         |
+| `no-mmap`          | `false`      | Boolean    | Overrides memory-mapping for model loading.                                                                  |
 | `api-key`          | `"disabled"` | String     | API key server authorization.                                                                                |
 | `metrics`          | `false`      | Boolean    | Metrics Prometheus endpoint enablement.                                                                      |
 | `spec-type`        | `none`       | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                               |
@@ -172,6 +178,9 @@ jinja = true
 cache-type-k = q8_0
 cache-type-v = q8_0
 kv-unified = true
+ctx-checkpoints = 32
+checkpoint-min-step = 256
+no-mmap = false
 
 ; --- qwen2-5-7b-instruct ---
 [qwen2-5-7b-instruct]

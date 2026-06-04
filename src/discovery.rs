@@ -285,6 +285,30 @@ pub fn generate_presets_ini(
         .and_then(|v| v.as_str())
         .unwrap_or("f16");
 
+    let ctx_checkpoints = get_global_long("ctx-checkpoints").and_then(|v| {
+        if let Some(s) = v.as_str() {
+            s.parse::<i64>().ok()
+        } else if let Some(n) = v.as_u64() {
+            Some(n as i64)
+        } else {
+            v.as_i64()
+        }
+    });
+
+    let checkpoint_min_step = get_global_long("checkpoint-min-step").and_then(|v| {
+        if let Some(s) = v.as_str() {
+            s.parse::<i64>().ok()
+        } else if let Some(n) = v.as_u64() {
+            Some(n as i64)
+        } else {
+            v.as_i64()
+        }
+    });
+
+    let no_mmap = get_global_long("no-mmap")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
     let mut lines = Vec::new();
     lines.push("version = 1".to_string());
     lines.push("; Global settings shared across all presets".to_string());
@@ -294,6 +318,15 @@ pub fn generate_presets_ini(
     lines.push(format!("cache-type-k = {}", cache_type_k));
     lines.push(format!("cache-type-v = {}", cache_type_v));
     lines.push("kv-unified = true".to_string());
+    if let Some(checkpoints) = ctx_checkpoints {
+        lines.push(format!("ctx-checkpoints = {}", checkpoints));
+    }
+    if let Some(step) = checkpoint_min_step {
+        lines.push(format!("checkpoint-min-step = {}", step));
+    }
+    if no_mmap {
+        lines.push("no-mmap = true".to_string());
+    }
     lines.push("".to_string());
 
     let mut default_preset_lines = Vec::new();
@@ -352,6 +385,34 @@ pub fn generate_presets_ini(
             .or_else(|| get_long_val("reasoning"))
             .and_then(|v| v.as_str())
             .unwrap_or("auto");
+
+        let model_ctx_checkpoints = get_lh_val("ctx-checkpoints")
+            .or_else(|| get_long_val("ctx-checkpoints"))
+            .and_then(|v| {
+                if let Some(s) = v.as_str() {
+                    s.parse::<i64>().ok()
+                } else if let Some(n) = v.as_u64() {
+                    Some(n as i64)
+                } else {
+                    v.as_i64()
+                }
+            });
+
+        let model_checkpoint_min_step = get_lh_val("checkpoint-min-step")
+            .or_else(|| get_long_val("checkpoint-min-step"))
+            .and_then(|v| {
+                if let Some(s) = v.as_str() {
+                    s.parse::<i64>().ok()
+                } else if let Some(n) = v.as_u64() {
+                    Some(n as i64)
+                } else {
+                    v.as_i64()
+                }
+            });
+
+        let model_no_mmap = get_lh_val("no-mmap")
+            .or_else(|| get_long_val("no-mmap"))
+            .and_then(|v| v.as_bool());
 
         let mut mmproj_file = None;
         if let Some(mmproj_cfg) = get_lh_val("mmproj")
@@ -436,6 +497,16 @@ pub fn generate_presets_ini(
             current_preset.push(format!("temp = {}", temp));
             current_preset.push(format!("top-p = {}", top_p));
             current_preset.push(format!("top-k = {}", top_k));
+
+            if let Some(checkpoints) = model_ctx_checkpoints {
+                current_preset.push(format!("ctx-checkpoints = {}", checkpoints));
+            }
+            if let Some(step) = model_checkpoint_min_step {
+                current_preset.push(format!("checkpoint-min-step = {}", step));
+            }
+            if let Some(mmap) = model_no_mmap {
+                current_preset.push(format!("no-mmap = {}", mmap));
+            }
 
             if reasoning != "auto" {
                 current_preset.push(format!("reasoning = {}", reasoning));

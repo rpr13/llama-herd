@@ -154,6 +154,9 @@ const RESTRICTED_LONG: &[&str] = &[
     "top-k",
     "reasoning",
     "reasoning-format",
+    "ctx-checkpoints",
+    "checkpoint-min-step",
+    "no-mmap",
 ];
 
 const RESTRICTED_SHORT: &[&str] = &[

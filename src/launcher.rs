@@ -448,6 +448,99 @@ pub fn build_launch_parameters(
         }
     }
 
+    // Temperature, Top P, Top K parameters mapping
+    let temp = get_lh_val("temp")
+        .or_else(|| get_long_val("temp"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else if let Some(f) = v.as_f64() {
+                Some(f)
+            } else {
+                v.as_i64().map(|i| i as f64)
+            }
+        });
+    if let Some(t) = temp {
+        params.push("--temp".to_string());
+        params.push(t.to_string());
+    }
+
+    let top_p = get_lh_val("top-p")
+        .or_else(|| get_long_val("top-p"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else if let Some(f) = v.as_f64() {
+                Some(f)
+            } else {
+                v.as_i64().map(|i| i as f64)
+            }
+        });
+    if let Some(p) = top_p {
+        params.push("--top-p".to_string());
+        params.push(p.to_string());
+    }
+
+    let top_k = get_lh_val("top-k")
+        .or_else(|| get_long_val("top-k"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<i64>().ok()
+            } else if let Some(n) = v.as_u64() {
+                Some(n as i64)
+            } else {
+                v.as_i64()
+            }
+        });
+    if let Some(k) = top_k {
+        params.push("--top-k".to_string());
+        params.push(k.to_string());
+    }
+
+    // Context Checkpoints, Checkpoint Min Step, and Memory Mapping parameters mapping
+    let ctx_checkpoints = get_global_long("ctx-checkpoints")
+        .or_else(|| get_lh_val("ctx-checkpoints"))
+        .or_else(|| get_long_val("ctx-checkpoints"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<i64>().ok()
+            } else if let Some(n) = v.as_u64() {
+                Some(n as i64)
+            } else {
+                v.as_i64()
+            }
+        });
+    if let Some(checkpoints) = ctx_checkpoints {
+        params.push("--ctx-checkpoints".to_string());
+        params.push(checkpoints.to_string());
+    }
+
+    let checkpoint_min_step = get_global_long("checkpoint-min-step")
+        .or_else(|| get_lh_val("checkpoint-min-step"))
+        .or_else(|| get_long_val("checkpoint-min-step"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<i64>().ok()
+            } else if let Some(n) = v.as_u64() {
+                Some(n as i64)
+            } else {
+                v.as_i64()
+            }
+        });
+    if let Some(step) = checkpoint_min_step {
+        params.push("--checkpoint-min-step".to_string());
+        params.push(step.to_string());
+    }
+
+    let no_mmap = get_global_long("no-mmap")
+        .or_else(|| get_lh_val("no-mmap"))
+        .or_else(|| get_long_val("no-mmap"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if no_mmap {
+        params.push("--no-mmap".to_string());
+    }
+
     if let Some(ref template) = assets.jinja_template {
         params.push("--jinja".to_string());
         params.push("--chat-template-file".to_string());

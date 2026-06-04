@@ -81,6 +81,27 @@ pub const SETTINGS: &[SettingItem] = &[
         description: "Enable unified KV cache for keys and values. Maps to llama-server --kv-unified flag.",
     },
     SettingItem {
+        label: "Context Checkpoints",
+        key: "ctx-checkpoints",
+        default_val: "32",
+        emoji: "🔄",
+        description: "Number of context checkpoints to keep in memory (for caching). Defaults to 32. Higher values prevent prompt re-processing on long chats.",
+    },
+    SettingItem {
+        label: "Checkpoint Min Step",
+        key: "checkpoint-min-step",
+        default_val: "256",
+        emoji: "📏",
+        description: "Minimum spacing between context checkpoints in tokens. Defaults to 256. Lower values speed up cache matching but use more system RAM.",
+    },
+    SettingItem {
+        label: "Disable Memory Map (no-mmap)",
+        key: "no-mmap",
+        default_val: "false",
+        emoji: "💾",
+        description: "Disable memory-mapping (mmap) for model loading, loading everything directly into physical RAM. Helps stabilize memory allocation issues.",
+    },
+    SettingItem {
         label: "Parallel Slots (np)",
         key: "np",
         default_val: "-1",
@@ -1034,9 +1055,9 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
 
     // Right Column: Details Card
     let selected_item = &SETTINGS[state.settings_index];
-    let selected_val = match state.settings_index {
-        0 => state.server_exe.to_string_lossy().to_string(),
-        1 => state.models_dir.to_string_lossy().to_string(),
+    let selected_val = match selected_item.key {
+        "llama-server" => state.server_exe.to_string_lossy().to_string(),
+        "models-dir" => state.models_dir.to_string_lossy().to_string(),
         _ => crate::config::get_global_config_string(
             &state.global_config,
             selected_item.key,

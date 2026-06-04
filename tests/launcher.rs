@@ -401,3 +401,71 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
 
     Ok(())
 }
+
+#[test]
+fn test_build_launch_parameters_checkpointing_and_mmap() -> TestResult {
+    let exe_path = PathBuf::from("/bin/llama-server");
+    let model_path = PathBuf::from("/models/gemma-2b.gguf");
+
+    let mut config_data = HashMap::new();
+    let mut long_map = serde_json::Map::new();
+    long_map.insert("temp".to_string(), serde_json::json!(1.0));
+    long_map.insert("top-p".to_string(), serde_json::json!(0.95));
+    long_map.insert("top-k".to_string(), serde_json::json!(64));
+    config_data.insert(
+        "llama-server-long".to_string(),
+        serde_json::Value::Object(long_map),
+    );
+
+    let assets = ModelAssets {
+        config: config_data,
+        jinja_template: None,
+    };
+
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "32".to_string(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "".to_string(),
+    };
+
+    let mut global_config = HashMap::new();
+    global_config.insert("ctx-checkpoints".to_string(), serde_json::json!(128));
+    global_config.insert("checkpoint-min-step".to_string(), serde_json::json!(2048));
+    global_config.insert("no-mmap".to_string(), serde_json::json!(true));
+
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &global_config,
+        8080,
+    );
+
+    let temp_idx = params.iter().position(|r| r == "--temp").unwrap();
+    assert_eq!(params[temp_idx + 1], "1");
+
+    let top_p_idx = params.iter().position(|r| r == "--top-p").unwrap();
+    assert_eq!(params[top_p_idx + 1], "0.95");
+
+    let top_k_idx = params.iter().position(|r| r == "--top-k").unwrap();
+    assert_eq!(params[top_k_idx + 1], "64");
+
+    let checkpoints_idx = params
+        .iter()
+        .position(|r| r == "--ctx-checkpoints")
+        .unwrap();
+    assert_eq!(params[checkpoints_idx + 1], "128");
+
+    let step_idx = params
+        .iter()
+        .position(|r| r == "--checkpoint-min-step")
+        .unwrap();
+    assert_eq!(params[step_idx + 1], "2048");
+
+    assert!(params.contains(&"--no-mmap".to_string()));
+
+    Ok(())
+}

@@ -389,8 +389,9 @@ pub fn handle_key_event(
                 state.settings_index = (state.settings_index + 1) % crate::tui::ui::SETTINGS.len();
             }
             KeyCode::Enter => {
-                match state.settings_index {
-                    0 => {
+                let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                match selected_item.key {
+                    "llama-server" => {
                         state.screen = AppScreen::PickingServerPath;
                         let initial_path = if state.server_exe.as_os_str().is_empty() {
                             crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
@@ -406,7 +407,7 @@ pub fn handle_key_event(
                             crate::tui::picker::PickerMode::File,
                         ));
                     }
-                    1 => {
+                    "models-dir" => {
                         state.screen = AppScreen::PickingModelsDir;
                         let initial_path = if state.models_dir.as_os_str().is_empty() {
                             crate::config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
@@ -418,11 +419,10 @@ pub fn handle_key_event(
                             crate::tui::picker::PickerMode::Directory,
                         ));
                     }
-                    5..=7 => {
+                    "flash-attn" | "cache-type-k" | "cache-type-v" => {
                         // Option selectors for flash-attn, cache-type-k, cache-type-v
-                        let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
-                        let option_list = match state.settings_index {
-                            5 => vec![
+                        let option_list = match selected_item.key {
+                            "flash-attn" => vec![
                                 "auto".to_string(),
                                 "1".to_string(),
                                 "0".to_string(),
@@ -460,77 +460,32 @@ pub fn handle_key_event(
                         state.option_selector_list = option_list;
                         state.screen = AppScreen::SelectingGlobalSettingOption;
                     }
-                    8 => {
-                        // Unified KV Cache toggle (default true)
+                    "kv-unified" | "metrics" | "ui" | "no-mmap" => {
+                        // Toggle boolean flags
+                        let default_val = matches!(selected_item.key, "kv-unified" | "ui");
                         let current_val = state
                             .global_config
                             .get("llama-server-long")
-                            .and_then(|l| l.get("kv-unified"))
-                            .or_else(|| state.global_config.get("kv-unified"))
+                            .and_then(|l| l.get(selected_item.key))
+                            .or_else(|| {
+                                state
+                                    .global_config
+                                    .get("llama-herd")
+                                    .and_then(|lh| lh.get(selected_item.key))
+                            })
+                            .or_else(|| state.global_config.get(selected_item.key))
                             .and_then(|v| v.as_bool())
-                            .unwrap_or(true);
+                            .unwrap_or(default_val);
                         let next_val = !current_val;
-                        if next_val {
+                        if next_val == default_val {
                             crate::config::remove_global_config_value(
                                 &mut state.global_config,
-                                "kv-unified",
+                                selected_item.key,
                             );
                         } else {
                             crate::config::update_global_config_value(
                                 &mut state.global_config,
-                                "kv-unified",
-                                serde_json::Value::Bool(next_val),
-                            );
-                        }
-                        let _ =
-                            crate::config::save_config(&state.config_path, &state.global_config);
-                    }
-                    14 => {
-                        // Enable Metrics toggle (default false)
-                        let current_val = state
-                            .global_config
-                            .get("llama-server-long")
-                            .and_then(|l| l.get("metrics"))
-                            .or_else(|| state.global_config.get("metrics"))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let next_val = !current_val;
-                        if !next_val {
-                            crate::config::remove_global_config_value(
-                                &mut state.global_config,
-                                "metrics",
-                            );
-                        } else {
-                            crate::config::update_global_config_value(
-                                &mut state.global_config,
-                                "metrics",
-                                serde_json::Value::Bool(next_val),
-                            );
-                        }
-                        let _ =
-                            crate::config::save_config(&state.config_path, &state.global_config);
-                    }
-                    15 => {
-                        // Enable Web UI toggle
-                        let ui_enabled = state
-                            .global_config
-                            .get("llama-herd")
-                            .and_then(|lh| lh.get("ui"))
-                            .or_else(|| state.global_config.get("ui"))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(true);
-
-                        let next_val = !ui_enabled;
-                        if next_val {
-                            // default is true, so remove key to reset to default
-                            crate::config::remove_global_config_value(
-                                &mut state.global_config,
-                                "ui",
-                            );
-                        } else {
-                            crate::config::update_global_config_value(
-                                &mut state.global_config,
-                                "ui",
+                                selected_item.key,
                                 serde_json::Value::Bool(next_val),
                             );
                         }
@@ -538,7 +493,6 @@ pub fn handle_key_event(
                             crate::config::save_config(&state.config_path, &state.global_config);
                     }
                     _ => {
-                        let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
                         let val_str = crate::config::get_global_config_string(
                             &state.global_config,
                             selected_item.key,
@@ -666,17 +620,16 @@ pub fn handle_key_event(
                                 key_to_update,
                             );
                         } else {
-                            match state.settings_index {
-                                2 => {
-                                    // Host IP
+                            match selected_item.key {
+                                "host" | "flash-attn" | "cache-type-k" | "cache-type-v"
+                                | "api-key" => {
                                     crate::config::update_global_config_value(
                                         &mut state.global_config,
                                         key_to_update,
                                         serde_json::Value::String(val_str),
                                     );
                                 }
-                                3 => {
-                                    // Port
+                                "port" | "threads" => {
                                     let val = if val_str == "auto" {
                                         serde_json::Value::String(val_str)
                                     } else if let Ok(num) = val_str.parse::<i64>() {
@@ -690,31 +643,12 @@ pub fn handle_key_event(
                                         val,
                                     );
                                 }
-                                4 => {
-                                    // Threads
-                                    let val = if val_str == "auto" {
-                                        serde_json::Value::String(val_str)
-                                    } else if let Ok(num) = val_str.parse::<i64>() {
-                                        serde_json::Value::Number(num.into())
-                                    } else {
-                                        serde_json::Value::String(val_str)
-                                    };
-                                    crate::config::update_global_config_value(
-                                        &mut state.global_config,
-                                        key_to_update,
-                                        val,
-                                    );
-                                }
-                                5..=7 => {
-                                    // Flash Attention, Cache Type K, Cache Type V
-                                    crate::config::update_global_config_value(
-                                        &mut state.global_config,
-                                        key_to_update,
-                                        serde_json::Value::String(val_str),
-                                    );
-                                }
-                                9 => {
-                                    // Parallel Slots
+                                "np"
+                                | "batch-size"
+                                | "ubatch-size"
+                                | "models-max"
+                                | "ctx-checkpoints"
+                                | "checkpoint-min-step" => {
                                     if let Ok(num) = val_str.parse::<i64>() {
                                         crate::config::update_global_config_value(
                                             &mut state.global_config,
@@ -722,44 +656,6 @@ pub fn handle_key_event(
                                             serde_json::Value::Number(num.into()),
                                         );
                                     }
-                                }
-                                10 => {
-                                    // Batch Size
-                                    if let Ok(num) = val_str.parse::<i64>() {
-                                        crate::config::update_global_config_value(
-                                            &mut state.global_config,
-                                            key_to_update,
-                                            serde_json::Value::Number(num.into()),
-                                        );
-                                    }
-                                }
-                                11 => {
-                                    // Micro-Batch Size
-                                    if let Ok(num) = val_str.parse::<i64>() {
-                                        crate::config::update_global_config_value(
-                                            &mut state.global_config,
-                                            key_to_update,
-                                            serde_json::Value::Number(num.into()),
-                                        );
-                                    }
-                                }
-                                12 => {
-                                    // Max Active Models
-                                    if let Ok(num) = val_str.parse::<i64>() {
-                                        crate::config::update_global_config_value(
-                                            &mut state.global_config,
-                                            key_to_update,
-                                            serde_json::Value::Number(num.into()),
-                                        );
-                                    }
-                                }
-                                13 => {
-                                    // API Key
-                                    crate::config::update_global_config_value(
-                                        &mut state.global_config,
-                                        key_to_update,
-                                        serde_json::Value::String(val_str),
-                                    );
                                 }
                                 _ => {}
                             }
