@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LlamaHerd 🦙 - Orchestrate & Route Local LLMs with llama.cpp</title>
+    <meta
+      name="description"
+      content="LlamaHerd is a high-performance, native Rust TUI companion server launcher, parameter manager, and control dashboard for llama.cpp's llama-server."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Header Section -->
+    <header>
+      <div class="container">
+        <a href="#" class="logo-wrapper" id="nav-logo-link">
+          <img src="assets/logo.png" alt="LlamaHerd Logo" class="logo-img" />
+          <span class="logo-text">LlamaHerd <span class="logo-tag">Rust</span></span>
+        </a>
+        <nav aria-label="Main Navigation">
+          <ul class="nav-links">
+            <li><a href="#downloads" id="link-downloads">📥 Downloads</a></li>
+            <li><a href="#features" id="link-features">🚀 Features</a></li>
+            <li><a href="#configuration" id="link-configuration">⚙️ Configuration</a></li>
+            <li><a href="#quickstart" id="link-quickstart">🛠️ Quick Start</a></li>
+          </ul>
+        </nav>
+        <a
+          href="https://github.com/rpr13/llama-herd"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="btn-github"
+          id="btn-view-github"
+        >
+          <svg height="20" width="20" viewBox="0 0 16 16" fill="currentColor">
+            <path
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+            ></path>
+          </svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main>
+      <!-- Hero Section -->
+      <section class="hero" id="hero-section">
+        <div class="hero-gradient-orb"></div>
+        <div class="container">
+          <h1>🦙 Launch and Control Local LLMs with <span class="text-gradient">LlamaHerd</span></h1>
+          <p class="hero-subtitle">
+            A high-performance, native Rust TUI designed as a self-contained model launcher, parameter manager, and
+            real-time dashboard control center for <code>llama-server</code>.
+          </p>
+        </div>
+      </section>
+
+      <!-- Download Section -->
+      <section class="downloads" id="downloads">
+        <div class="container">
+          <div class="section-header">
+            <h2>📥 Download Releases</h2>
+            <p>Get the latest compiled binary or source code directly from GitHub.</p>
+          </div>
+          <div class="downloads-grid">
+            <!-- Stable Card -->
+            <div class="download-card stable-card" id="stable-card">
+              <div class="card-badge badge-stable">🟢 Stable</div>
+              <h3 id="stable-version">Loading...</h3>
+              <p class="release-date" id="stable-date">&nbsp;</p>
+              <p class="release-desc">
+                Recommended for general use. Fully verified for option safety, preset routing, and configuration
+                parsing.
+              </p>
+              <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary" id="stable-link"
+                >📦 Download Stable</a
+              >
+            </div>
+
+            <!-- Pre-Release Card -->
+            <div class="download-card prerelease-card disabled" id="prerelease-card">
+              <div class="card-badge badge-prerelease">🧪 Pre-release</div>
+              <h3 id="prerelease-version">Checking...</h3>
+              <p class="release-date" id="prerelease-date">&nbsp;</p>
+              <p class="release-desc">
+                Contains bleeding-edge updates, new heuristics, and experimental theme palettes. May be unstable.
+              </p>
+              <a href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" id="prerelease-link"
+                >🔬 Download Pre-release</a
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features Section -->
+      <section class="features" id="features">
+        <div class="container">
+          <div class="section-header">
+            <h2>🚀 Core Capabilities</h2>
+            <p>
+              LlamaHerd handles the complex configurations, auto-pairing, option filtering, and process lifecycles of
+              local LLMs so you can focus on building.
+            </p>
+          </div>
+          <div class="features-grid">
+            <div class="feature-card">
+              <span class="feature-icon">🛠️</span>
+              <h3>Auto-Discovery & Settle Checks</h3>
+              <p>
+                Scans GGUFs and pairs them with speculative drafts/vision projectors. Includes write-stabilization
+                checks to defer reloading during active downloads or copy operations.
+              </p>
+            </div>
+
+            <div class="feature-card">
+              <span class="feature-icon">🖥️</span>
+              <h3>Interactive Control Center</h3>
+              <p>
+                A beautiful Rust TUI dashboard powered by <code>ratatui</code> showing subprocess status, resource
+                allocation, model override inputs, and scrollable console logs.
+              </p>
+            </div>
+
+            <div class="feature-card">
+              <span class="feature-icon">🔒</span>
+              <h3>Option & Parameter Safety</h3>
+              <p>
+                Enforces strict TOML rules, prevents command/option injections, restricts context size formats strictly
+                to <code>k</code>/<code>K</code>, and searches sequentially for open ports.
+              </p>
+            </div>
+
+            <div class="feature-card">
+              <span class="feature-icon">🎨</span>
+              <h3>Hybrid Theme System</h3>
+              <p>
+                Procedural UI customizations and functional palette overrides via a simple
+                <code>theme.toml</code> configuration, falling back to a borderless simple skin.
+              </p>
+            </div>
+
+            <div class="feature-card">
+              <span class="feature-icon">🔀</span>
+              <h3>OpenAI-Compatible Router</h3>
+              <p>
+                Functions as a dynamic API gateway. Serves OpenAI-compatible chat endpoints
+                (<code>/v1/chat/completions</code>), auto-loading presets dynamically and queryable models list
+                (<code>/v1/models</code>).
+              </p>
+            </div>
+
+            <div class="feature-card">
+              <span class="feature-icon">⚙️</span>
+              <h3>Process Orchestration</h3>
+              <p>
+                Direct subprocess execution checks (PIDs logged in <code>active_pids.txt</code>) and automated cleanups
+                of zombie processes using the <code>sysinfo</code> crate.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configuration Section -->
+      <section class="config-showcase" id="configuration">
+        <div class="container">
+          <div class="config-container">
+            <div class="config-info">
+              <h3>⚙️ Safe, Structured Configuration</h3>
+              <p>
+                Customize LlamaHerd globally, define options on a per-model basis, or craft custom TUI themes. LlamaHerd
+                translates options directly into options for <code>llama-server</code>, while strictly shielding
+                sensitive runtime settings and verifying inputs.
+              </p>
+              <div class="config-features-list">
+                <div class="config-feature-item">
+                  <span class="config-feature-bullet">✨</span>
+                  <span
+                    ><strong>No Underscores in Keys</strong>: Strict keys formatting keeps options consistent and
+                    robust.</span
+                  >
+                </div>
+                <div class="config-feature-item">
+                  <span class="config-feature-bullet">🛡️</span>
+                  <span
+                    ><strong>Injection Guard</strong>: Options containing dangerous shells, dashes, or metacharacters
+                    are rejected.</span
+                  >
+                </div>
+                <div class="config-feature-item">
+                  <span class="config-feature-bullet">📈</span>
+                  <span
+                    ><strong>Scalable Context</strong>: Safe context size suffix parsing (e.g. <code>32k</code> →
+                    <code>32768</code>).</span
+                  >
+                </div>
+                <div class="config-feature-item">
+                  <span class="config-feature-bullet">🎨</span>
+                  <span
+                    ><strong>Hybrid Themes</strong>: Direct TUI styling overrides via semantic colors and UI behavior
+                    controls.</span
+                  >
+                </div>
+              </div>
+
+              <!-- Configuration Locations -->
+              <div class="config-locations">
+                <h4>📂 Default Config Locations</h4>
+                <ul>
+                  <li>
+                    <span class="os-badge linux">Linux</span>
+                    <code>~/.config/llama-herd/</code>
+                  </li>
+                  <li>
+                    <span class="os-badge win">Windows</span>
+                    <code>%APPDATA%\llama-herd\</code>
+                  </li>
+                  <li>
+                    <span class="os-badge mac">macOS</span>
+                    <code>~/Library/Application Support/llama-herd/</code>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Code Block Switcher -->
+            <div class="config-viewer">
+              <div class="config-tabs">
+                <button class="config-tab active" id="btn-tab-global" onclick="switchTab('global')">
+                  🌐 Global Config (config.toml)
+                </button>
+                <button class="config-tab" id="btn-tab-model" onclick="switchTab('model')">
+                  🦙 Model Config (model.toml)
+                </button>
+                <button class="config-tab" id="btn-tab-theme" onclick="switchTab('theme')">
+                  🎨 Theme Config (theme.toml)
+                </button>
+              </div>
+              <div class="config-content">
+                <!-- Global Config Code Block -->
+                <div class="config-panel active" id="panel-global">
+                  <pre><code><span class="toml-comment"># ~/.config/llama-herd/config.toml</span>
+
+<span class="toml-key">llama-server</span> = <span class="toml-value">"/usr/local/bin/llama-server"</span>
+<span class="toml-key">models-dir</span> = <span class="toml-value">"/home/user/ai/models"</span>
+<span class="toml-key">host</span> = <span class="toml-value">"0.0.0.0"</span>
+<span class="toml-key">port</span> = <span class="toml-value">"auto"</span> <span class="toml-comment"># sequential fallback (+10 ports)</span>
+
+<span class="toml-comment"># Defaults for server runs</span>
+<span class="toml-key">flash-attn</span> = <span class="toml-value">"auto"</span>
+<span class="toml-key">kv-quant</span> = <span class="toml-value">"q8_0"</span>
+<span class="toml-key">models-max</span> = <span class="toml-number">1</span>
+<span class="toml-key">batch-size</span> = <span class="toml-number">256</span>
+<span class="toml-key">ui</span> = <span class="toml-value">true</span> <span class="toml-comment"># Web UI toggle</span></code></pre>
+                </div>
+
+                <!-- Model Specific Config Code Block -->
+                <div class="config-panel" id="panel-model">
+                  <pre><code><span class="toml-comment"># Config next to model, e.g. Qwen2.5-7B.toml</span>
+
+<span class="toml-table">[llama-herd]</span>
+<span class="toml-key">is-default</span> = <span class="toml-value">true</span>
+<span class="toml-key">draft</span> = <span class="toml-value">"Qwen2.5-1.5B-draft.gguf"</span>
+
+<span class="toml-table">[llama-server-long]</span>
+<span class="toml-key">ctx-size</span> = <span class="toml-value">"32k"</span> <span class="toml-comment"># Automatically converted to 32768</span>
+<span class="toml-key">ngl</span> = <span class="toml-value">"auto"</span>
+<span class="toml-key">slot-prompt-similarity</span> = <span class="toml-number">0.5</span>
+
+<span class="toml-table">[llama-server-short]</span>
+<span class="toml-key">sps</span> = <span class="toml-number">0.6</span></code></pre>
+                </div>
+
+                <!-- Theme Config Code Block -->
+                <div class="config-panel" id="panel-theme">
+                  <div class="theme-presets">
+                    <span class="theme-label">Presets:</span>
+                    <button
+                      class="theme-preset-btn active"
+                      id="btn-theme-cyberpunk"
+                      onclick="selectThemePreset('cyberpunk')"
+                    >
+                      Cyberpunk
+                    </button>
+                    <button class="theme-preset-btn" id="btn-theme-amber" onclick="selectThemePreset('amber')">
+                      Retro Amber
+                    </button>
+                    <button class="theme-preset-btn" id="btn-theme-dracula" onclick="selectThemePreset('dracula')">
+                      Dracula
+                    </button>
+                    <button class="theme-preset-btn" id="btn-theme-nordic" onclick="selectThemePreset('nordic')">
+                      Nordic Frost
+                    </button>
+                  </div>
+                  <pre><code id="theme-code-block"><span class="toml-comment"># Custom TUI theme at ~/.config/llama-herd/theme.toml</span>
+
+<span class="toml-table">[palette]</span>
+<span class="toml-key">primary</span> = <span class="toml-value">"cyan"</span>
+<span class="toml-key">secondary</span> = <span class="toml-value">"gray"</span>
+<span class="toml-key">accent</span> = <span class="toml-value">"yellow"</span>
+<span class="toml-key">success</span> = <span class="toml-value">"green"</span>
+<span class="toml-key">error</span> = <span class="toml-value">"red"</span>
+<span class="toml-key">selection</span> = <span class="toml-value">"magenta"</span>
+<span class="toml-key">bg</span> = <span class="toml-value">"black"</span>
+<span class="toml-key">fg</span> = <span class="toml-value">"white"</span>
+<span class="toml-key">header-bg</span> = <span class="toml-value">"indexed(234)"</span>
+<span class="toml-key">footer-bg</span> = <span class="toml-value">"indexed(234)"</span>
+
+<span class="toml-table">[ui]</span>
+<span class="toml-key">show-emojis</span> = <span class="toml-value">true</span>
+<span class="toml-key">border-type</span> = <span class="toml-value">"rounded"</span> <span class="toml-comment"># plain, rounded, double, thick</span></code></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Start Section -->
+      <section class="quickstart" id="quickstart">
+        <div class="container">
+          <div class="section-header">
+            <h2>🛠️ Quick Start</h2>
+            <p>Launch LlamaHerd on your system in minutes.</p>
+          </div>
+
+          <div class="quickstart-steps">
+            <div class="step">
+              <div class="step-num">1</div>
+              <div class="step-content">
+                <h4>Clone and Build</h4>
+                <p>Compile LlamaHerd locally using the Cargo build toolchain.</p>
+                <div class="code-box">
+                  <code id="code-clone"
+                    >git clone https://github.com/rpr13/llama-herd.git && cd llama-herd && cargo install --path .</code
+                  >
+                  <button class="btn-copy" id="btn-copy-clone" onclick="copyText('code-clone', 'btn-copy-clone')">
+                    📋 Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-num">2</div>
+              <div class="step-content">
+                <h4>Launch Wizard & TUI Dashboard</h4>
+                <p>
+                  Start LlamaHerd. An interactive setup wizard will guide you to map the
+                  <code>llama-server</code> path and your models directory, then boot the dashboard.
+                </p>
+                <div class="code-box">
+                  <code id="code-launch">llama-herd</code>
+                  <button class="btn-copy" id="btn-copy-launch" onclick="copyText('code-launch', 'btn-copy-launch')">
+                    📋 Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="step">
+              <div class="step-num">3</div>
+              <div class="step-content">
+                <h4>Generate Presets (Early-Exit CLI)</h4>
+                <p>
+                  Alternatively, scan your models directory and generate the <code>models-preset.ini</code> file
+                  dynamically, exiting immediately without opening the TUI screen.
+                </p>
+                <div class="code-box">
+                  <code id="code-ini">llama-herd --ini</code>
+                  <button class="btn-copy" id="btn-copy-ini" onclick="copyText('code-ini', 'btn-copy-ini')">
+                    📋 Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prerequisites & Color Tip Card -->
+          <div class="prerequisites-note">
+            <span class="note-badge">💡 Tip</span>
+            <p>
+              Ensure your <code>TERM</code> environment variable is set to a 256-color profile (e.g.
+              <code>xterm-256color</code> or <code>screen-256color</code>) to properly display TUI borders and styled
+              ANSI logs.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer Section -->
+    <footer>
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <h4>🦙 LlamaHerd</h4>
+            <p>A self-contained native Rust TUI launcher, parameter manager, and dashboard for llama.cpp services.</p>
+            <div class="ai-badge">🤖✨ Built with Agentic AI</div>
+          </div>
+          <div class="footer-links">
+            <h5>Reference Documentation</h5>
+            <ul>
+              <li>
+                <a
+                  href="https://github.com/rpr13/llama-herd/blob/main/docs/architecture.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >🏛️ Architecture & Design</a
+                >
+              </li>
+              <li>
+                <a
+                  href="https://github.com/rpr13/llama-herd/blob/main/docs/configuration.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >⚙️ Configuration Options</a
+                >
+              </li>
+              <li>
+                <a
+                  href="https://github.com/rpr13/llama-herd/blob/main/docs/theming.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >🎨 TUI Custom Theming</a
+                >
+              </li>
+            </ul>
+          </div>
+          <div class="footer-links">
+            <h5>Ecosystem Links</h5>
+            <ul>
+              <li>
+                <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noopener noreferrer"
+                  >🐐 llama.cpp</a
+                >
+              </li>
+              <li><a href="https://ratatui.rs/" target="_blank" rel="noopener noreferrer">🖥️ Ratatui Framework</a></li>
+              <li>
+                <a href="https://github.com/rpr13/llama-herd" target="_blank" rel="noopener noreferrer"
+                  >📂 GitHub Repository</a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span>&copy; 2026 LlamaHerd Project. Released under the MIT & Apache-2.0 Licenses.</span>
+          <span>Made with 🦀 and 🤖</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Running Llamas Decoration -->
+    <div class="running-llamas-container" aria-hidden="true">
+      <div class="running-llama llama-1"></div>
+      <div class="running-llama llama-2"></div>
+      <div class="running-llama llama-3"></div>
+      <div class="running-llama llama-4"></div>
+      <div class="running-llama llama-5"></div>
+      <div class="running-llama llama-6"></div>
+      <div class="running-llama llama-7"></div>
+      <div class="running-llama llama-8"></div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
