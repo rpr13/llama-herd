@@ -1,7 +1,19 @@
 [package]
 name = "llama-herd"
-version = "1.0.8"
+version = "1.0.9"
 edition = "2024"
+description = "A native Rust TUI and CLI companion for orchestrating, pairing, and routing local LLM services driven by llama.cpp's llama-server."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rpr13/llama-herd"
+homepage = "https://github.com/rpr13/llama-herd"
+readme = "README.md"
+exclude = [
+    "/.antigravitycli",
+    "/target",
+    "/.idea",
+    "/.git",
+    "/.github"
+]
 
 [dependencies]
 ratatui = "0.30.0"
