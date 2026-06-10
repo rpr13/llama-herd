@@ -1,6 +1,6 @@
 [package]
 name = "llama-herd"
-version = "1.0.9"
+version = "1.0.10"
 edition = "2024"
 description = "A native Rust TUI and CLI companion for orchestrating, pairing, and routing local LLM services driven by llama.cpp's llama-server."
 license = "MIT OR Apache-2.0"
@@ -16,14 +16,14 @@ exclude = [
 ]
 
 [dependencies]
-ratatui = "0.30.0"
+ratatui = "0.30.1"
 crossterm = "0.29.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-arboard = "3.4.0"
-regex = "1.10"
+arboard = "3.6.1"
+regex = "1.12.4"
 toml = "1.1.2"
-sysinfo = "0.31"
+sysinfo = "0.39.3"
 
 [dev-dependencies]
 tempfile = "3"
