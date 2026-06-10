@@ -818,4 +818,65 @@ temp = 0.7
         state.check_models_dir_changes();
         assert!(!state.models_dir_changed_dirty);
     }
+
+    #[test]
+    fn test_handle_key_event_selecting_log_verbosity() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.config_path = config_path;
+        state.screen = AppScreen::Settings;
+        // Find index of log-verbosity in SETTINGS
+        let log_verbosity_idx = llama_herd::tui::ui::SETTINGS
+            .iter()
+            .position(|item| item.key == "log-verbosity")
+            .unwrap();
+        state.settings_index = log_verbosity_idx;
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Enter key -> opens option list popup
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingGlobalSettingOption);
+        assert_eq!(state.option_selector_list.len(), 7);
+        assert_eq!(state.option_selector_list[0], "0");
+        assert_eq!(state.option_selector_list[5], "5");
+
+        // 2. Down key -> moves selector to the next item
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.option_selector_index, 4); // Selected "4" (since default is "3" at index 3)
+
+        // 3. Enter key -> saves standard option as a Number (4) and returns to Settings
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Settings);
+        assert_eq!(
+            state
+                .global_config
+                .get("log-verbosity")
+                .unwrap()
+                .as_i64()
+                .unwrap(),
+            4
+        );
+    }
 }

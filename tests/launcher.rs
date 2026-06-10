@@ -60,6 +60,10 @@ fn test_build_launch_parameters_defaults() -> TestResult {
     // Unified KV cache is enabled
     assert!(params.contains(&"--kv-unified".to_string()));
 
+    // Log verbosity default
+    let lv_idx = params.iter().position(|r| r == "--log-verbosity").unwrap();
+    assert_eq!(params[lv_idx + 1], "3");
+
     // Cache quantization options
     let ctk_idx = params.iter().position(|r| r == "-ctk").unwrap();
     assert_eq!(params[ctk_idx + 1], "f16");
@@ -358,6 +362,7 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
     global_config.insert("kv-unified".to_string(), serde_json::json!(false));
     global_config.insert("api-key".to_string(), serde_json::json!("secret-token-123"));
     global_config.insert("metrics".to_string(), serde_json::json!(true));
+    global_config.insert("log-verbosity".to_string(), serde_json::json!(5));
 
     let params = build_launch_parameters(
         &exe_path,
@@ -384,6 +389,9 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
 
     assert!(params.contains(&"--metrics".to_string()));
 
+    let lv_idx = params.iter().position(|r| r == "--log-verbosity").unwrap();
+    assert_eq!(params[lv_idx + 1], "5");
+
     // Now test router mode too
     let router_params = build_router_launch_parameters(
         &exe_path,
@@ -398,6 +406,12 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
     assert_eq!(router_params[r_api_idx + 1], "secret-token-123");
 
     assert!(router_params.contains(&"--metrics".to_string()));
+
+    let r_lv_idx = router_params
+        .iter()
+        .position(|r| r == "--log-verbosity")
+        .unwrap();
+    assert_eq!(router_params[r_lv_idx + 1], "5");
 
     Ok(())
 }

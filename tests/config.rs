@@ -109,6 +109,9 @@ fn test_is_restricted_key_checks() -> TestResult {
     assert!(is_restricted_key("total-layers"));
     assert!(is_restricted_key("n-gpu-layers"));
     assert!(is_restricted_key("temp"));
+    assert!(is_restricted_key("log-verbosity"));
+    assert!(is_restricted_key("verbosity"));
+    assert!(is_restricted_key("lv"));
 
     // 2. Pass-through keys
     assert!(!is_restricted_key("slot-prompt-similarity"));
@@ -315,6 +318,9 @@ fn test_is_restricted_key_internal() {
     assert!(is_restricted_key("total-layers"));
     assert!(is_restricted_key("n-gpu-layers"));
     assert!(is_restricted_key("temp"));
+    assert!(is_restricted_key("log-verbosity"));
+    assert!(is_restricted_key("verbosity"));
+    assert!(is_restricted_key("lv"));
 
     assert!(!is_restricted_key("slot-prompt-similarity"));
 }

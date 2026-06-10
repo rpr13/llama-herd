@@ -150,6 +150,13 @@ pub const SETTINGS: &[SettingItem] = &[
         emoji: "💻",
         description: "Enable/disable the built-in HTML/web chat interface provided by llama-server. Maps to --no-ui when disabled.",
     },
+    SettingItem {
+        label: "Log Verbosity",
+        key: "log-verbosity",
+        default_val: "3",
+        emoji: "📢",
+        description: "Set the verbosity threshold. Messages with a higher verbosity will be ignored. Values: 0 (generic output), 1 (error), 2 (warning), 3 (info), 4 (trace / more info), 5 (debug).",
+    },
 ];
 
 pub fn draw(f: &mut Frame, state: &mut AppState) {

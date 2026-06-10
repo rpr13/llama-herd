@@ -157,10 +157,13 @@ const RESTRICTED_LONG: &[&str] = &[
     "ctx-checkpoints",
     "checkpoint-min-step",
     "no-mmap",
+    "log-verbosity",
+    "verbosity",
+    "lv",
 ];
 
 const RESTRICTED_SHORT: &[&str] = &[
-    "c", "ngl", "ngld", "t", "md", "m", "mm", "np", "b", "ub", "fa", "kvu", "h",
+    "c", "ngl", "ngld", "t", "md", "m", "mm", "np", "b", "ub", "fa", "kvu", "h", "lv",
 ];
 
 fn is_invalid_key(k: &str) -> Option<&'static str> {

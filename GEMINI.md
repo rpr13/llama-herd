@@ -113,8 +113,8 @@ Every UI component in LlamaHerd **must** use the theme system.
 
 To prevent conflicts with managed options, any key (long, short, prefixed with `s-`, or unprefixed) matching a managed parameter is **restricted** and ignored during the passthrough stage.
 
-- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`.
-- **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`.
+- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `log-verbosity`, `verbosity`, `lv`.
+- **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`, `lv`.
 
 ### 3. Automated Quality Gates
 

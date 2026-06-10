@@ -36,6 +36,7 @@ Placed inside the platform-specific global configuration directory to define glo
 | `api-key`      | `"disabled"`  | String     | API key for server authorization. Use `"disabled"` to turn off.                                                                                                                                                                                                                                        |
 | `metrics`      | `false`       | Boolean    | Enable the `/metrics` Prometheus endpoint on `llama-server`.                                                                                                                                                                                                                                           |
 | `ui`           | `true`        | Boolean    | Enable/Disable standard Web UI host wrapper. Managed globally in the Settings tab.                                                                                                                                                                                                                     |
+| `log-verbosity` | `3`          | Integer    | Log verbosity threshold (0: generic, 1: error, 2: warning, 3: info, 4: trace, 5: debug).                                                                                                                                                                                                                |
 
 ---
 
@@ -96,6 +97,7 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 | `no-mmap`          | `false`      | Boolean    | Overrides memory-mapping for model loading.                                                                  |
 | `api-key`          | `"disabled"` | String     | API key server authorization.                                                                                |
 | `metrics`          | `false`      | Boolean    | Metrics Prometheus endpoint enablement.                                                                      |
+| `log-verbosity`   | `3`          | Integer    | Overrides the log verbosity threshold (0: generic, 1: error, 2: warning, 3: info, 4: trace, 5: debug).         |
 | `spec-type`        | `none`       | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                               |
 | `spec-draft-n-max` | `4`          | Integer    | Max speculative draft token predictions per slots.                                                           |
 | `spec-draft-p-min` | `0.0`        | Float      | Minimum probability threshold for speculative tokens.                                                        |

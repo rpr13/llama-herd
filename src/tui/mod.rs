@@ -419,13 +419,22 @@ pub fn handle_key_event(
                             crate::tui::picker::PickerMode::Directory,
                         ));
                     }
-                    "flash-attn" | "cache-type-k" | "cache-type-v" => {
-                        // Option selectors for flash-attn, cache-type-k, cache-type-v
+                    "flash-attn" | "cache-type-k" | "cache-type-v" | "log-verbosity" => {
+                        // Option selectors for flash-attn, cache-type-k, cache-type-v, log-verbosity
                         let option_list = match selected_item.key {
                             "flash-attn" => vec![
                                 "auto".to_string(),
                                 "1".to_string(),
                                 "0".to_string(),
+                                "(Custom / Manual...)".to_string(),
+                            ],
+                            "log-verbosity" => vec![
+                                "0".to_string(),
+                                "1".to_string(),
+                                "2".to_string(),
+                                "3".to_string(),
+                                "4".to_string(),
+                                "5".to_string(),
                                 "(Custom / Manual...)".to_string(),
                             ],
                             _ => vec![
@@ -648,7 +657,8 @@ pub fn handle_key_event(
                                 | "ubatch-size"
                                 | "models-max"
                                 | "ctx-checkpoints"
-                                | "checkpoint-min-step" => {
+                                | "checkpoint-min-step"
+                                | "log-verbosity" => {
                                     if let Ok(num) = val_str.parse::<i64>() {
                                         crate::config::update_global_config_value(
                                             &mut state.global_config,
@@ -761,10 +771,19 @@ pub fn handle_key_event(
                             key_to_update,
                         );
                     } else {
+                        let val = if selected_item.key == "log-verbosity" {
+                            if let Ok(num) = selected_opt.parse::<i64>() {
+                                serde_json::Value::Number(num.into())
+                            } else {
+                                serde_json::Value::String(selected_opt)
+                            }
+                        } else {
+                            serde_json::Value::String(selected_opt)
+                        };
                         crate::config::update_global_config_value(
                             &mut state.global_config,
                             key_to_update,
-                            serde_json::Value::String(selected_opt),
+                            val,
                         );
                     }
 

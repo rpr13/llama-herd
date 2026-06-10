@@ -268,6 +268,18 @@ pub fn build_launch_parameters(
         params.push("--metrics".to_string());
     }
 
+    let log_verbosity = get_global_long("log-verbosity")
+        .and_then(|v| {
+            if let Some(i) = v.as_i64() {
+                Some(i.to_string())
+            } else {
+                v.as_str().map(|s| s.to_string())
+            }
+        })
+        .unwrap_or_else(|| "3".to_string());
+    params.push("--log-verbosity".to_string());
+    params.push(log_verbosity);
+
     // Helper to format and add a long parameter
     let add_long_param = |arg: &str, val: &serde_json::Value, params: &mut Vec<String>| {
         if crate::config::is_restricted_key(arg) {
@@ -666,6 +678,18 @@ pub fn build_router_launch_parameters(
     if metrics {
         params.push("--metrics".to_string());
     }
+
+    let log_verbosity = get_global_long("log-verbosity")
+        .and_then(|v| {
+            if let Some(i) = v.as_i64() {
+                Some(i.to_string())
+            } else {
+                v.as_str().map(|s| s.to_string())
+            }
+        })
+        .unwrap_or_else(|| "3".to_string());
+    params.push("--log-verbosity".to_string());
+    params.push(log_verbosity);
 
     params
 }
