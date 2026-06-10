@@ -37,6 +37,23 @@ Placed inside the platform-specific global configuration directory to define glo
 | `metrics`      | `false`       | Boolean    | Enable the `/metrics` Prometheus endpoint on `llama-server`.                                                                                                                                                                                                                                           |
 | `ui`           | `true`        | Boolean    | Enable/Disable standard Web UI host wrapper. Managed globally in the Settings tab.                                                                                                                                                                                                                     |
 | `log-verbosity` | `3`          | Integer    | Log verbosity threshold (0: generic, 1: error, 2: warning, 3: info, 4: trace, 5: debug).                                                                                                                                                                                                                |
+| `cache-ram`    | `8192`        | Integer    | Maximum cache size in MiB for context swapping/checkpoints (-1 = no limit, 0 = disable).                                                                                                                                                                                                               |
+| `cache-prompt` | `true`        | Boolean    | Enable prompt caching to avoid re-evaluating common prompt prefixes. Maps to `--no-cache-prompt` when disabled.                                                                                                                                                                                        |
+| `context-shift`| `false`       | Boolean    | Use context shift to automatically slide context window on infinite text generation.                                                                                                                                                                                                                   |
+| `mlock`        | `false`       | Boolean    | Force system to lock model weights in physical RAM to prevent swapping/paging memory to disk.                                                                                                                                                                                                          |
+| `numa`         | `"none"`      | String     | Attempt NUMA system memory optimizations (distribute, isolate, numactl, or none).                                                                                                                                                                                                                      |
+| `split-mode`   | `"layer"`     | String     | How to split model across multiple GPUs (layer, row, tensor, none).                                                                                                                                                                                                                                    |
+| `device`       | `"none"`      | String     | Comma-separated list of GPU device indices to use for offloading (none = don't offload).                                                                                                                                                                                                                |
+| `api-key-file` | `"none"`      | String     | The path to a file containing authorized API keys, one per line.                                                                                                                                                                                                                                       |
+| `ssl-key-file` | `"none"`      | String     | Path to a PEM-encoded private key file to enable secure HTTPS communication.                                                                                                                                                                                                                          |
+| `ssl-cert-file`| `"none"`      | String     | Path to a PEM-encoded SSL certificate file to enable secure HTTPS communication.                                                                                                                                                                                                                       |
+
+### Visual Settings Grouping (Settings Tab)
+
+Global settings are visually categorized in the Settings Tab (Tab 2) using styled headers:
+- **llama herd**: Unique orchestrator settings (`llama-server` path, `models-dir` path, and `models-max` active models).
+- **Common params**: Standard connection and performance parameters (`host`, `port`, `threads`, cache sizes, offload options, memory locking, and SSL certificates).
+- **Server-specific params**: Metrics endpoints, prompt caching toggles, and Web UI enablement.
 
 ---
 
@@ -98,9 +115,22 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 | `api-key`          | `"disabled"` | String     | API key server authorization.                                                                                |
 | `metrics`          | `false`      | Boolean    | Metrics Prometheus endpoint enablement.                                                                      |
 | `log-verbosity`   | `3`          | Integer    | Overrides the log verbosity threshold (0: generic, 1: error, 2: warning, 3: info, 4: trace, 5: debug).         |
+| `min-p`            | `none`       | Float      | Minimum-p sampling threshold.                                                                                |
+| `repeat-penalty`   | `none`       | Float      | Penalty for repeating tokens during generation.                                                               |
+| `repeat-last-n`    | `none`       | Integer    | Number of previous tokens to penalize for repeating.                                                         |
+| `reasoning-format` | `"auto"`     | String     | Format for reasoning extraction (auto, none, deepseek, deepseek-legacy).                                      |
+| `reasoning-budget` | `none`       | Integer    | Reasoning budget in tokens for reasoning/thinking models.                                                     |
 | `spec-type`        | `none`       | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                               |
 | `spec-draft-n-max` | `4`          | Integer    | Max speculative draft token predictions per slots.                                                           |
 | `spec-draft-p-min` | `0.0`        | Float      | Minimum probability threshold for speculative tokens.                                                        |
+
+### Visual Parameters Grouping (Dashboard Tab)
+
+Model preset parameters are visually grouped in the Preset Details & Parameters panel on Tab 1 (Dashboard) using styled headers:
+- **llama herd**: Unique orchestrator parameters (Preset Name, Model File, Target Config File, and Total Layers) placed on top.
+- **Common params**: Main options (Context Size, GPU Layers, MMProj vision projector, and Draft Model settings).
+- **Sampling params**: Sampling hyper-parameters (Temperature, Top P, Top K, Min P, Repeat Penalty, and Repeat Last N).
+- **Server-specific params**: Reasoning format extraction, Reasoning Mode, and Reasoning Budget settings.
 
 ---
 

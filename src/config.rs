@@ -160,6 +160,21 @@ const RESTRICTED_LONG: &[&str] = &[
     "log-verbosity",
     "verbosity",
     "lv",
+    "min-p",
+    "repeat-penalty",
+    "repeat-last-n",
+    "reasoning-budget",
+    "cache-prompt",
+    "no-cache-prompt",
+    "context-shift",
+    "no-context-shift",
+    "mlock",
+    "numa",
+    "split-mode",
+    "device",
+    "api-key-file",
+    "ssl-key-file",
+    "ssl-cert-file",
 ];
 
 const RESTRICTED_SHORT: &[&str] = &[

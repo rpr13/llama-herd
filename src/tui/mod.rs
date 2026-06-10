@@ -49,6 +49,12 @@ pub fn handle_key_event(
             | AppScreen::EditingConfigFileName
             | AppScreen::ConfirmSaveConfig
             | AppScreen::WarnDiscardChanges
+            | AppScreen::EditingMinP
+            | AppScreen::EditingRepeatPenalty
+            | AppScreen::EditingRepeatLastN
+            | AppScreen::SelectingReasoningFormat
+            | AppScreen::SelectingReasoning
+            | AppScreen::EditingReasoningBudget
     ) {
         match key.code {
             KeyCode::Char('1') => {
@@ -134,18 +140,32 @@ pub fn handle_key_event(
                     state.similar_config_index = None;
                 }
             }
+            KeyCode::Char('m') => {
+                state.screen = AppScreen::EditingMinP;
+                state.input_buffer = state.min_p.clone();
+            }
+            KeyCode::Char('e') => {
+                state.screen = AppScreen::EditingRepeatPenalty;
+                state.input_buffer = state.repeat_penalty.clone();
+            }
+            KeyCode::Char('a') => {
+                state.screen = AppScreen::EditingRepeatLastN;
+                state.input_buffer = state.repeat_last_n.clone();
+            }
+            KeyCode::Char('o') => {
+                state.reasoning_format_index_backup = state.reasoning_format_index;
+                state.screen = AppScreen::SelectingReasoningFormat;
+            }
+            KeyCode::Char('u') => {
+                state.reasoning_index_backup = state.reasoning_index;
+                state.screen = AppScreen::SelectingReasoning;
+            }
+            KeyCode::Char('b') => {
+                state.screen = AppScreen::EditingReasoningBudget;
+                state.input_buffer = state.reasoning_budget.clone();
+            }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let config_changed = state.ctx_str != state.original_ctx_str
-                    || state.ngl != state.original_ngl
-                    || state.mmproj_index != state.original_mmproj_index
-                    || state.draft_index != state.original_draft_index
-                    || state.draft_ngl != state.original_draft_ngl
-                    || state.temp != state.original_temp
-                    || state.top_p != state.original_top_p
-                    || state.top_k != state.original_top_k
-                    || state.total_layers != state.original_total_layers
-                    || state.config_file_name != state.original_config_file_name;
-                if config_changed {
+                if state.has_unsaved_changes() {
                     state.screen = AppScreen::ConfirmSaveConfig;
                     state.backup_config = true;
                 }
@@ -159,7 +179,7 @@ pub fn handle_key_event(
             KeyCode::Up => {
                 if state.dashboard_focus == DashboardFocus::Right {
                     if state.dashboard_param_index == 0 {
-                        state.dashboard_param_index = 9;
+                        state.dashboard_param_index = 15;
                     } else {
                         state.dashboard_param_index -= 1;
                     }
@@ -180,7 +200,7 @@ pub fn handle_key_event(
             }
             KeyCode::Down => {
                 if state.dashboard_focus == DashboardFocus::Right {
-                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 10;
+                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 16;
                 } else if !state.presets.is_empty() {
                     let target_index = (state.preset_index + 1) % state.presets.len();
                     if state.has_unsaved_changes() {
@@ -274,6 +294,13 @@ pub fn handle_key_event(
                             }
                         }
                         1 => {
+                            state.screen = AppScreen::EditingTotalLayers;
+                            state.input_buffer = state
+                                .total_layers
+                                .map(|l| l.to_string())
+                                .unwrap_or_default();
+                        }
+                        2 => {
                             state.screen = AppScreen::EditingCtx;
                             state.input_buffer = if state.ctx_str.is_empty() {
                                 state.ctx.to_string()
@@ -281,40 +308,57 @@ pub fn handle_key_event(
                                 state.ctx_str.clone()
                             };
                         }
-                        2 => {
+                        3 => {
                             state.screen = AppScreen::EditingNgl;
                             state.input_buffer = state.ngl.clone();
                         }
-                        3 => {
+                        4 => {
                             state.mmproj_index_backup = state.mmproj_index;
                             state.screen = AppScreen::SelectingMMProj;
                         }
-                        4 => {
+                        5 => {
                             state.draft_index_backup = state.draft_index;
                             state.screen = AppScreen::SelectingDraftModel;
                         }
-                        5 => {
+                        6 => {
                             state.screen = AppScreen::EditingDraftNgl;
                             state.input_buffer = state.draft_ngl.clone();
                         }
-                        6 => {
+                        7 => {
                             state.screen = AppScreen::EditingTemp;
                             state.input_buffer = state.temp.clone();
                         }
-                        7 => {
+                        8 => {
                             state.screen = AppScreen::EditingTopP;
                             state.input_buffer = state.top_p.clone();
                         }
-                        8 => {
+                        9 => {
                             state.screen = AppScreen::EditingTopK;
                             state.input_buffer = state.top_k.clone();
                         }
-                        9 => {
-                            state.screen = AppScreen::EditingTotalLayers;
-                            state.input_buffer = state
-                                .total_layers
-                                .map(|l| l.to_string())
-                                .unwrap_or_default();
+                        10 => {
+                            state.screen = AppScreen::EditingMinP;
+                            state.input_buffer = state.min_p.clone();
+                        }
+                        11 => {
+                            state.screen = AppScreen::EditingRepeatPenalty;
+                            state.input_buffer = state.repeat_penalty.clone();
+                        }
+                        12 => {
+                            state.screen = AppScreen::EditingRepeatLastN;
+                            state.input_buffer = state.repeat_last_n.clone();
+                        }
+                        13 => {
+                            state.reasoning_format_index_backup = state.reasoning_format_index;
+                            state.screen = AppScreen::SelectingReasoningFormat;
+                        }
+                        14 => {
+                            state.reasoning_index_backup = state.reasoning_index;
+                            state.screen = AppScreen::SelectingReasoning;
+                        }
+                        15 => {
+                            state.screen = AppScreen::EditingReasoningBudget;
+                            state.input_buffer = state.reasoning_budget.clone();
                         }
                         _ => {}
                     }
@@ -419,8 +463,9 @@ pub fn handle_key_event(
                             crate::tui::picker::PickerMode::Directory,
                         ));
                     }
-                    "flash-attn" | "cache-type-k" | "cache-type-v" | "log-verbosity" => {
-                        // Option selectors for flash-attn, cache-type-k, cache-type-v, log-verbosity
+                    "flash-attn" | "cache-type-k" | "cache-type-v" | "log-verbosity" | "numa"
+                    | "split-mode" => {
+                        // Option selectors for flash-attn, cache-type-k, cache-type-v, log-verbosity, numa, split-mode
                         let option_list = match selected_item.key {
                             "flash-attn" => vec![
                                 "auto".to_string(),
@@ -435,6 +480,20 @@ pub fn handle_key_event(
                                 "3".to_string(),
                                 "4".to_string(),
                                 "5".to_string(),
+                                "(Custom / Manual...)".to_string(),
+                            ],
+                            "numa" => vec![
+                                "none".to_string(),
+                                "distribute".to_string(),
+                                "isolate".to_string(),
+                                "numactl".to_string(),
+                                "(Custom / Manual...)".to_string(),
+                            ],
+                            "split-mode" => vec![
+                                "layer".to_string(),
+                                "none".to_string(),
+                                "row".to_string(),
+                                "tensor".to_string(),
                                 "(Custom / Manual...)".to_string(),
                             ],
                             _ => vec![
@@ -469,9 +528,11 @@ pub fn handle_key_event(
                         state.option_selector_list = option_list;
                         state.screen = AppScreen::SelectingGlobalSettingOption;
                     }
-                    "kv-unified" | "metrics" | "ui" | "no-mmap" => {
+                    "kv-unified" | "metrics" | "ui" | "no-mmap" | "cache-prompt"
+                    | "context-shift" | "mlock" => {
                         // Toggle boolean flags
-                        let default_val = matches!(selected_item.key, "kv-unified" | "ui");
+                        let default_val =
+                            matches!(selected_item.key, "kv-unified" | "ui" | "cache-prompt");
                         let current_val = state
                             .global_config
                             .get("llama-server-long")
@@ -567,7 +628,11 @@ pub fn handle_key_event(
         | AppScreen::EditingTopK
         | AppScreen::EditingTotalLayers
         | AppScreen::EditingConfigFileName
-        | AppScreen::EditingGlobalSetting => match key.code {
+        | AppScreen::EditingGlobalSetting
+        | AppScreen::EditingMinP
+        | AppScreen::EditingRepeatPenalty
+        | AppScreen::EditingRepeatLastN
+        | AppScreen::EditingReasoningBudget => match key.code {
             KeyCode::Esc => {
                 if state.screen == AppScreen::EditingGlobalSetting {
                     state.screen = AppScreen::Settings;
@@ -618,6 +683,22 @@ pub fn handle_key_event(
                         state.config_file_name = state.input_buffer.trim().to_string();
                         state.screen = AppScreen::Dashboard;
                     }
+                    AppScreen::EditingMinP => {
+                        state.min_p = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingRepeatPenalty => {
+                        state.repeat_penalty = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingRepeatLastN => {
+                        state.repeat_last_n = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingReasoningBudget => {
+                        state.reasoning_budget = state.input_buffer.trim().to_string();
+                        state.screen = AppScreen::Dashboard;
+                    }
                     AppScreen::EditingGlobalSetting => {
                         let val_str = state.input_buffer.trim().to_string();
                         let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
@@ -631,7 +712,8 @@ pub fn handle_key_event(
                         } else {
                             match selected_item.key {
                                 "host" | "flash-attn" | "cache-type-k" | "cache-type-v"
-                                | "api-key" => {
+                                | "api-key" | "device" | "api-key-file" | "ssl-key-file"
+                                | "ssl-cert-file" => {
                                     crate::config::update_global_config_value(
                                         &mut state.global_config,
                                         key_to_update,
@@ -658,7 +740,8 @@ pub fn handle_key_event(
                                 | "models-max"
                                 | "ctx-checkpoints"
                                 | "checkpoint-min-step"
-                                | "log-verbosity" => {
+                                | "log-verbosity"
+                                | "cache-ram" => {
                                     if let Ok(num) = val_str.parse::<i64>() {
                                         crate::config::update_global_config_value(
                                             &mut state.global_config,
@@ -836,6 +919,50 @@ pub fn handle_key_event(
                 } else if state.draft_ngl.is_empty() {
                     state.draft_ngl = "auto".to_string();
                 }
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::SelectingReasoning => match key.code {
+            KeyCode::Esc => {
+                state.reasoning_index = state.reasoning_index_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.reasoning_list.is_empty() => {
+                if state.reasoning_index == 0 {
+                    state.reasoning_index = state.reasoning_list.len() - 1;
+                } else {
+                    state.reasoning_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.reasoning_list.is_empty() => {
+                state.reasoning_index = (state.reasoning_index + 1) % state.reasoning_list.len();
+            }
+            KeyCode::Enter => {
+                state.reasoning = state.reasoning_list[state.reasoning_index].clone();
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::SelectingReasoningFormat => match key.code {
+            KeyCode::Esc => {
+                state.reasoning_format_index = state.reasoning_format_index_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.reasoning_format_list.is_empty() => {
+                if state.reasoning_format_index == 0 {
+                    state.reasoning_format_index = state.reasoning_format_list.len() - 1;
+                } else {
+                    state.reasoning_format_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.reasoning_format_list.is_empty() => {
+                state.reasoning_format_index =
+                    (state.reasoning_format_index + 1) % state.reasoning_format_list.len();
+            }
+            KeyCode::Enter => {
+                state.reasoning_format =
+                    state.reasoning_format_list[state.reasoning_format_index].clone();
                 state.screen = AppScreen::Dashboard;
             }
             _ => {}

@@ -24,6 +24,12 @@ pub enum AppScreen {
     EditingConfigFileName,
     ConfirmSaveConfig,
     WarnDiscardChanges,
+    EditingMinP,
+    EditingRepeatPenalty,
+    EditingRepeatLastN,
+    SelectingReasoningFormat,
+    SelectingReasoning,
+    EditingReasoningBudget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +124,22 @@ pub struct AppState {
     pub backup_config: bool,
     pub pending_preset_index: Option<usize>,
 
+    // New editable parameters
+    pub min_p: String,
+    pub repeat_penalty: String,
+    pub repeat_last_n: String,
+    pub reasoning: String,
+    pub reasoning_format: String,
+    pub reasoning_budget: String,
+
+    pub reasoning_list: Vec<String>,
+    pub reasoning_index: usize,
+    pub reasoning_index_backup: usize,
+
+    pub reasoning_format_list: Vec<String>,
+    pub reasoning_format_index: usize,
+    pub reasoning_format_index_backup: usize,
+
     // Original values for comparison / diff
     pub original_ctx_str: String,
     pub original_ctx: usize,
@@ -130,6 +152,17 @@ pub struct AppState {
     pub original_top_k: String,
     pub original_total_layers: Option<usize>,
     pub original_config_file_name: String,
+
+    // New original values
+    pub original_min_p: String,
+    pub original_repeat_penalty: String,
+    pub original_repeat_last_n: String,
+    pub original_reasoning: String,
+    pub original_reasoning_format: String,
+    pub original_reasoning_budget: String,
+    pub original_reasoning_index: usize,
+    pub original_reasoning_format_index: usize,
+
     pub tick_count: u64,
     pub last_models_dir_state: Option<ModelsDirState>,
     pub last_stable_models_dir_state: Option<ModelsDirState>,
@@ -197,6 +230,29 @@ impl AppState {
             ctx_str: String::new(),
             backup_config: true,
             pending_preset_index: None,
+            min_p: String::new(),
+            repeat_penalty: String::new(),
+            repeat_last_n: String::new(),
+            reasoning: String::new(),
+            reasoning_format: String::new(),
+            reasoning_budget: String::new(),
+            reasoning_list: vec![
+                "".to_string(),
+                "auto".to_string(),
+                "on".to_string(),
+                "off".to_string(),
+            ],
+            reasoning_index: 0,
+            reasoning_index_backup: 0,
+            reasoning_format_list: vec![
+                "".to_string(),
+                "auto".to_string(),
+                "none".to_string(),
+                "deepseek".to_string(),
+                "deepseek-legacy".to_string(),
+            ],
+            reasoning_format_index: 0,
+            reasoning_format_index_backup: 0,
             original_ctx_str: String::new(),
             original_ctx: 131072,
             original_ngl: "auto".to_string(),
@@ -208,6 +264,14 @@ impl AppState {
             original_top_k: String::new(),
             original_total_layers: None,
             original_config_file_name: String::new(),
+            original_min_p: String::new(),
+            original_repeat_penalty: String::new(),
+            original_repeat_last_n: String::new(),
+            original_reasoning: String::new(),
+            original_reasoning_format: String::new(),
+            original_reasoning_budget: String::new(),
+            original_reasoning_index: 0,
+            original_reasoning_format_index: 0,
             tick_count: 0,
             last_models_dir_state: last_models_dir_state.clone(),
             last_stable_models_dir_state: last_models_dir_state,
@@ -455,6 +519,12 @@ impl AppState {
         let temp_val = get_string_val(get_long_val("temp"));
         let top_p_val = get_string_val(get_long_val("top-p"));
         let top_k_val = get_string_val(get_long_val("top-k"));
+        let min_p_val = get_string_val(get_long_val("min-p"));
+        let repeat_penalty_val = get_string_val(get_long_val("repeat-penalty"));
+        let repeat_last_n_val = get_string_val(get_long_val("repeat-last-n"));
+        let reasoning_val = get_string_val(get_long_val("reasoning"));
+        let reasoning_format_val = get_string_val(get_long_val("reasoning-format"));
+        let reasoning_budget_val = get_string_val(get_long_val("reasoning-budget"));
 
         self.config_file_name = config_file_name.clone();
         self.original_config_file_name = config_file_name;
@@ -477,6 +547,36 @@ impl AppState {
 
         self.top_k = top_k_val.clone();
         self.original_top_k = top_k_val;
+
+        self.min_p = min_p_val.clone();
+        self.original_min_p = min_p_val;
+
+        self.repeat_penalty = repeat_penalty_val.clone();
+        self.original_repeat_penalty = repeat_penalty_val;
+
+        self.repeat_last_n = repeat_last_n_val.clone();
+        self.original_repeat_last_n = repeat_last_n_val;
+
+        self.reasoning = reasoning_val.clone();
+        self.original_reasoning = reasoning_val.clone();
+        self.reasoning_index = self
+            .reasoning_list
+            .iter()
+            .position(|r| r == &reasoning_val)
+            .unwrap_or(0);
+        self.original_reasoning_index = self.reasoning_index;
+
+        self.reasoning_format = reasoning_format_val.clone();
+        self.original_reasoning_format = reasoning_format_val.clone();
+        self.reasoning_format_index = self
+            .reasoning_format_list
+            .iter()
+            .position(|r| r == &reasoning_format_val)
+            .unwrap_or(0);
+        self.original_reasoning_format_index = self.reasoning_format_index;
+
+        self.reasoning_budget = reasoning_budget_val.clone();
+        self.original_reasoning_budget = reasoning_budget_val;
 
         self.original_total_layers = self.total_layers;
     }
@@ -583,6 +683,72 @@ impl AppState {
             long_obj.remove("top-k");
         }
 
+        // min-p
+        if !self.min_p.is_empty() {
+            if let Ok(f) = self.min_p.parse::<f64>()
+                && let Some(num) = serde_json::Number::from_f64(f)
+            {
+                long_obj.insert("min-p".to_string(), serde_json::Value::Number(num));
+            }
+        } else {
+            long_obj.remove("min-p");
+        }
+
+        // repeat-penalty
+        if !self.repeat_penalty.is_empty() {
+            if let Ok(f) = self.repeat_penalty.parse::<f64>()
+                && let Some(num) = serde_json::Number::from_f64(f)
+            {
+                long_obj.insert("repeat-penalty".to_string(), serde_json::Value::Number(num));
+            }
+        } else {
+            long_obj.remove("repeat-penalty");
+        }
+
+        // repeat-last-n
+        if !self.repeat_last_n.is_empty() {
+            if let Ok(num) = self.repeat_last_n.parse::<i64>() {
+                long_obj.insert(
+                    "repeat-last-n".to_string(),
+                    serde_json::Value::Number(num.into()),
+                );
+            }
+        } else {
+            long_obj.remove("repeat-last-n");
+        }
+
+        // reasoning
+        if !self.reasoning.is_empty() {
+            long_obj.insert(
+                "reasoning".to_string(),
+                serde_json::Value::String(self.reasoning.clone()),
+            );
+        } else {
+            long_obj.remove("reasoning");
+        }
+
+        // reasoning-format
+        if !self.reasoning_format.is_empty() {
+            long_obj.insert(
+                "reasoning-format".to_string(),
+                serde_json::Value::String(self.reasoning_format.clone()),
+            );
+        } else {
+            long_obj.remove("reasoning-format");
+        }
+
+        // reasoning-budget
+        if !self.reasoning_budget.is_empty() {
+            if let Ok(num) = self.reasoning_budget.parse::<i64>() {
+                long_obj.insert(
+                    "reasoning-budget".to_string(),
+                    serde_json::Value::Number(num.into()),
+                );
+            }
+        } else {
+            long_obj.remove("reasoning-budget");
+        }
+
         // 6. total-layers
         if let Some(num) = self.total_layers {
             herd_obj.insert(
@@ -685,6 +851,12 @@ impl AppState {
             || self.top_k != self.original_top_k
             || self.total_layers != self.original_total_layers
             || self.config_file_name != self.original_config_file_name
+            || self.min_p != self.original_min_p
+            || self.repeat_penalty != self.original_repeat_penalty
+            || self.repeat_last_n != self.original_repeat_last_n
+            || self.reasoning != self.original_reasoning
+            || self.reasoning_format != self.original_reasoning_format
+            || self.reasoning_budget != self.original_reasoning_budget
     }
 
     pub fn check_models_dir_changes(&mut self) {

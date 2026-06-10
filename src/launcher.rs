@@ -559,6 +559,161 @@ pub fn build_launch_parameters(
         params.push(template.to_string_lossy().into_owned());
     }
 
+    // New Global settings
+    let cache_prompt = get_global_long("cache-prompt")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if !cache_prompt {
+        params.push("--no-cache-prompt".to_string());
+    }
+
+    let context_shift = get_global_long("context-shift")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if context_shift {
+        params.push("--context-shift".to_string());
+    }
+
+    let mlock = get_global_long("mlock")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if mlock {
+        params.push("--mlock".to_string());
+    }
+
+    let numa = get_global_long("numa")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if numa != "none" && !numa.is_empty() {
+        params.push("--numa".to_string());
+        params.push(numa.to_string());
+    }
+
+    let split_mode = get_global_long("split-mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("layer");
+    if !split_mode.is_empty() {
+        params.push("--split-mode".to_string());
+        params.push(split_mode.to_string());
+    }
+
+    let device = get_global_long("device")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if device != "none" && !device.is_empty() {
+        params.push("--device".to_string());
+        params.push(device.to_string());
+    }
+
+    let api_key_file = get_global_long("api-key-file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if api_key_file != "none" && !api_key_file.is_empty() {
+        params.push("--api-key-file".to_string());
+        params.push(api_key_file.to_string());
+    }
+
+    let ssl_key_file = get_global_long("ssl-key-file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if ssl_key_file != "none" && !ssl_key_file.is_empty() {
+        params.push("--ssl-key-file".to_string());
+        params.push(ssl_key_file.to_string());
+    }
+
+    let ssl_cert_file = get_global_long("ssl-cert-file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if ssl_cert_file != "none" && !ssl_cert_file.is_empty() {
+        params.push("--ssl-cert-file".to_string());
+        params.push(ssl_cert_file.to_string());
+    }
+
+    // New Model-specific settings
+    let min_p = get_lh_val("min-p")
+        .or_else(|| get_long_val("min-p"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else if let Some(f) = v.as_f64() {
+                Some(f)
+            } else {
+                v.as_i64().map(|i| i as f64)
+            }
+        });
+    if let Some(mp) = min_p {
+        params.push("--min-p".to_string());
+        params.push(mp.to_string());
+    }
+
+    let repeat_penalty = get_lh_val("repeat-penalty")
+        .or_else(|| get_long_val("repeat-penalty"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<f64>().ok()
+            } else if let Some(f) = v.as_f64() {
+                Some(f)
+            } else {
+                v.as_i64().map(|i| i as f64)
+            }
+        });
+    if let Some(rp) = repeat_penalty {
+        params.push("--repeat-penalty".to_string());
+        params.push(rp.to_string());
+    }
+
+    let repeat_last_n = get_lh_val("repeat-last-n")
+        .or_else(|| get_long_val("repeat-last-n"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<i64>().ok()
+            } else if let Some(n) = v.as_u64() {
+                Some(n as i64)
+            } else {
+                v.as_i64()
+            }
+        });
+    if let Some(rln) = repeat_last_n {
+        params.push("--repeat-last-n".to_string());
+        params.push(rln.to_string());
+    }
+
+    let reasoning = get_lh_val("reasoning")
+        .or_else(|| get_long_val("reasoning"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(r) = reasoning {
+        params.push("--reasoning".to_string());
+        params.push(r);
+    }
+
+    let reasoning_format = get_lh_val("reasoning-format")
+        .or_else(|| get_long_val("reasoning-format"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if let Some(rf) = reasoning_format {
+        params.push("--reasoning-format".to_string());
+        params.push(rf);
+    }
+
+    let reasoning_budget = get_lh_val("reasoning-budget")
+        .or_else(|| get_long_val("reasoning-budget"))
+        .and_then(|v| {
+            if let Some(s) = v.as_str() {
+                s.parse::<i64>().ok()
+            } else if let Some(n) = v.as_u64() {
+                Some(n as i64)
+            } else {
+                v.as_i64()
+            }
+        });
+    if let Some(rb) = reasoning_budget {
+        params.push("--reasoning-budget".to_string());
+        params.push(rb.to_string());
+    }
+
     params
 }
 
@@ -690,6 +845,76 @@ pub fn build_router_launch_parameters(
         .unwrap_or_else(|| "3".to_string());
     params.push("--log-verbosity".to_string());
     params.push(log_verbosity);
+
+    // New Global settings
+    let cache_prompt = get_global_long("cache-prompt")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if !cache_prompt {
+        params.push("--no-cache-prompt".to_string());
+    }
+
+    let context_shift = get_global_long("context-shift")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if context_shift {
+        params.push("--context-shift".to_string());
+    }
+
+    let mlock = get_global_long("mlock")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if mlock {
+        params.push("--mlock".to_string());
+    }
+
+    let numa = get_global_long("numa")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if numa != "none" && !numa.is_empty() {
+        params.push("--numa".to_string());
+        params.push(numa.to_string());
+    }
+
+    let split_mode = get_global_long("split-mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("layer");
+    if !split_mode.is_empty() {
+        params.push("--split-mode".to_string());
+        params.push(split_mode.to_string());
+    }
+
+    let device = get_global_long("device")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if device != "none" && !device.is_empty() {
+        params.push("--device".to_string());
+        params.push(device.to_string());
+    }
+
+    let api_key_file = get_global_long("api-key-file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if api_key_file != "none" && !api_key_file.is_empty() {
+        params.push("--api-key-file".to_string());
+        params.push(api_key_file.to_string());
+    }
+
+    let ssl_key_file = get_global_long("ssl-key-file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if ssl_key_file != "none" && !ssl_key_file.is_empty() {
+        params.push("--ssl-key-file".to_string());
+        params.push(ssl_key_file.to_string());
+    }
+
+    let ssl_cert_file = get_global_long("ssl-cert-file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("none");
+    if ssl_cert_file != "none" && !ssl_cert_file.is_empty() {
+        params.push("--ssl-cert-file".to_string());
+        params.push(ssl_cert_file.to_string());
+    }
 
     params
 }

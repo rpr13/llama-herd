@@ -236,7 +236,11 @@ mod tests {
         );
         state.config_path = config_path;
         state.screen = AppScreen::Settings;
-        state.settings_index = 5; // Flash Attention
+        let flash_attn_idx = llama_herd::tui::ui::SETTINGS
+            .iter()
+            .position(|item| item.key == "flash-attn")
+            .unwrap();
+        state.settings_index = flash_attn_idx;
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
 

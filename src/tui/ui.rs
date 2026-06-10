@@ -14,15 +14,18 @@ pub struct SettingItem {
     pub default_val: &'static str,
     pub emoji: &'static str,
     pub description: &'static str,
+    pub group: &'static str,
 }
 
 pub const SETTINGS: &[SettingItem] = &[
+    // Group: llama herd
     SettingItem {
         label: "Llama Server Path",
         key: "llama-server",
         default_val: "(System PATH)",
         emoji: "🚀",
         description: "The absolute path to the llama-server executable. If not set, LlamaHerd will search your system PATH.",
+        group: "llama herd",
     },
     SettingItem {
         label: "Models Directory",
@@ -30,97 +33,7 @@ pub const SETTINGS: &[SettingItem] = &[
         default_val: "./models",
         emoji: "📂",
         description: "The directory where your GGUF models are located. LlamaHerd will automatically discover models and presets in this folder.",
-    },
-    SettingItem {
-        label: "Server Host IP",
-        key: "host",
-        default_val: "127.0.0.1",
-        emoji: "🌐",
-        description: "The host IP address that llama-server binds to. Defaults to '127.0.0.1' for local-only access.",
-    },
-    SettingItem {
-        label: "Server Port",
-        key: "port",
-        default_val: "8080",
-        emoji: "🔌",
-        description: "The port number for llama-server. Defaults to '8080'. If set to 'auto', it binds to the first sequentially free port.",
-    },
-    SettingItem {
-        label: "CPU Threads",
-        key: "threads",
-        default_val: "-1",
-        emoji: "🧠",
-        description: "Number of CPU threads to use for generation. Defaults to '-1' for auto-detection.",
-    },
-    SettingItem {
-        label: "Flash Attention",
-        key: "flash-attn",
-        default_val: "auto",
-        emoji: "⚡",
-        description: "Enable flash attention for faster inference. Options: 'auto', '1' (enable), '0' (disable).",
-    },
-    SettingItem {
-        label: "Cache Type K",
-        key: "cache-type-k",
-        default_val: "f16",
-        emoji: "🔑",
-        description: "Quantization format for the KV cache keys (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
-    },
-    SettingItem {
-        label: "Cache Type V",
-        key: "cache-type-v",
-        default_val: "f16",
-        emoji: "📦",
-        description: "Quantization format for the KV cache values (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
-    },
-    SettingItem {
-        label: "Unified KV Cache",
-        key: "kv-unified",
-        default_val: "true",
-        emoji: "🔗",
-        description: "Enable unified KV cache for keys and values. Maps to llama-server --kv-unified flag.",
-    },
-    SettingItem {
-        label: "Context Checkpoints",
-        key: "ctx-checkpoints",
-        default_val: "32",
-        emoji: "🔄",
-        description: "Number of context checkpoints to keep in memory (for caching). Defaults to 32. Higher values prevent prompt re-processing on long chats.",
-    },
-    SettingItem {
-        label: "Checkpoint Min Step",
-        key: "checkpoint-min-step",
-        default_val: "256",
-        emoji: "📏",
-        description: "Minimum spacing between context checkpoints in tokens. Defaults to 256. Lower values speed up cache matching but use more system RAM.",
-    },
-    SettingItem {
-        label: "Disable Memory Map (no-mmap)",
-        key: "no-mmap",
-        default_val: "false",
-        emoji: "💾",
-        description: "Disable memory-mapping (mmap) for model loading, loading everything directly into physical RAM. Helps stabilize memory allocation issues.",
-    },
-    SettingItem {
-        label: "Parallel Slots (np)",
-        key: "np",
-        default_val: "-1",
-        emoji: "👥",
-        description: "Number of parallel slots/requests to support simultaneously. Defaults to '-1' (auto).",
-    },
-    SettingItem {
-        label: "Prompt Batch Size",
-        key: "batch-size",
-        default_val: "2048",
-        emoji: "📊",
-        description: "The logical batch size used for prompt processing. Maps to llama-server --batch-size flag.",
-    },
-    SettingItem {
-        label: "Prompt Micro-Batch",
-        key: "ubatch-size",
-        default_val: "512",
-        emoji: "📉",
-        description: "The physical batch size used for prompt processing. Maps to llama-server --ubatch-size flag.",
+        group: "llama herd",
     },
     SettingItem {
         label: "Max Active Models",
@@ -128,6 +41,96 @@ pub const SETTINGS: &[SettingItem] = &[
         default_val: "1",
         emoji: "🔀",
         description: "The maximum number of active models loaded concurrently when running in Router Mode.",
+        group: "llama herd",
+    },
+    // Group: Common params
+    SettingItem {
+        label: "Server Host IP",
+        key: "host",
+        default_val: "127.0.0.1",
+        emoji: "🌐",
+        description: "The host IP address that llama-server binds to. Defaults to '127.0.0.1' for local-only access.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Server Port",
+        key: "port",
+        default_val: "8080",
+        emoji: "🔌",
+        description: "The port number for llama-server. Defaults to '8080'. If set to 'auto', it binds to the first sequentially free port.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "CPU Threads",
+        key: "threads",
+        default_val: "-1",
+        emoji: "🧠",
+        description: "Number of CPU threads to use for generation. Defaults to '-1' for auto-detection.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Flash Attention",
+        key: "flash-attn",
+        default_val: "auto",
+        emoji: "⚡",
+        description: "Enable flash attention for faster inference. Options: 'auto', '1' (enable), '0' (disable).",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Cache Type K",
+        key: "cache-type-k",
+        default_val: "f16",
+        emoji: "🔑",
+        description: "Quantization format for the KV cache keys (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Cache Type V",
+        key: "cache-type-v",
+        default_val: "f16",
+        emoji: "📦",
+        description: "Quantization format for the KV cache values (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Unified KV Cache",
+        key: "kv-unified",
+        default_val: "true",
+        emoji: "🔗",
+        description: "Enable unified KV cache for keys and values. Maps to llama-server --kv-unified flag.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Disable Memory Map (no-mmap)",
+        key: "no-mmap",
+        default_val: "false",
+        emoji: "💾",
+        description: "Disable memory-mapping (mmap) for model loading, loading everything directly into physical RAM. Helps stabilize memory allocation issues.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Parallel Slots (np)",
+        key: "np",
+        default_val: "-1",
+        emoji: "👥",
+        description: "Number of parallel slots/requests to support simultaneously. Defaults to '-1' (auto).",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Prompt Batch Size",
+        key: "batch-size",
+        default_val: "2048",
+        emoji: "📊",
+        description: "The logical batch size used for prompt processing. Maps to llama-server --batch-size flag.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Prompt Micro-Batch",
+        key: "ubatch-size",
+        default_val: "512",
+        emoji: "📉",
+        description: "The physical batch size used for prompt processing. Maps to llama-server --ubatch-size flag.",
+        group: "Common params",
     },
     SettingItem {
         label: "API Key",
@@ -135,20 +138,7 @@ pub const SETTINGS: &[SettingItem] = &[
         default_val: "disabled",
         emoji: "🔑",
         description: "Set a static API key for server authorization to secure the HTTP endpoints. Use 'disabled' to turn off.",
-    },
-    SettingItem {
-        label: "Enable Metrics",
-        key: "metrics",
-        default_val: "false",
-        emoji: "📈",
-        description: "Enable the /metrics Prometheus endpoint on llama-server. Maps to --metrics when enabled.",
-    },
-    SettingItem {
-        label: "Enable Web UI",
-        key: "ui",
-        default_val: "true",
-        emoji: "💻",
-        description: "Enable/disable the built-in HTML/web chat interface provided by llama-server. Maps to --no-ui when disabled.",
+        group: "Common params",
     },
     SettingItem {
         label: "Log Verbosity",
@@ -156,6 +146,120 @@ pub const SETTINGS: &[SettingItem] = &[
         default_val: "3",
         emoji: "📢",
         description: "Set the verbosity threshold. Messages with a higher verbosity will be ignored. Values: 0 (generic output), 1 (error), 2 (warning), 3 (info), 4 (trace / more info), 5 (debug).",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Memory Lock (mlock)",
+        key: "mlock",
+        default_val: "false",
+        emoji: "🔒",
+        description: "Force system to lock model weights in physical RAM to prevent swapping/paging memory to disk.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "NUMA Optimizations",
+        key: "numa",
+        default_val: "none",
+        emoji: "💻",
+        description: "Attempt NUMA system memory optimizations (distribute, isolate, numactl, or none).",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "GPU Split Mode",
+        key: "split-mode",
+        default_val: "layer",
+        emoji: "🥞",
+        description: "How to split model across multiple GPUs (layer, row, tensor, none).",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "GPU Devices",
+        key: "device",
+        default_val: "none",
+        emoji: "🎮",
+        description: "Comma-separated list of CUDA/HIP/Metal device indices to use for offloading (none = don't offload).",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "API Keys File",
+        key: "api-key-file",
+        default_val: "none",
+        emoji: "🔑",
+        description: "The path to a file containing authorized API keys, one per line.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "SSL Private Key File",
+        key: "ssl-key-file",
+        default_val: "none",
+        emoji: "🔑",
+        description: "Path to a PEM-encoded private key file to enable secure HTTPS communication.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "SSL Certificate File",
+        key: "ssl-cert-file",
+        default_val: "none",
+        emoji: "📜",
+        description: "Path to a PEM-encoded SSL certificate file to enable secure HTTPS communication.",
+        group: "Common params",
+    },
+    // Group: Server-specific params
+    SettingItem {
+        label: "Context Checkpoints",
+        key: "ctx-checkpoints",
+        default_val: "32",
+        emoji: "🔄",
+        description: "Number of context checkpoints to keep in memory (for caching). Defaults to 32. Higher values prevent prompt re-processing on long chats.",
+        group: "Server-specific params",
+    },
+    SettingItem {
+        label: "Checkpoint Min Step",
+        key: "checkpoint-min-step",
+        default_val: "256",
+        emoji: "📏",
+        description: "Minimum spacing between context checkpoints in tokens. Defaults to 256. Lower values speed up cache matching but use more system RAM.",
+        group: "Server-specific params",
+    },
+    SettingItem {
+        label: "Enable Metrics",
+        key: "metrics",
+        default_val: "false",
+        emoji: "📈",
+        description: "Enable the /metrics Prometheus endpoint on llama-server. Maps to --metrics when enabled.",
+        group: "Server-specific params",
+    },
+    SettingItem {
+        label: "Enable Web UI",
+        key: "ui",
+        default_val: "true",
+        emoji: "💻",
+        description: "Enable/disable the built-in HTML/web chat interface provided by llama-server. Maps to --no-ui when disabled.",
+        group: "Server-specific params",
+    },
+    SettingItem {
+        label: "Cache RAM Size",
+        key: "cache-ram",
+        default_val: "8192",
+        emoji: "💾",
+        description: "Maximum cache size in MiB for context swapping/checkpoints (-1 = no limit, 0 = disable).",
+        group: "Server-specific params",
+    },
+    SettingItem {
+        label: "Cache Prompt",
+        key: "cache-prompt",
+        default_val: "true",
+        emoji: "🧠",
+        description: "Enable prompt caching to avoid re-evaluating common prompt prefixes. Maps to --no-cache-prompt when disabled.",
+        group: "Server-specific params",
+    },
+    SettingItem {
+        label: "Context Shift",
+        key: "context-shift",
+        default_val: "false",
+        emoji: "⏩",
+        description: "Use context shift to automatically slide context window on infinite text generation.",
+        group: "Server-specific params",
     },
 ];
 
@@ -214,7 +318,13 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         | AppScreen::EditingTotalLayers
         | AppScreen::EditingConfigFileName
         | AppScreen::ConfirmSaveConfig
-        | AppScreen::WarnDiscardChanges => {
+        | AppScreen::WarnDiscardChanges
+        | AppScreen::EditingMinP
+        | AppScreen::EditingRepeatPenalty
+        | AppScreen::EditingRepeatLastN
+        | AppScreen::SelectingReasoningFormat
+        | AppScreen::SelectingReasoning
+        | AppScreen::EditingReasoningBudget => {
             render_dashboard(f, state, main_layout[1]);
         }
         AppScreen::Settings
@@ -509,7 +619,13 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         | AppScreen::EditingGlobalSetting
         | AppScreen::SelectingGlobalSettingOption
         | AppScreen::SelectingMMProj
-        | AppScreen::SelectingDraftModel => {
+        | AppScreen::SelectingDraftModel
+        | AppScreen::EditingMinP
+        | AppScreen::EditingRepeatPenalty
+        | AppScreen::EditingRepeatLastN
+        | AppScreen::SelectingReasoningFormat
+        | AppScreen::SelectingReasoning
+        | AppScreen::EditingReasoningBudget => {
             vec![Line::from(vec![
                 Span::styled(
                     " [Enter]",
@@ -991,7 +1107,22 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
         .split(inner_area);
 
     let mut rows = Vec::new();
+    let mut last_group = "";
     for (idx, item) in SETTINGS.iter().enumerate() {
+        if item.group != last_group {
+            last_group = item.group;
+            rows.push(Row::new(vec![
+                Cell::from(""),
+                Cell::from(Span::styled(
+                    format!("── {} ──", item.group),
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Cell::from(""),
+            ]));
+        }
+
         let is_selected = idx == state.settings_index;
 
         let label_str = if theme.show_emojis {
@@ -1000,9 +1131,9 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
             item.label.to_string()
         };
 
-        let val_str = match idx {
-            0 => state.server_exe.to_string_lossy().to_string(),
-            1 => state.models_dir.to_string_lossy().to_string(),
+        let val_str = match item.key {
+            "llama-server" => state.server_exe.to_string_lossy().to_string(),
+            "models-dir" => state.models_dir.to_string_lossy().to_string(),
             _ => crate::config::get_global_config_string(
                 &state.global_config,
                 item.key,
@@ -1011,7 +1142,7 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
         };
 
         let truncate_len = (content_layout[0].width as usize)
-            .saturating_sub(30)
+            .saturating_sub(35)
             .max(10);
         let display_val = truncate_middle(&val_str, truncate_len);
 
@@ -1048,7 +1179,7 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
         rows,
         [
             Constraint::Length(4),
-            Constraint::Length(25),
+            Constraint::Length(30),
             Constraint::Min(10),
         ],
     )
@@ -1084,6 +1215,7 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
         .constraints([
             Constraint::Length(2), // Title
             Constraint::Length(1), // Key
+            Constraint::Length(1), // Group/Category
             Constraint::Length(1), // Default
             Constraint::Length(1), // Current Value
             Constraint::Length(1), // Spacer
@@ -1109,25 +1241,31 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
     ]);
     f.render_widget(Paragraph::new(key_line), detail_layout[1]);
 
+    let group_line = Line::from(vec![
+        Span::styled(" Group:         ", Style::default().fg(theme.secondary)),
+        Span::styled(selected_item.group, Style::default().fg(theme.accent)),
+    ]);
+    f.render_widget(Paragraph::new(group_line), detail_layout[2]);
+
     let default_line = Line::from(vec![
         Span::styled(" Default Value: ", Style::default().fg(theme.secondary)),
         Span::styled(selected_item.default_val, Style::default().fg(theme.fg)),
     ]);
-    f.render_widget(Paragraph::new(default_line), detail_layout[2]);
+    f.render_widget(Paragraph::new(default_line), detail_layout[3]);
 
     let val_line = Line::from(vec![
         Span::styled(" Current Value: ", Style::default().fg(theme.secondary)),
         Span::styled(
             truncate_middle(
                 &selected_val,
-                (detail_layout[3].width as usize).saturating_sub(18).max(10),
+                (detail_layout[4].width as usize).saturating_sub(18).max(10),
             ),
             Style::default()
                 .fg(theme.success)
                 .add_modifier(Modifier::BOLD),
         ),
     ]);
-    f.render_widget(Paragraph::new(val_line), detail_layout[3]);
+    f.render_widget(Paragraph::new(val_line), detail_layout[4]);
 
     let desc_para = Paragraph::new(selected_item.description)
         .style(Style::default().fg(theme.fg))
@@ -1139,7 +1277,7 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
                 .border_style(Style::default().fg(theme.secondary))
                 .border_type(theme.border_type),
         );
-    f.render_widget(desc_para, detail_layout[5]);
+    f.render_widget(desc_para, detail_layout[6]);
 
     // Render Picker Modal if active
     if let Some(picker) = &state.picker {
@@ -1302,16 +1440,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
     f.render_widget(presets_list, content_layout[0]);
 
     // RIGHT Panel: Parameters Details
-    let config_changed = state.ctx_str != state.original_ctx_str
-        || state.ngl != state.original_ngl
-        || state.mmproj_index != state.original_mmproj_index
-        || state.draft_index != state.original_draft_index
-        || state.draft_ngl != state.original_draft_ngl
-        || state.temp != state.original_temp
-        || state.top_p != state.original_top_p
-        || state.top_k != state.original_top_k
-        || state.total_layers != state.original_total_layers
-        || state.config_file_name != state.original_config_file_name;
+    let config_changed = state.has_unsaved_changes();
 
     let right_title = if config_changed {
         " Preset Details & Parameters (Unsaved Changes: Ctrl+S to save) ".to_string()
@@ -1463,17 +1592,34 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         };
 
     let (f_prompt, f_label) = make_param_cells(0, "f", "Target Config File");
-    let (c_prompt, c_label) = make_param_cells(1, "c", "Context Size");
-    let (n_prompt, n_label) = make_param_cells(2, "n", "GPU Layers");
-    let (v_prompt, v_label) = make_param_cells(3, "v", "MMProj (Vision)");
-    let (d_prompt, d_label) = make_param_cells(4, "d", "Draft Model");
-    let (g_prompt, g_label) = make_param_cells(5, "g", "Draft GPU Layers");
-    let (t_prompt, t_label) = make_param_cells(6, "t", "Temperature");
-    let (p_prompt, p_label) = make_param_cells(7, "p", "Top P");
-    let (k_prompt, k_label) = make_param_cells(8, "k", "Top K");
-    let (l_prompt, l_label) = make_param_cells(9, "l", "Total Layers");
+    let (l_prompt, l_label) = make_param_cells(1, "l", "Total Layers");
+    let (c_prompt, c_label) = make_param_cells(2, "c", "Context Size");
+    let (n_prompt, n_label) = make_param_cells(3, "n", "GPU Layers");
+    let (v_prompt, v_label) = make_param_cells(4, "v", "MMProj (Vision)");
+    let (d_prompt, d_label) = make_param_cells(5, "d", "Draft Model");
+    let (g_prompt, g_label) = make_param_cells(6, "g", "Draft GPU Layers");
+    let (t_prompt, t_label) = make_param_cells(7, "t", "Temperature");
+    let (p_prompt, p_label) = make_param_cells(8, "p", "Top P");
+    let (k_prompt, k_label) = make_param_cells(9, "k", "Top K");
+    let (m_prompt, m_label) = make_param_cells(10, "m", "Min P");
+    let (e_prompt, e_label) = make_param_cells(11, "e", "Repeat Penalty");
+    let (a_prompt, a_label) = make_param_cells(12, "a", "Repeat Last N");
+    let (o_prompt, o_label) = make_param_cells(13, "o", "Reasoning Format");
+    let (u_prompt, u_label) = make_param_cells(14, "u", "Reasoning Mode");
+    let (b_prompt, b_label) = make_param_cells(15, "b", "Reasoning Budget");
 
     let rows = vec![
+        // GROUP HEADER: llama herd
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "── llama herd ──",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""),
+        ]),
         Row::new(vec![
             Cell::from(""),
             Cell::from(Span::styled(
@@ -1499,6 +1645,32 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 &state.config_file_name,
                 Style::default().fg(theme.primary),
             ),
+        ]),
+        Row::new(vec![
+            l_prompt,
+            l_label,
+            make_val_cell(
+                &state
+                    .original_total_layers
+                    .map(|l| l.to_string())
+                    .unwrap_or_default(),
+                &state
+                    .total_layers
+                    .map(|l| l.to_string())
+                    .unwrap_or_default(),
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        // GROUP HEADER: Common params
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "── Common params ──",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""),
         ]),
         Row::new(vec![
             c_prompt,
@@ -1545,6 +1717,17 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 Style::default().fg(theme.accent),
             ),
         ]),
+        // GROUP HEADER: Sampling params
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "── Sampling params ──",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""),
+        ]),
         Row::new(vec![
             t_prompt,
             t_label,
@@ -1573,17 +1756,83 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             ),
         ]),
         Row::new(vec![
-            l_prompt,
-            l_label,
+            m_prompt,
+            m_label,
             make_val_cell(
-                &state
-                    .original_total_layers
-                    .map(|l| l.to_string())
-                    .unwrap_or_default(),
-                &state
-                    .total_layers
-                    .map(|l| l.to_string())
-                    .unwrap_or_default(),
+                &state.original_min_p,
+                &state.min_p,
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        Row::new(vec![
+            e_prompt,
+            e_label,
+            make_val_cell(
+                &state.original_repeat_penalty,
+                &state.repeat_penalty,
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        Row::new(vec![
+            a_prompt,
+            a_label,
+            make_val_cell(
+                &state.original_repeat_last_n,
+                &state.repeat_last_n,
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        // GROUP HEADER: Server-specific params
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "── Server-specific params ──",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""),
+        ]),
+        Row::new(vec![
+            o_prompt,
+            o_label,
+            make_val_cell(
+                if state.original_reasoning_format.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.original_reasoning_format
+                },
+                if state.reasoning_format.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.reasoning_format
+                },
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            u_prompt,
+            u_label,
+            make_val_cell(
+                if state.original_reasoning.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.original_reasoning
+                },
+                if state.reasoning.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.reasoning
+                },
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            b_prompt,
+            b_label,
+            make_val_cell(
+                &state.original_reasoning_budget,
+                &state.reasoning_budget,
                 Style::default().fg(theme.success),
             ),
         ]),
@@ -1606,6 +1855,8 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         && state.screen != AppScreen::WarnDiscardChanges
         && state.screen != AppScreen::SelectingMMProj
         && state.screen != AppScreen::SelectingDraftModel
+        && state.screen != AppScreen::SelectingReasoning
+        && state.screen != AppScreen::SelectingReasoningFormat
     {
         let (title, prompt) = match state.screen {
             AppScreen::EditingCtx => (
@@ -1637,6 +1888,19 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             AppScreen::EditingConfigFileName => (
                 " Edit Target Config File ",
                 "Enter config TOML filename (e.g. model.toml):",
+            ),
+            AppScreen::EditingMinP => (" Edit Min P ", "Enter new Min P threshold (e.g. 0.05):"),
+            AppScreen::EditingRepeatPenalty => (
+                " Edit Repeat Penalty ",
+                "Enter new repeat penalty (e.g. 1.1):",
+            ),
+            AppScreen::EditingRepeatLastN => (
+                " Edit Repeat Last N ",
+                "Enter new repeat last N count (e.g. 64):",
+            ),
+            AppScreen::EditingReasoningBudget => (
+                " Edit Reasoning Budget ",
+                "Enter token budget for thinking (e.g. -1, 1024):",
             ),
             _ => ("", ""),
         };
@@ -1712,7 +1976,10 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         f.render_widget(popup_para, popup_area);
     }
 
-    if state.screen == AppScreen::SelectingMMProj || state.screen == AppScreen::SelectingDraftModel
+    if state.screen == AppScreen::SelectingMMProj
+        || state.screen == AppScreen::SelectingDraftModel
+        || state.screen == AppScreen::SelectingReasoning
+        || state.screen == AppScreen::SelectingReasoningFormat
     {
         let (title, options_list, current_idx) = if state.screen == AppScreen::SelectingMMProj {
             let opts: Vec<String> = state
@@ -1728,7 +1995,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 })
                 .collect();
             (" Select MMProj (Vision) ", opts, state.mmproj_index)
-        } else {
+        } else if state.screen == AppScreen::SelectingDraftModel {
             let opts: Vec<String> = state
                 .draft_list
                 .iter()
@@ -1742,6 +2009,36 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 })
                 .collect();
             (" Select Draft Model ", opts, state.draft_index)
+        } else if state.screen == AppScreen::SelectingReasoning {
+            let opts: Vec<String> = state
+                .reasoning_list
+                .iter()
+                .map(|opt| {
+                    if opt.is_empty() {
+                        "Omit (Default)".to_string()
+                    } else {
+                        opt.clone()
+                    }
+                })
+                .collect();
+            (" Select Reasoning Mode ", opts, state.reasoning_index)
+        } else {
+            let opts: Vec<String> = state
+                .reasoning_format_list
+                .iter()
+                .map(|opt| {
+                    if opt.is_empty() {
+                        "Omit (Default)".to_string()
+                    } else {
+                        opt.clone()
+                    }
+                })
+                .collect();
+            (
+                " Select Reasoning Format ",
+                opts,
+                state.reasoning_format_index,
+            )
         };
 
         let popup_area = centered_rect(50, 40, area);
@@ -1881,6 +2178,56 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             .unwrap_or_default();
         if total_layers_str != original_total_layers_str {
             changes.push(("Total Layers", original_total_layers_str, total_layers_str));
+        }
+        if state.min_p != state.original_min_p {
+            changes.push(("Min P", state.original_min_p.clone(), state.min_p.clone()));
+        }
+        if state.repeat_penalty != state.original_repeat_penalty {
+            changes.push((
+                "Repeat Penalty",
+                state.original_repeat_penalty.clone(),
+                state.repeat_penalty.clone(),
+            ));
+        }
+        if state.repeat_last_n != state.original_repeat_last_n {
+            changes.push((
+                "Repeat Last N",
+                state.original_repeat_last_n.clone(),
+                state.repeat_last_n.clone(),
+            ));
+        }
+        if state.reasoning != state.original_reasoning {
+            let orig = if state.original_reasoning.is_empty() {
+                "Omit (Default)".to_string()
+            } else {
+                state.original_reasoning.clone()
+            };
+            let curr = if state.reasoning.is_empty() {
+                "Omit (Default)".to_string()
+            } else {
+                state.reasoning.clone()
+            };
+            changes.push(("Reasoning Mode", orig, curr));
+        }
+        if state.reasoning_format != state.original_reasoning_format {
+            let orig = if state.original_reasoning_format.is_empty() {
+                "Omit (Default)".to_string()
+            } else {
+                state.original_reasoning_format.clone()
+            };
+            let curr = if state.reasoning_format.is_empty() {
+                "Omit (Default)".to_string()
+            } else {
+                state.reasoning_format.clone()
+            };
+            changes.push(("Reasoning Format", orig, curr));
+        }
+        if state.reasoning_budget != state.original_reasoning_budget {
+            changes.push((
+                "Reasoning Budget",
+                state.original_reasoning_budget.clone(),
+                state.reasoning_budget.clone(),
+            ));
         }
 
         let mut text_lines = Vec::new();

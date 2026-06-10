@@ -46,6 +46,17 @@ The `llama-server` executable path and the `models-dir` (where your models are l
 - `ubatch-size` (default: `256`)
 - `threads` (default: auto-detected physical cores)
 - `ui` (default: `true`) - Global Web UI enablement toggle
+- `log-verbosity` (default: `3`) - Verbosity threshold (0-5)
+- `cache-ram` (default: `8192`) - Maximum cache size in MiB for context swapping/checkpoints
+- `cache-prompt` (default: `true`) - Enable prompt caching (maps to --no-cache-prompt when disabled)
+- `context-shift` (default: `false`) - Use context shift on infinite text generation
+- `mlock` (default: `false`) - Lock model weights in physical RAM
+- `numa` (default: `"none"`) - NUMA optimizations (distribute, isolate, numactl, none)
+- `split-mode` (default: `"layer"`) - How to split model across multiple GPUs (layer, none, row, tensor)
+- `device` (default: `"none"`) - Comma-separated list of GPU devices
+- `api-key-file` (default: `"none"`) - Path to file containing API keys
+- `ssl-key-file` (default: `"none"`) - Path to SSL private key PEM file
+- `ssl-cert-file` (default: `"none"`) - Path to SSL certificate PEM file
 
 ### 2. Model-Specific Configurations (`<model-name>.toml`)
 
@@ -80,6 +91,19 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
 - **Dirty State Indicator**: If a background change is detected while the user has unsaved dashboard parameter overrides, settings reloading is skipped to protect active edits, and a TUI warning notification bar is rendered.
 - **Invalid Directory Status**: If the directory is removed or becomes inaccessible, the TUI displays a warning bar and suspends scanning until resolved.
 
+### 4. Visual Parameter Grouping & Ordering
+
+To enhance visual organization, parameters on both TUI screens are categorized and separated using styled headers:
+- **Dashboard Tab (Tab 1) - Preset Details & Parameters**:
+  - **llama herd**: Contains orchestrator settings like Preset Name, Model File, Target Config File, and Total Layers. Placed at the top of the dashboard.
+  - **Common params**: Contains context size, GPU offload layers, vision projector, and speculative draft models.
+  - **Sampling params**: Contains temperature, Top P, Top K, Min P, and repetition penalties.
+  - **Server-specific params**: Contains reasoning/thinking configurations (mode, format, budget).
+- **Settings Tab (Tab 2) - Global Settings**:
+  - **llama herd**: Orchestration parameters (`llama-server`, `models-dir`) and concurrency limits (`models-max`).
+  - **Common params**: Global host, port, threads, cache sizes, memory lock, devices, and security certificates.
+  - **Server-specific params**: Prometheus metrics, Web UI toggle, and prompt caching.
+
 ---
 
 ## Theme System (`theme.toml`)
@@ -113,7 +137,7 @@ Every UI component in LlamaHerd **must** use the theme system.
 
 To prevent conflicts with managed options, any key (long, short, prefixed with `s-`, or unprefixed) matching a managed parameter is **restricted** and ignored during the passthrough stage.
 
-- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `log-verbosity`, `verbosity`, `lv`.
+- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `ctx-checkpoints`, `checkpoint-min-step`, `no-mmap`, `log-verbosity`, `verbosity`, `lv`, `min-p`, `repeat-penalty`, `repeat-last-n`, `reasoning-budget`, `cache-prompt`, `no-cache-prompt`, `context-shift`, `no-context-shift`, `mlock`, `numa`, `split-mode`, `device`, `api-key-file`, `ssl-key-file`, `ssl-cert-file`.
 - **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`, `lv`.
 
 ### 3. Automated Quality Gates
@@ -132,6 +156,7 @@ The project enforces code quality via Git pre-commit hooks managed by `cargo-hus
 ### 5. Documentation Maintenance
 
 - **AI Agents**: When implementing code changes, the AI agent must always check `README.md` and all files in the `docs/` directory to identify and perform any necessary updates, ensuring that documentation never goes out of sync with code modifications.
+- **Upstream Synchronization**: Periodically check the official `llama-server` README.md on GitHub (https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md or the raw version https://raw.githubusercontent.com/ggml-org/llama.cpp/refs/heads/master/tools/server/README.md) to detect any new upstream parameters, renames, or deprecations, and keep LlamaHerd synchronized.
 
 ### 6. Local Process Metrics & Orchestrator Status
 
