@@ -47,7 +47,7 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 
 ### Prerequisites
 
-1. **Rust Toolchain**: Install stable Rust using [rustup](https://rustup.rs/) (v1.70+ recommended).
+1. **Rust Toolchain**: Install stable Rust using [rustup](https://rustup.rs/) (v1.85+ recommended).
 2. **llama-server**: Install `llama.cpp` and build the `llama-server` binary.
 
 ### Installation
@@ -83,12 +83,18 @@ Llama-Herd reads custom parameters from `.toml` files matching your `.gguf` mode
 is-default = true
 draft = "Qwen2.5-1.5B-Instruct.gguf"
 
-# llama-server long option parameters (e.g. --ctx-size, --slot-prompt-similarity, and --spec-type)
+# llama-server long option parameters
 [llama-server-long]
 ctx-size = "32k"
 ngl = "auto"
 spec-type = "draft-mtp"
 slot-prompt-similarity = 0.5
+min-p = 0.05
+repeat-penalty = 1.05
+repeat-last-n = 64
+reasoning = "on"
+reasoning-format = "deepseek"
+reasoning-budget = 1024
 
 # llama-server short option parameters (e.g. -sps 0.6)
 [llama-server-short]

@@ -244,7 +244,7 @@ pub fn handle_key_event(
                     &state.global_config,
                     resolved_port,
                 );
-                state.last_launch_args = launch_args.clone();
+                state.last_launch_args = launch_args;
                 state.is_router_mode = true;
                 let model_name = if state.presets.is_empty() {
                     None
@@ -253,7 +253,7 @@ pub fn handle_key_event(
                 };
 
                 match ActiveServer::spawn(
-                    &launch_args,
+                    &state.last_launch_args,
                     &state.models_dir,
                     model_name,
                     Some(event_tx.clone()),
@@ -391,7 +391,7 @@ pub fn handle_key_event(
                         &state.global_config,
                         resolved_port,
                     );
-                    state.last_launch_args = launch_args.clone();
+                    state.last_launch_args = launch_args;
                     state.is_router_mode = false;
                     let model_name = if state.presets.is_empty() {
                         None
@@ -400,7 +400,7 @@ pub fn handle_key_event(
                     };
 
                     match ActiveServer::spawn(
-                        &launch_args,
+                        &state.last_launch_args,
                         &state.models_dir,
                         model_name,
                         Some(event_tx.clone()),
@@ -1052,11 +1052,15 @@ pub fn handle_key_event(
                 if let Some(ref server) = state.active_server
                     && let Ok(hist) = server.raw_history.lock()
                 {
-                    let full_text = hist
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<&str>>()
-                        .join("\n");
+                    let total_len: usize =
+                        hist.iter().map(|s| s.len()).sum::<usize>() + hist.len().saturating_sub(1);
+                    let mut full_text = String::with_capacity(total_len);
+                    for (i, s) in hist.iter().enumerate() {
+                        if i > 0 {
+                            full_text.push('\n');
+                        }
+                        full_text.push_str(s);
+                    }
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
                         let _ = clipboard.set_text(full_text);
                     }
@@ -1175,7 +1179,7 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
 
                     TuiEvent::Tick => {
                         state.tick_count += 1;
-                        if state.tick_count.is_multiple_of(4) {
+                        if state.tick_count % 4 == 0 {
                             state.check_models_dir_changes();
                         }
                     }

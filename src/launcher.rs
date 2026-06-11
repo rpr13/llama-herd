@@ -948,7 +948,7 @@ pub fn resolve_port(port_str: &str) -> Result<u16, std::io::Error> {
             Ok(parsed)
         } else {
             let max_limit = parsed.saturating_add(10);
-            let mut port = parsed + 1;
+            let mut port = parsed.saturating_add(1);
             while port <= max_limit && port < 65535 {
                 if is_port_available(port) {
                     return Ok(port);

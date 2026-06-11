@@ -1,7 +1,8 @@
 [package]
 name = "llama-herd"
-version = "1.0.10"
+version = "1.0.11"
 edition = "2024"
+rust-version = "1.85"
 description = "A native Rust TUI and CLI companion for orchestrating, pairing, and routing local LLM services driven by llama.cpp's llama-server."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rpr13/llama-herd"

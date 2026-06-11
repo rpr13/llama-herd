@@ -2530,7 +2530,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         .style(Style::default().bg(theme.bg).fg(theme.fg))
         .border_style(Style::default().fg(theme.primary));
 
-    let full_command = state.last_launch_args.join(" ");
+    let full_command = mask_sensitive_args(&state.last_launch_args);
     let content_width = area.width as usize;
     let cmd_height = if content_width > 0 {
         (9 + full_command.len()).div_ceil(content_width).min(4) as u16
@@ -2856,4 +2856,16 @@ fn get_vram_bar(vram: Option<(u64, u64)>, bar_width: usize) -> String {
         }
     }
     bar
+}
+
+pub fn mask_sensitive_args(args: &[String]) -> String {
+    let mut masked_args = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        masked_args.push(arg.clone());
+        if arg == "--api-key" && iter.next().is_some() {
+            masked_args.push("[MASKED]".to_string());
+        }
+    }
+    masked_args.join(" ")
 }

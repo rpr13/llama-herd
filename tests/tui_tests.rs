@@ -883,4 +883,37 @@ temp = 0.7
             4
         );
     }
+
+    #[test]
+    fn test_mask_sensitive_args() {
+        use llama_herd::tui::ui::mask_sensitive_args;
+
+        // 1. Without sensitive args
+        let args = vec![
+            "llama-server".to_string(),
+            "--model".to_string(),
+            "model.gguf".to_string(),
+        ];
+        assert_eq!(
+            mask_sensitive_args(&args),
+            "llama-server --model model.gguf"
+        );
+
+        // 2. With api-key arg
+        let args_with_key = vec![
+            "llama-server".to_string(),
+            "--api-key".to_string(),
+            "secret-12345".to_string(),
+            "--model".to_string(),
+            "model.gguf".to_string(),
+        ];
+        assert_eq!(
+            mask_sensitive_args(&args_with_key),
+            "llama-server --api-key [MASKED] --model model.gguf"
+        );
+
+        // 3. Edgecase: api-key at the end of the argument list without a value
+        let args_edge = vec!["llama-server".to_string(), "--api-key".to_string()];
+        assert_eq!(mask_sensitive_args(&args_edge), "llama-server --api-key");
+    }
 }

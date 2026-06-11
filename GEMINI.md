@@ -94,6 +94,7 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
 ### 4. Visual Parameter Grouping & Ordering
 
 To enhance visual organization, parameters on both TUI screens are categorized and separated using styled headers:
+
 - **Dashboard Tab (Tab 1) - Preset Details & Parameters**:
   - **llama herd**: Contains orchestrator settings like Preset Name, Model File, Target Config File, and Total Layers. Placed at the top of the dashboard.
   - **Common params**: Contains context size, GPU offload layers, vision projector, and speculative draft models.

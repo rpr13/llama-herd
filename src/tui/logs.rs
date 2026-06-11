@@ -132,7 +132,7 @@ impl ActiveServer {
                     }
 
                     // Query RAM and VRAM usage every 2 seconds
-                    if vram_counter.is_multiple_of(2) {
+                    if vram_counter % 2 == 0 {
                         sys.refresh_memory();
                         let total_ram = sys.total_memory() / 1024 / 1024;
                         let used_ram = sys.used_memory() / 1024 / 1024;

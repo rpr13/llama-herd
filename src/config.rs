@@ -54,7 +54,9 @@ pub fn parse_ctx_str(s: &str) -> Result<usize, String> {
             .trim()
             .parse::<usize>()
             .map_err(|e| format!("Failed to parse context size digits: {}", e))?;
-        return Ok(val * 1024);
+        return val
+            .checked_mul(1024)
+            .ok_or_else(|| "Context size overflowed".to_string());
     }
 
     let val = s_trimmed
@@ -259,7 +261,11 @@ fn convert_toml_val(v: toml::Value, warn: bool) -> serde_json::Value {
         toml::Value::String(s) => serde_json::Value::String(s),
         toml::Value::Integer(i) => serde_json::Value::Number(i.into()),
         toml::Value::Float(f) => {
-            serde_json::Value::Number(serde_json::Number::from_f64(f).unwrap())
+            if let Some(num) = serde_json::Number::from_f64(f) {
+                serde_json::Value::Number(num)
+            } else {
+                serde_json::Value::Null
+            }
         }
         toml::Value::Boolean(b) => serde_json::Value::Bool(b),
         toml::Value::Array(arr) => serde_json::Value::Array(
