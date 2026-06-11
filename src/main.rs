@@ -1,7 +1,14 @@
+//! `LlamaHerd` binary entrypoint.
+//! Handles command-line arguments, global configuration loading, and starts the TUI or setup wizard.
+
+#![forbid(unsafe_code)]
+#![allow(clippy::multiple_crate_versions)]
 use llama_herd::tui::app::AppState;
 use llama_herd::{config, discovery, launcher, tui};
+
 use std::collections::HashMap;
 
+#[allow(clippy::exit)]
 fn show_help() {
     println!(concat!(
         "🦙 LLAMA-HERD ",
@@ -38,6 +45,7 @@ fn show_help() {
     std::process::exit(0);
 }
 
+#[allow(clippy::exit)]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (should_show_help, generate_ini) = config::parse_args(&args);
@@ -57,8 +65,7 @@ fn main() {
             Ok(cfg) => cfg,
             Err(e) => {
                 eprintln!(
-                    "CRITICAL: Failed to load config.toml: {}. Aborting to prevent unsafe defaults.",
-                    e
+                    "CRITICAL: Failed to load config.toml: {e}. Aborting to prevent unsafe defaults."
                 );
                 std::process::exit(1);
             }
@@ -67,31 +74,21 @@ fn main() {
         HashMap::new()
     };
 
-    let (server_exe, models_dir, global_config) = if config::resolve_models_dir(&global_config)
-        .is_none()
-        || config::resolve_server_executable(&global_config).is_none()
-    {
-        match llama_herd::setup::run_wizard(&lh_dir, global_config) {
-            Some(res) => res,
-            None => {
-                eprintln!(
-                    "Setup cancelled or failed. Please configure 'config.toml' manually or run the wizard again."
-                );
-                std::process::exit(0);
-            }
-        }
+    let (server_exe, models_dir, global_config) = if let (Some(exe), Some(dir)) = (
+        config::resolve_server_executable(&global_config),
+        config::resolve_models_dir(&global_config),
+    ) {
+        (exe, dir, global_config)
     } else {
-        (
-            config::resolve_server_executable(&global_config).unwrap(),
-            config::resolve_models_dir(&global_config).unwrap(),
-            global_config,
-        )
+        llama_herd::setup::run_wizard(&lh_dir, global_config).unwrap_or_else(|| {
+            eprintln!(
+                "Setup cancelled or failed. Please configure 'config.toml' manually or run the wizard again."
+            );
+            std::process::exit(0);
+        })
     };
 
-    let models_dir = match models_dir.canonicalize() {
-        Ok(p) => p,
-        Err(_) => models_dir,
-    };
+    let models_dir = std::path::absolute(&models_dir).unwrap_or(models_dir);
 
     let preset_ini_path = models_dir.join("models-preset.ini");
 
@@ -99,7 +96,7 @@ fn main() {
         if let Err(e) =
             discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config)
         {
-            eprintln!("CRITICAL: Failed to generate presets configuration: {}.", e);
+            eprintln!("CRITICAL: Failed to generate presets configuration: {e}.");
             std::process::exit(1);
         }
         println!(
@@ -114,7 +111,7 @@ fn main() {
 
     // Dynamically scan model directories and generate settings
     if let Err(e) = discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config) {
-        eprintln!("CRITICAL: Failed to generate presets configuration: {}.", e);
+        eprintln!("CRITICAL: Failed to generate presets configuration: {e}.");
         std::process::exit(1);
     }
 
@@ -144,7 +141,7 @@ fn main() {
     );
 
     if let Err(err) = tui::run_tui(app_state) {
-        eprintln!("TUI Error: {}", err);
+        eprintln!("TUI Error: {err}");
         launcher::kill_existing_servers();
         std::process::exit(1);
     }

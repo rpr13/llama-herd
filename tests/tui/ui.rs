@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 use llama_herd::tui::ui::{centered_rect, truncate_middle};
 use ratatui::layout::Rect;
 

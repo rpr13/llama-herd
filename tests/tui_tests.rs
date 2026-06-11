@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 pub mod tui {
     pub mod app;
     pub mod logs;

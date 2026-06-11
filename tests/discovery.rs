@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 use llama_herd::discovery::{
     clean_model_id, discover_presets_from_ini, find_matching_draft, find_matching_mmproj,
     generate_presets_ini, insert_variant_suffix,

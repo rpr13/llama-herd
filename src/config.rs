@@ -1,51 +1,74 @@
+//! Configuration structures and helpers for parsing GGUF/TOML config files.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 // --- CONFIGURATION STRUCTURES ---
+
+/// Represents assets associated with a specific model, including its configuration TOML and optional template.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelAssets {
+    /// Parsed model configuration.
     pub config: HashMap<String, serde_json::Value>,
+    /// Optional path to a Jinja template.
     pub jinja_template: Option<PathBuf>,
 }
 
+/// Dynamic settings overridden by the user on the dashboard.
 #[derive(Debug, Clone)]
 pub struct UserSettings {
+    /// Context size in tokens.
     pub ctx: usize,
+    /// GPU offload layer specification.
     pub ngl: String,
+    /// Optional path to the vision projector model.
     pub mmproj: Option<PathBuf>,
+    /// Optional path to the speculative draft model.
     pub draft_model: Option<PathBuf>,
+    /// GPU offload layer specification for the draft model.
     pub draft_ngl: String,
 }
 
 // --- PURE PARSERS & HELPERS ---
 
+/// Parses context size from a JSON value, supporting strings with 'k'/'K' suffixes and numbers.
+///
+/// # Errors
+///
+/// Returns an error if the value is not a string or number, or if the number is negative or unparseable.
 pub fn parse_ctx(value: &serde_json::Value) -> Result<usize, String> {
     match value {
-        serde_json::Value::Number(num) => {
-            if let Some(i) = num.as_u64() {
-                Ok(i as usize)
-            } else if let Some(f) = num.as_f64() {
-                if f < 0.0 {
-                    Err(format!("Invalid negative context size: {}", f))
-                } else {
-                    Ok(f as usize)
-                }
-            } else {
-                Err(format!("Invalid number format for context size: {}", num))
-            }
-        }
+        serde_json::Value::Number(num) => num.as_u64().map_or_else(
+            || {
+                num.as_f64().map_or_else(
+                    || Err(format!("Invalid number format for context size: {num}")),
+                    |f| {
+                        if f < 0.0 {
+                            Err(format!("Invalid negative context size: {f}"))
+                        } else {
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            Ok(f as usize)
+                        }
+                    },
+                )
+            },
+            |i| usize::try_from(i).map_err(|e| format!("Context size overflow: {e}")),
+        ),
         serde_json::Value::String(s) => parse_ctx_str(s),
-        _ => Err(format!("Invalid type for context size: {:?}", value)),
+        _ => Err(format!("Invalid type for context size: {value:?}")),
     }
 }
 
+/// Parses context size from a string, allowing optional 'k' or 'K' suffix for multipliers.
+///
+/// # Errors
+///
+/// Returns an error if the string is empty, contains invalid digits, or if the resulting context size overflows.
 pub fn parse_ctx_str(s: &str) -> Result<usize, String> {
     let s_trimmed = s.trim();
     if s_trimmed.is_empty() {
-        return Err("Context size cannot be empty".to_string());
+        return Err("Context size cannot be empty".to_owned());
     }
     let s_lower = s_trimmed.to_lowercase();
 
@@ -53,18 +76,20 @@ pub fn parse_ctx_str(s: &str) -> Result<usize, String> {
         let val = s_lower[..s_lower.len() - 1]
             .trim()
             .parse::<usize>()
-            .map_err(|e| format!("Failed to parse context size digits: {}", e))?;
+            .map_err(|e| format!("Failed to parse context size digits: {e}"))?;
         return val
             .checked_mul(1024)
-            .ok_or_else(|| "Context size overflowed".to_string());
+            .ok_or_else(|| "Context size overflowed".to_owned());
     }
 
     let val = s_trimmed
         .parse::<usize>()
-        .map_err(|e| format!("Failed to parse context size: {}", e))?;
+        .map_err(|e| format!("Failed to parse context size: {e}"))?;
     Ok(val)
 }
 
+/// Validates that a setting value does not contain injection attempts (e.g., options starting with '--').
+#[must_use]
 pub fn is_safe_value(val: &serde_json::Value) -> bool {
     match val {
         serde_json::Value::String(s) => {
@@ -86,17 +111,21 @@ pub fn is_safe_value(val: &serde_json::Value) -> bool {
     }
 }
 
+/// Returns the optimal CPU thread count based on physical cores.
+#[must_use]
 pub fn get_optimal_threads() -> String {
-    match std::thread::available_parallelism() {
-        Ok(cores) => {
+    std::thread::available_parallelism().map_or_else(
+        |_| "4".to_owned(),
+        |cores| {
             let logical = cores.get();
             let physical = std::cmp::max(1, logical / 2);
             physical.to_string()
-        }
-        Err(_) => "4".to_string(),
-    }
+        },
+    )
 }
 
+/// Computes the GPU offload layers if delta syntax (e.g., `--4`) is provided.
+#[must_use]
 pub fn calculate_ngl(input_str: &str, default_val: &str, total_layers: Option<usize>) -> String {
     if let Some(stripped) = input_str.strip_prefix("--")
         && let Some(layers) = total_layers
@@ -105,9 +134,9 @@ pub fn calculate_ngl(input_str: &str, default_val: &str, total_layers: Option<us
         return layers.saturating_sub(delta).to_string();
     }
     if input_str.is_empty() {
-        default_val.to_string()
+        default_val.to_owned()
     } else {
-        input_str.to_string()
+        input_str.to_owned()
     }
 }
 
@@ -193,41 +222,78 @@ fn is_invalid_key(k: &str) -> Option<&'static str> {
     }
 }
 
+/// Checks if a long option key is restricted.
+#[must_use]
 pub fn is_restricted_key(key: &str) -> bool {
     RESTRICTED_LONG.contains(&key)
 }
 
+/// Checks if a short option key is restricted.
+#[must_use]
 pub fn is_restricted_short_key(key: &str) -> bool {
     RESTRICTED_SHORT.contains(&key)
 }
 
+/// Formats a key name to double-dash CLI option style.
+#[must_use]
 pub fn format_arg_name(key: &str) -> Option<String> {
-    Some(format!("--{}", key))
+    Some(format!("--{key}"))
 }
 
+/// Formats a key name to INI format.
+#[must_use]
 pub fn format_ini_key(key: &str) -> Option<String> {
-    Some(key.to_string())
+    Some(key.to_owned())
 }
 
+/// Loads a TOML configuration silently, returning an empty `HashMap` on failure.
+#[must_use]
 pub fn load_toml_silent(path: &Path) -> HashMap<String, serde_json::Value> {
-    if let Ok(mut file) = File::open(path) {
-        let mut contents = String::new();
-        if file.read_to_string(&mut contents).is_ok()
-            && let Ok(value) = toml::from_str::<toml::Value>(&contents)
-        {
-            return toml_to_json(value, false);
-        }
+    if let Ok(contents) = std::fs::read_to_string(path)
+        && let Ok(value) = toml::from_str::<toml::Value>(&contents)
+    {
+        return toml_to_json(value, false);
     }
     HashMap::new()
 }
 
-pub fn load_toml_safe(path: &Path) -> Result<HashMap<String, serde_json::Value>, std::io::Error> {
-    let mut file = File::open(path)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
+/// Custom error enum representing orchestration and config errors in llama-herd.
+#[derive(thiserror::Error, Debug)]
+pub enum HerdError {
+    /// An input/output operation failed.
+    #[error("I/O error at {path}: {source}")]
+    Io {
+        /// The file path where the error occurred.
+        path: PathBuf,
+        /// The underlying I/O error source.
+        source: std::io::Error,
+    },
+    /// A configuration file parsing error.
+    #[error("TOML parsing error in {path}: {source}")]
+    TomlParse {
+        /// The file path where the error occurred.
+        path: PathBuf,
+        /// The underlying TOML deserialization error.
+        source: toml::de::Error,
+    },
+}
 
-    let value = toml::from_str::<toml::Value>(&contents)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+/// Safely loads a TOML configuration from the filesystem, validating keys
+/// and converting TOML values to generic JSON values.
+///
+/// # Errors
+///
+/// Returns a `HerdError` if the file cannot be opened, read, or if the TOML content is invalid.
+pub fn load_toml_safe(path: &Path) -> Result<HashMap<String, serde_json::Value>, HerdError> {
+    let contents = std::fs::read_to_string(path).map_err(|e| HerdError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+
+    let value = toml::from_str::<toml::Value>(&contents).map_err(|e| HerdError::TomlParse {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
 
     println!(
         "[*] Loaded parameters from: {}",
@@ -243,10 +309,7 @@ fn toml_to_json(toml: toml::Value, warn: bool) -> HashMap<String, serde_json::Va
         for (k, v) in table {
             if let Some(reason) = is_invalid_key(&k) {
                 if warn {
-                    println!(
-                        "[!] Warning: Key '{}' is invalid ({}) and was skipped.",
-                        k, reason
-                    );
+                    println!("[!] Warning: Key '{k}' is invalid ({reason}) and was skipped.");
                 }
                 continue;
             }
@@ -260,13 +323,8 @@ fn convert_toml_val(v: toml::Value, warn: bool) -> serde_json::Value {
     match v {
         toml::Value::String(s) => serde_json::Value::String(s),
         toml::Value::Integer(i) => serde_json::Value::Number(i.into()),
-        toml::Value::Float(f) => {
-            if let Some(num) = serde_json::Number::from_f64(f) {
-                serde_json::Value::Number(num)
-            } else {
-                serde_json::Value::Null
-            }
-        }
+        toml::Value::Float(f) => serde_json::Number::from_f64(f)
+            .map_or(serde_json::Value::Null, serde_json::Value::Number),
         toml::Value::Boolean(b) => serde_json::Value::Bool(b),
         toml::Value::Array(arr) => serde_json::Value::Array(
             arr.into_iter()
@@ -278,10 +336,7 @@ fn convert_toml_val(v: toml::Value, warn: bool) -> serde_json::Value {
             for (k, v) in table {
                 if let Some(reason) = is_invalid_key(&k) {
                     if warn {
-                        println!(
-                            "[!] Warning: Key '{}' is invalid ({}) and was skipped.",
-                            k, reason
-                        );
+                        println!("[!] Warning: Key '{k}' is invalid ({reason}) and was skipped.");
                     }
                     continue;
                 }
@@ -295,6 +350,8 @@ fn convert_toml_val(v: toml::Value, warn: bool) -> serde_json::Value {
 
 // --- INI PARSING & MERGING ---
 
+/// Parses a raw INI file string into nested section maps.
+#[must_use]
 pub fn parse_settings_ini(content: &str) -> HashMap<String, HashMap<String, String>> {
     let mut sections = HashMap::new();
     let mut current_section_name: Option<String> = None;
@@ -311,11 +368,11 @@ pub fn parse_settings_ini(content: &str) -> HashMap<String, HashMap<String, Stri
                 sections.insert(sec, current_section_map);
                 current_section_map = HashMap::new();
             }
-            let sec_name = line[1..line.len() - 1].trim().to_string();
+            let sec_name = line[1..line.len() - 1].trim().to_owned();
             current_section_name = Some(sec_name);
         } else if let Some(pos) = line.find('=') {
-            let key = line[..pos].trim().to_string();
-            let value = line[pos + 1..].trim().to_string();
+            let key = line[..pos].trim().to_owned();
+            let value = line[pos + 1..].trim().to_owned();
             current_section_map.insert(key, value);
         }
     }
@@ -327,6 +384,8 @@ pub fn parse_settings_ini(content: &str) -> HashMap<String, HashMap<String, Stri
     sections
 }
 
+/// Loads and merges the preset-specific and global configurations from a preset INI file.
+#[must_use]
 pub fn load_settings_from_ini(
     preset_name: &str,
     preset_path: &Path,
@@ -335,20 +394,22 @@ pub fn load_settings_from_ini(
         return None;
     }
     if let Ok(content) = std::fs::read_to_string(preset_path) {
-        let sections = parse_settings_ini(&content);
+        let mut sections = parse_settings_ini(&content);
 
         let mut merged = HashMap::new();
-        if let Some(global) = sections.get("*") {
-            merged.extend(global.clone());
+        if let Some(global) = sections.remove("*") {
+            merged.extend(global);
         }
-        if let Some(preset) = sections.get(preset_name) {
-            merged.extend(preset.clone());
+        if let Some(preset) = sections.remove(preset_name) {
+            merged.extend(preset);
             return Some(merged);
         }
     }
     None
 }
 
+/// Scans the models directory for configuration TOML files matching the chosen GGUF model name.
+#[must_use]
 pub fn discover_assets(selected_model: &Path, models_dir: &Path) -> ModelAssets {
     let stem = selected_model
         .file_stem()
@@ -409,6 +470,8 @@ pub fn discover_assets(selected_model: &Path, models_dir: &Path) -> ModelAssets 
     }
 }
 
+/// Resolves the file path of the TOML configuration file corresponding to a selected model.
+#[must_use]
 pub fn resolve_toml_path(selected_model: &Path, models_dir: &Path) -> PathBuf {
     let stem = selected_model
         .file_stem()
@@ -447,19 +510,52 @@ pub fn resolve_toml_path(selected_model: &Path, models_dir: &Path) -> PathBuf {
     let file_name = selected_model
         .file_name()
         .and_then(|s| s.to_str())
-        .map(|s| s.strip_suffix(".gguf").unwrap_or(s))
-        .unwrap_or("model");
-    models_dir.join(format!("{}.toml", file_name))
+        .map_or("model", |s| s.strip_suffix(".gguf").unwrap_or(s));
+    models_dir.join(format!("{file_name}.toml"))
 }
 
+use std::cell::RefCell;
+
+thread_local! {
+    static LLAMA_HERD_DIR_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+    static HOME_DIR_OVERRIDE: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+/// Sets a thread-local override path for the llama-herd application directory.
+/// Useful for isolating filesystem path resolution during integration testing.
+pub fn set_llama_herd_dir_override(path: Option<PathBuf>) {
+    LLAMA_HERD_DIR_OVERRIDE.with(|cell| {
+        *cell.borrow_mut() = path;
+    });
+}
+
+/// Sets a thread-local override path for the user's home directory.
+/// Useful for isolating user home path checks during integration testing.
+pub fn set_home_dir_override(path: Option<PathBuf>) {
+    HOME_DIR_OVERRIDE.with(|cell| {
+        *cell.borrow_mut() = path;
+    });
+}
+
+/// Returns the path to the user's home directory.
+#[must_use]
 pub fn get_home_dir() -> Option<PathBuf> {
+    if let Some(path) = HOME_DIR_OVERRIDE.with(|cell| cell.borrow().clone()) {
+        return Some(path);
+    }
+
     std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
-        .map(PathBuf::from)
         .ok()
+        .map(PathBuf::from)
 }
 
+/// Returns the configuration directory path for llama-herd.
+#[must_use]
 pub fn get_llama_herd_dir() -> PathBuf {
+    if let Some(path) = LLAMA_HERD_DIR_OVERRIDE.with(|cell| cell.borrow().clone()) {
+        return path;
+    }
     if cfg!(target_os = "windows") {
         if let Ok(appdata) = std::env::var("APPDATA") {
             return PathBuf::from(appdata).join("llama-herd");
@@ -470,22 +566,29 @@ pub fn get_llama_herd_dir() -> PathBuf {
     PathBuf::from(".")
 }
 
-pub fn save_config(
+/// Saves the global configuration back to its TOML file.
+///
+/// # Errors
+///
+/// Returns an `std::io::Error` if the directory cannot be created or if the file cannot be written.
+pub fn save_config<S: std::hash::BuildHasher>(
     path: &Path,
-    config: &HashMap<String, serde_json::Value>,
+    config: &HashMap<String, serde_json::Value, S>,
 ) -> Result<(), std::io::Error> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let toml_string = toml::to_string(config)
-        .map_err(|e| std::io::Error::other(format!("TOML serialization error: {}", e)))?;
+        .map_err(|e| std::io::Error::other(format!("TOML serialization error: {e}")))?;
 
     std::fs::write(path, toml_string)
 }
 
-pub fn resolve_server_executable(
-    global_config: &HashMap<String, serde_json::Value>,
+/// Locates the llama-server executable path, checking both config and search paths.
+#[must_use]
+pub fn resolve_server_executable<S: std::hash::BuildHasher>(
+    global_config: &HashMap<String, serde_json::Value, S>,
 ) -> Option<PathBuf> {
     // 1. Check config
     if let Some(s) = global_config
@@ -520,7 +623,11 @@ pub fn resolve_server_executable(
     None
 }
 
-pub fn resolve_models_dir(global_config: &HashMap<String, serde_json::Value>) -> Option<PathBuf> {
+/// Resolves the models directory path.
+#[must_use]
+pub fn resolve_models_dir<S: std::hash::BuildHasher>(
+    global_config: &HashMap<String, serde_json::Value, S>,
+) -> Option<PathBuf> {
     // 1. Check config
     if let Some(s) = global_config
         .get("llama-herd")
@@ -544,6 +651,8 @@ pub fn resolve_models_dir(global_config: &HashMap<String, serde_json::Value>) ->
     None
 }
 
+/// Parses command-line arguments to check for help flag or ini-generation requests.
+#[must_use]
 pub fn parse_args(args: &[String]) -> (bool, bool) {
     let mut show_help = false;
     let mut generate_ini = false;
@@ -560,8 +669,10 @@ pub fn parse_args(args: &[String]) -> (bool, bool) {
     (show_help, generate_ini)
 }
 
-pub fn get_global_config_string(
-    global_config: &HashMap<String, serde_json::Value>,
+/// Helper function to retrieve a configuration value as a String from config hierarchy.
+#[must_use]
+pub fn get_global_config_string<S: std::hash::BuildHasher>(
+    global_config: &HashMap<String, serde_json::Value, S>,
     key: &str,
     default_val: &str,
 ) -> String {
@@ -576,39 +687,41 @@ pub fn get_global_config_string(
         Some(serde_json::Value::Number(n)) => n.to_string(),
         Some(serde_json::Value::Bool(b)) => {
             if *b {
-                "true".to_string()
+                "true".to_owned()
             } else {
-                "false".to_string()
+                "false".to_owned()
             }
         }
-        _ => default_val.to_string(),
+        _ => default_val.to_owned(),
     }
 }
 
-pub fn update_global_config_value(
-    global_config: &mut HashMap<String, serde_json::Value>,
+/// Updates a configuration value in the global config nested maps.
+pub fn update_global_config_value<S: std::hash::BuildHasher>(
+    global_config: &mut HashMap<String, serde_json::Value, S>,
     key: &str,
     value: serde_json::Value,
 ) {
     if let Some(serde_json::Value::Object(long_obj)) = global_config.get_mut("llama-server-long")
         && long_obj.contains_key(key)
     {
-        long_obj.insert(key.to_string(), value);
+        long_obj.insert(key.to_owned(), value);
         return;
     }
 
     if let Some(serde_json::Value::Object(lh_obj)) = global_config.get_mut("llama-herd")
         && lh_obj.contains_key(key)
     {
-        lh_obj.insert(key.to_string(), value);
+        lh_obj.insert(key.to_owned(), value);
         return;
     }
 
-    global_config.insert(key.to_string(), value);
+    global_config.insert(key.to_owned(), value);
 }
 
-pub fn remove_global_config_value(
-    global_config: &mut HashMap<String, serde_json::Value>,
+/// Removes a configuration value from the global configuration nested maps.
+pub fn remove_global_config_value<S: std::hash::BuildHasher>(
+    global_config: &mut HashMap<String, serde_json::Value, S>,
     key: &str,
 ) {
     let mut remove_long = false;
@@ -636,6 +749,8 @@ pub fn remove_global_config_value(
     global_config.remove(key);
 }
 
+/// Finds files that are named similarly to the specified model inside the models directory.
+#[must_use]
 pub fn find_similar_config_files(model_path: &Path, models_dir: &Path) -> Vec<String> {
     let mut results = Vec::new();
     let stem = model_path
@@ -649,7 +764,7 @@ pub fn find_similar_config_files(model_path: &Path, models_dir: &Path) -> Vec<St
     let prefix = if parts.len() >= 2 {
         format!("{}-{}", parts[0], parts[1])
     } else if !parts.is_empty() {
-        parts[0].to_string()
+        parts[0].to_owned()
     } else {
         String::new()
     };
@@ -670,7 +785,7 @@ pub fn find_similar_config_files(model_path: &Path, models_dir: &Path) -> Vec<St
                     && (name_lower.starts_with(&prefix) || name_lower.contains(&prefix)))
                     || stem.starts_with(&toml_stem)
                 {
-                    results.push(name.to_string());
+                    results.push(name.to_owned());
                 }
             }
         }

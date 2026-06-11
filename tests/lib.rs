@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 #[test]
 fn test_lib_modules_reachable() {
     // Ensuring all public modules are reachable and symbols are exported correctly

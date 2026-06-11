@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 use llama_herd::config::{ModelAssets, UserSettings};
 use llama_herd::launcher::{build_launch_parameters, build_router_launch_parameters};
 use std::collections::HashMap;

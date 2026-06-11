@@ -3,46 +3,79 @@ use crate::tui::logs::ActiveServer;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// The different screen views and input modal dialog states.
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum AppScreen {
+    /// Main dashboard view.
     Dashboard,
+    /// Settings management view.
     Settings,
+    /// Active server logs streaming view.
     Logs,
+    /// Editing context size input mode.
     EditingCtx,
+    /// Editing GPU layers (ngl) input mode.
     EditingNgl,
+    /// Editing draft model GPU layers input mode.
     EditingDraftNgl,
+    /// File picker for selecting the llama-server executable path.
     PickingServerPath,
+    /// File picker for selecting the GGUF models directory.
     PickingModelsDir,
+    /// Text editing modal for global configurations.
     EditingGlobalSetting,
+    /// Selection option list modal for global configurations.
     SelectingGlobalSettingOption,
+    /// Dropdown list for selecting a vision projector.
     SelectingMMProj,
+    /// Dropdown list for selecting a speculative draft model.
     SelectingDraftModel,
+    /// Editing temperature parameter input mode.
     EditingTemp,
+    /// Editing top-p parameter input mode.
     EditingTopP,
+    /// Editing top-k parameter input mode.
     EditingTopK,
+    /// Editing total model layers parameter input mode.
     EditingTotalLayers,
+    /// Editing TOML configuration filename input mode.
     EditingConfigFileName,
+    /// Confirmation dialog before saving configuration changes.
     ConfirmSaveConfig,
+    /// Warning dialog before discarding unsaved configuration changes.
     WarnDiscardChanges,
+    /// Editing min-p parameter input mode.
     EditingMinP,
+    /// Editing repeat penalty parameter input mode.
     EditingRepeatPenalty,
+    /// Editing repeat last N parameter input mode.
     EditingRepeatLastN,
+    /// Selecting reasoning format dropdown mode.
     SelectingReasoningFormat,
+    /// Selecting reasoning setting dropdown mode.
     SelectingReasoning,
+    /// Editing reasoning budget parameter input mode.
     EditingReasoningBudget,
 }
 
+/// The focus panels on the TUI dashboard tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashboardFocus {
+    /// Left preset list panel focus.
     Left,
+    /// Right parameter overrides panel focus.
     Right,
 }
 
+/// Representation of the state/contents of the GGUF models directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelsDirState {
+    /// List of paths, modification times, and file sizes.
     pub files: Vec<(PathBuf, std::time::SystemTime, u64)>,
 }
 
+/// Helper function to retrieve the current file state of the GGUF models directory.
+#[must_use]
 pub fn get_models_dir_state(models_dir: &Path) -> Option<ModelsDirState> {
     let mut files = Vec::new();
     if let Ok(entries) = std::fs::read_dir(models_dir) {
@@ -64,113 +97,191 @@ pub fn get_models_dir_state(models_dir: &Path) -> Option<ModelsDirState> {
     Some(ModelsDirState { files })
 }
 
+/// Main application state for the Ratatui dashboard.
+#[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct AppState {
+    /// Current panel focus on the dashboard.
     pub dashboard_focus: DashboardFocus,
+    /// Selected index in the parameter overrides list.
     pub dashboard_param_index: usize,
+    /// Discovered list of model presets.
     pub presets: Vec<(String, PathBuf)>,
+    /// Configured GGUF models directory path.
     pub models_dir: PathBuf,
+    /// Path to the preset INI file.
     pub preset_path: PathBuf,
+    /// Merged global configuration.
     pub global_config: HashMap<String, serde_json::Value>,
+    /// Path to the llama-server executable.
     pub server_exe: PathBuf,
+    /// Cached version string of the server executable.
     pub server_version: String,
 
-    // UI state
+    /// Active view/screen mode.
     pub screen: AppScreen,
+    /// Currently selected tab index.
     pub active_tab: usize,
+    /// Currently selected preset index.
     pub preset_index: usize,
+    /// Currently selected global settings index.
     pub settings_index: usize,
+    /// Active file picker instance.
     pub picker: Option<crate::tui::picker::FilePicker>,
 
-    // Config items for selected preset
+    /// Override context size in tokens.
     pub ctx: usize,
+    /// Override GPU offload layers.
     pub ngl: String,
+    /// Total layers in the model (read from configuration).
     pub total_layers: Option<usize>,
 
-    // Dropdowns / Cycles
+    /// List of discovered vision projectors.
     pub mmproj_list: Vec<Option<PathBuf>>,
+    /// Selected mmproj index.
     pub mmproj_index: usize,
+    /// Backup of the selected mmproj index (for Esc/cancel actions).
     pub mmproj_index_backup: usize,
+    /// List of discovered draft models.
     pub draft_list: Vec<Option<PathBuf>>,
+    /// Selected draft model index.
     pub draft_index: usize,
+    /// Backup of the selected draft model index (for Esc/cancel actions).
     pub draft_index_backup: usize,
+    /// Override draft model GPU offload layers.
     pub draft_ngl: String,
 
-    // Input prompts
+    /// Temporary keyboard input text buffer.
     pub input_buffer: String,
 
-    // Active running server
+    /// Active llama-server subprocess manager wrapper.
     pub active_server: Option<ActiveServer>,
+    /// Flag indicating whether log streaming is paused.
     pub logs_paused: bool,
+    /// Flag indicating whether logs should wrap to the next line.
     pub logs_wrap: bool,
+    /// Ring buffer storing recent logs when streaming is paused.
     pub paused_logs_buffer: std::collections::VecDeque<crate::tui::logs::LogLine>,
+    /// Vertical scroll offset in the logs panel.
     pub log_scroll_offset: usize,
+    /// Horizontal scroll offset in the logs panel.
     pub log_scroll_x: usize,
+    /// Flag indicating whether log panel autoscrolls to the bottom.
     pub auto_scroll: bool,
+    /// Arguments used to launch the current active subprocess.
     pub last_launch_args: Vec<String>,
+    /// Flag indicating whether the server is launched in Router Mode.
     pub is_router_mode: bool,
+    /// Styling theme.
     pub theme: crate::tui::theme::Theme,
+    /// Selected option index in a dropdown menu.
     pub option_selector_index: usize,
+    /// List of options in a dropdown menu.
     pub option_selector_list: Vec<String>,
+    /// Path to the configuration TOML file of the selected model.
     pub config_path: PathBuf,
+    /// List of similar configuration files suggested.
     pub similar_config_files: Vec<String>,
+    /// Selected index in similar configuration files suggestions.
     pub similar_config_index: Option<usize>,
 
-    // Overrides / Editable parameters
+    /// Override temperature.
     pub temp: String,
+    /// Override top-p.
     pub top_p: String,
+    /// Override top-k.
     pub top_k: String,
+    /// Configuration filename target.
     pub config_file_name: String,
+    /// Raw context size input string.
     pub ctx_str: String,
+    /// Flag indicating whether to create a backup file when saving.
     pub backup_config: bool,
+    /// Pending preset index to switch to after warning confirmation.
     pub pending_preset_index: Option<usize>,
 
-    // New editable parameters
+    /// Override min-p.
     pub min_p: String,
+    /// Override repeat penalty.
     pub repeat_penalty: String,
+    /// Override repeat last N tokens.
     pub repeat_last_n: String,
+    /// Override reasoning setting.
     pub reasoning: String,
+    /// Override reasoning format.
     pub reasoning_format: String,
+    /// Override reasoning budget.
     pub reasoning_budget: String,
 
+    /// List of reasoning settings options.
     pub reasoning_list: Vec<String>,
+    /// Selected reasoning index.
     pub reasoning_index: usize,
+    /// Backup of the selected reasoning index.
     pub reasoning_index_backup: usize,
 
+    /// List of reasoning formats options.
     pub reasoning_format_list: Vec<String>,
+    /// Selected reasoning format index.
     pub reasoning_format_index: usize,
+    /// Backup of the selected reasoning format index.
     pub reasoning_format_index_backup: usize,
 
-    // Original values for comparison / diff
+    /// Original context size input string (to check for edits).
     pub original_ctx_str: String,
+    /// Original context size (to check for edits).
     pub original_ctx: usize,
+    /// Original GPU layers (to check for edits).
     pub original_ngl: String,
+    /// Original mmproj index (to check for edits).
     pub original_mmproj_index: usize,
+    /// Original draft model index (to check for edits).
     pub original_draft_index: usize,
+    /// Original draft GPU layers (to check for edits).
     pub original_draft_ngl: String,
+    /// Original temperature (to check for edits).
     pub original_temp: String,
+    /// Original top-p (to check for edits).
     pub original_top_p: String,
+    /// Original top-k (to check for edits).
     pub original_top_k: String,
+    /// Original total layers (to check for edits).
     pub original_total_layers: Option<usize>,
+    /// Original configuration filename target (to check for edits).
     pub original_config_file_name: String,
 
-    // New original values
+    /// Original min-p (to check for edits).
     pub original_min_p: String,
+    /// Original repeat penalty (to check for edits).
     pub original_repeat_penalty: String,
+    /// Original repeat last N tokens (to check for edits).
     pub original_repeat_last_n: String,
+    /// Original reasoning setting (to check for edits).
     pub original_reasoning: String,
+    /// Original reasoning format (to check for edits).
     pub original_reasoning_format: String,
+    /// Original reasoning budget (to check for edits).
     pub original_reasoning_budget: String,
+    /// Original reasoning index (to check for edits).
     pub original_reasoning_index: usize,
+    /// Original reasoning format index (to check for edits).
     pub original_reasoning_format_index: usize,
 
+    /// Number of clock ticks (useful for flash animations).
     pub tick_count: u64,
+    /// Last recorded file state of the GGUF models directory.
     pub last_models_dir_state: Option<ModelsDirState>,
+    /// Last stable recorded file state of the GGUF models directory.
     pub last_stable_models_dir_state: Option<ModelsDirState>,
+    /// Flag indicating if background models directory scan has pending changes.
     pub models_dir_changed_dirty: bool,
+    /// Flag indicating if GGUF models directory is inaccessible or deleted.
     pub models_dir_invalid: bool,
 }
 
 impl AppState {
+    /// Creates a new `AppState` instance with the provided presets, paths, configurations, and theme.
+    #[must_use]
     pub fn new(
         presets: Vec<(String, PathBuf)>,
         models_dir: PathBuf,
@@ -183,7 +294,7 @@ impl AppState {
         let last_models_dir_state = get_models_dir_state(&models_dir);
         let models_dir_invalid = std::fs::read_dir(&models_dir).is_err();
 
-        let mut state = AppState {
+        let mut state = Self {
             dashboard_focus: DashboardFocus::Left,
             dashboard_param_index: 0,
             presets,
@@ -197,8 +308,8 @@ impl AppState {
             preset_index: 0,
             settings_index: 0,
             picker: None,
-            ctx: 131072,
-            ngl: "auto".to_string(),
+            ctx: 131_072,
+            ngl: "auto".to_owned(),
             total_layers: None,
             mmproj_list: vec![None],
             mmproj_index: 0,
@@ -206,7 +317,7 @@ impl AppState {
             draft_list: vec![None],
             draft_index: 0,
             draft_index_backup: 0,
-            draft_ngl: "".to_string(),
+            draft_ngl: String::new(),
             input_buffer: String::new(),
             active_server: None,
             logs_paused: false,
@@ -237,28 +348,28 @@ impl AppState {
             reasoning_format: String::new(),
             reasoning_budget: String::new(),
             reasoning_list: vec![
-                "".to_string(),
-                "auto".to_string(),
-                "on".to_string(),
-                "off".to_string(),
+                String::new(),
+                "auto".to_owned(),
+                "on".to_owned(),
+                "off".to_owned(),
             ],
             reasoning_index: 0,
             reasoning_index_backup: 0,
             reasoning_format_list: vec![
-                "".to_string(),
-                "auto".to_string(),
-                "none".to_string(),
-                "deepseek".to_string(),
-                "deepseek-legacy".to_string(),
+                String::new(),
+                "auto".to_owned(),
+                "none".to_owned(),
+                "deepseek".to_owned(),
+                "deepseek-legacy".to_owned(),
             ],
             reasoning_format_index: 0,
             reasoning_format_index_backup: 0,
             original_ctx_str: String::new(),
-            original_ctx: 131072,
-            original_ngl: "auto".to_string(),
+            original_ctx: 131_072,
+            original_ngl: "auto".to_owned(),
             original_mmproj_index: 0,
             original_draft_index: 0,
-            original_draft_ngl: "".to_string(),
+            original_draft_ngl: String::new(),
             original_temp: String::new(),
             original_top_p: String::new(),
             original_top_k: String::new(),
@@ -283,6 +394,12 @@ impl AppState {
         state
     }
 
+    /// Loads the configuration settings for the currently selected preset, with an optional path override.
+    #[allow(
+        clippy::similar_names,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation
+    )]
     pub fn load_current_preset_settings(&mut self, toml_path_override: Option<PathBuf>) {
         self.models_dir_changed_dirty = false;
         if self.presets.is_empty() {
@@ -290,8 +407,9 @@ impl AppState {
         }
 
         let (preset_name, model_path) = &self.presets[self.preset_index];
-        let ini_settings = crate::config::load_settings_from_ini(preset_name, &self.preset_path)
-            .unwrap_or_default();
+        let mut ini_settings =
+            crate::config::load_settings_from_ini(preset_name, &self.preset_path)
+                .unwrap_or_default();
 
         let mut assets = crate::discovery::discover_assets(model_path, &self.models_dir);
         if let Some(ref path) = toml_path_override {
@@ -314,37 +432,30 @@ impl AppState {
         self.total_layers = total_layers;
 
         // Context Size
-        let ctx_val = ini_settings
-            .get("ctx-size")
-            .map(|s| serde_json::Value::String(s.clone()))
-            .unwrap_or_else(|| {
+        let ctx_val = ini_settings.remove("ctx-size").map_or_else(
+            || {
                 get_lh_val("ctx-size")
                     .or_else(|| get_long_val("ctx-size"))
                     .cloned()
-                    .unwrap_or_else(|| serde_json::Value::String("131072".to_string()))
-            });
-        self.ctx = crate::config::parse_ctx(&ctx_val).unwrap_or(131072);
+                    .unwrap_or_else(|| serde_json::Value::String("131072".to_owned()))
+            },
+            serde_json::Value::String,
+        );
+        self.ctx = crate::config::parse_ctx(&ctx_val).unwrap_or(131_072);
 
         // NGL
-        self.ngl = ini_settings
-            .get("n-gpu-layers")
-            .cloned()
-            .unwrap_or_else(|| {
-                get_lh_val("ngl")
-                    .or_else(|| get_long_val("ngl"))
-                    .and_then(|v| {
-                        if let Some(s) = v.as_str() {
-                            Some(s.to_string())
-                        } else {
-                            v.as_i64().map(|i| i.to_string())
-                        }
-                    })
-                    .unwrap_or_else(|| {
-                        total_layers
-                            .map(|t| t.to_string())
-                            .unwrap_or_else(|| "auto".to_string())
-                    })
-            });
+        self.ngl = ini_settings.remove("n-gpu-layers").unwrap_or_else(|| {
+            get_lh_val("ngl")
+                .or_else(|| get_long_val("ngl"))
+                .and_then(|v| {
+                    v.as_str()
+                        .map(ToOwned::to_owned)
+                        .or_else(|| v.as_i64().map(|i| i.to_string()))
+                })
+                .unwrap_or_else(|| {
+                    total_layers.map_or_else(|| "auto".to_owned(), |t| t.to_string())
+                })
+        });
 
         // Populate mmproj list
         let mut mmproj_files = Vec::new();
@@ -372,8 +483,8 @@ impl AppState {
 
         // Find active mmproj
         self.mmproj_index = 0;
-        if let Some(active_mmproj) = ini_settings.get("mmproj") {
-            let active_name = Path::new(active_mmproj).file_name().unwrap_or_default();
+        if let Some(active_mmproj) = ini_settings.remove("mmproj") {
+            let active_name = Path::new(&active_mmproj).file_name().unwrap_or_default();
             for (idx, opt) in self.mmproj_list.iter().enumerate() {
                 if let Some(path) = opt
                     && path.file_name().unwrap_or_default() == active_name
@@ -420,7 +531,7 @@ impl AppState {
                                         .and_then(|lh| {
                                             lh.get("is-draft").or_else(|| lh.get("is-draft-only"))
                                         })
-                                        .and_then(|v| v.as_bool())
+                                        .and_then(serde_json::Value::as_bool)
                                         == Some(true);
                                     if is_d {
                                         is_draft = true;
@@ -444,11 +555,11 @@ impl AppState {
         }
 
         self.draft_index = 0;
-        self.draft_ngl = "".to_string();
+        self.draft_ngl = String::new();
 
         if preset_name.to_lowercase().contains("draft") {
-            if let Some(active_draft) = ini_settings.get("model-draft") {
-                let active_name = Path::new(active_draft).file_name().unwrap_or_default();
+            if let Some(active_draft) = ini_settings.remove("model-draft") {
+                let active_name = Path::new(&active_draft).file_name().unwrap_or_default();
                 for (idx, opt) in self.draft_list.iter().enumerate() {
                     if let Some(path) = opt
                         && path.file_name().unwrap_or_default() == active_name
@@ -458,9 +569,8 @@ impl AppState {
                     }
                 }
                 self.draft_ngl = ini_settings
-                    .get("gpu-layers-draft")
-                    .cloned()
-                    .unwrap_or_else(|| "auto".to_string());
+                    .remove("gpu-layers-draft")
+                    .unwrap_or_else(|| "auto".to_owned());
             } else {
                 // Automatically select draft if discovered by heuristic
                 let heuristic_draft = crate::discovery::find_matching_draft(
@@ -468,7 +578,7 @@ impl AppState {
                     &self
                         .draft_list
                         .iter()
-                        .filter_map(|x| x.clone())
+                        .filter_map(Clone::clone)
                         .collect::<Vec<_>>(),
                 );
                 if let Some(hd) = heuristic_draft {
@@ -480,7 +590,7 @@ impl AppState {
                             break;
                         }
                     }
-                    self.draft_ngl = "auto".to_string();
+                    "auto".clone_into(&mut self.draft_ngl);
                 }
             }
         }
@@ -491,7 +601,7 @@ impl AppState {
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("model.toml")
-            .to_string();
+            .to_owned();
 
         let config = crate::config::load_toml_silent(&toml_path);
         let get_long_val = |key: &str| -> Option<&serde_json::Value> {
@@ -513,7 +623,7 @@ impl AppState {
         let ctx_str_val = match &ctx_val {
             serde_json::Value::String(s) => s.clone(),
             serde_json::Value::Number(n) => n.to_string(),
-            _ => "131072".to_string(),
+            _ => "131072".to_owned(),
         };
 
         let temp_val = get_string_val(get_long_val("temp"));
@@ -557,8 +667,8 @@ impl AppState {
         self.repeat_last_n = repeat_last_n_val.clone();
         self.original_repeat_last_n = repeat_last_n_val;
 
-        self.reasoning = reasoning_val.clone();
-        self.original_reasoning = reasoning_val.clone();
+        self.reasoning.clone_from(&reasoning_val);
+        self.original_reasoning.clone_from(&reasoning_val);
         self.reasoning_index = self
             .reasoning_list
             .iter()
@@ -566,8 +676,9 @@ impl AppState {
             .unwrap_or(0);
         self.original_reasoning_index = self.reasoning_index;
 
-        self.reasoning_format = reasoning_format_val.clone();
-        self.original_reasoning_format = reasoning_format_val.clone();
+        self.reasoning_format.clone_from(&reasoning_format_val);
+        self.original_reasoning_format
+            .clone_from(&reasoning_format_val);
         self.reasoning_format_index = self
             .reasoning_format_list
             .iter()
@@ -581,6 +692,12 @@ impl AppState {
         self.original_total_layers = self.total_layers;
     }
 
+    /// Saves the current configuration of the selected preset, optionally generating a backup file first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `std::io::Error` if the configuration cannot be saved or if the backup file cannot be created.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_wrap)]
     pub fn save_current_preset_config(
         &mut self,
         create_backup: bool,
@@ -593,7 +710,7 @@ impl AppState {
         let filename = if filename.to_lowercase().ends_with(".toml") {
             filename
         } else {
-            format!("{}.toml", filename)
+            format!("{filename}.toml")
         };
 
         let target_path = self.models_dir.join(&filename);
@@ -601,11 +718,8 @@ impl AppState {
         if create_backup && target_path.exists() {
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let backup_path = self
-                .models_dir
-                .join(format!("{}.bak.{}", filename, timestamp));
+                .map_or(0, |d| d.as_secs());
+            let backup_path = self.models_dir.join(format!("{filename}.bak.{timestamp}"));
             let _ = std::fs::copy(&target_path, &backup_path);
         }
 
@@ -622,138 +736,98 @@ impl AppState {
             .unwrap_or_default();
 
         // 1. ctx-size
-        if !self.ctx_str.is_empty() {
-            if let Ok(num) = self.ctx_str.parse::<i64>() {
-                long_obj.insert(
-                    "ctx-size".to_string(),
-                    serde_json::Value::Number(num.into()),
-                );
-            } else {
-                long_obj.insert(
-                    "ctx-size".to_string(),
-                    serde_json::Value::String(self.ctx_str.clone()),
-                );
-            }
-        } else {
+        if self.ctx_str.is_empty() {
             long_obj.remove("ctx-size");
+        } else if let Ok(num) = self.ctx_str.parse::<i64>() {
+            long_obj.insert("ctx-size".to_owned(), serde_json::Value::Number(num.into()));
+        } else {
+            long_obj.insert(
+                "ctx-size".to_owned(),
+                serde_json::Value::String(self.ctx_str.clone()),
+            );
         }
 
         // 2. ngl
-        if !self.ngl.is_empty() {
-            if let Ok(num) = self.ngl.parse::<i64>() {
-                long_obj.insert("ngl".to_string(), serde_json::Value::Number(num.into()));
-            } else {
-                long_obj.insert(
-                    "ngl".to_string(),
-                    serde_json::Value::String(self.ngl.clone()),
-                );
-            }
-        } else {
+        if self.ngl.is_empty() {
             long_obj.remove("ngl");
+        } else if let Ok(num) = self.ngl.parse::<i64>() {
+            long_obj.insert("ngl".to_owned(), serde_json::Value::Number(num.into()));
+        } else {
+            long_obj.insert(
+                "ngl".to_owned(),
+                serde_json::Value::String(self.ngl.clone()),
+            );
         }
 
         // 3. temp
-        if !self.temp.is_empty() {
-            if let Ok(f) = self.temp.parse::<f64>()
-                && let Some(num) = serde_json::Number::from_f64(f)
-            {
-                long_obj.insert("temp".to_string(), serde_json::Value::Number(num));
-            }
-        } else {
-            long_obj.remove("temp");
-        }
+        update_float_setting(&mut long_obj, "temp", &self.temp);
 
         // 4. top-p
-        if !self.top_p.is_empty() {
-            if let Ok(f) = self.top_p.parse::<f64>()
-                && let Some(num) = serde_json::Number::from_f64(f)
-            {
-                long_obj.insert("top-p".to_string(), serde_json::Value::Number(num));
-            }
-        } else {
-            long_obj.remove("top-p");
-        }
+        update_float_setting(&mut long_obj, "top-p", &self.top_p);
 
         // 5. top-k
-        if !self.top_k.is_empty() {
-            if let Ok(num) = self.top_k.parse::<i64>() {
-                long_obj.insert("top-k".to_string(), serde_json::Value::Number(num.into()));
-            }
-        } else {
+        if self.top_k.is_empty() {
             long_obj.remove("top-k");
+        } else if let Ok(num) = self.top_k.parse::<i64>() {
+            long_obj.insert("top-k".to_owned(), serde_json::Value::Number(num.into()));
         }
 
         // min-p
-        if !self.min_p.is_empty() {
-            if let Ok(f) = self.min_p.parse::<f64>()
-                && let Some(num) = serde_json::Number::from_f64(f)
-            {
-                long_obj.insert("min-p".to_string(), serde_json::Value::Number(num));
-            }
-        } else {
-            long_obj.remove("min-p");
-        }
+        update_float_setting(&mut long_obj, "min-p", &self.min_p);
 
         // repeat-penalty
-        if !self.repeat_penalty.is_empty() {
-            if let Ok(f) = self.repeat_penalty.parse::<f64>()
-                && let Some(num) = serde_json::Number::from_f64(f)
-            {
-                long_obj.insert("repeat-penalty".to_string(), serde_json::Value::Number(num));
-            }
-        } else {
-            long_obj.remove("repeat-penalty");
-        }
+        update_float_setting(&mut long_obj, "repeat-penalty", &self.repeat_penalty);
 
         // repeat-last-n
-        if !self.repeat_last_n.is_empty() {
-            if let Ok(num) = self.repeat_last_n.parse::<i64>() {
-                long_obj.insert(
-                    "repeat-last-n".to_string(),
-                    serde_json::Value::Number(num.into()),
-                );
-            }
-        } else {
+        if self.repeat_last_n.is_empty() {
             long_obj.remove("repeat-last-n");
+        } else if let Ok(num) = self.repeat_last_n.parse::<i64>() {
+            long_obj.insert(
+                "repeat-last-n".to_owned(),
+                serde_json::Value::Number(num.into()),
+            );
         }
 
         // reasoning
-        if !self.reasoning.is_empty() {
+        if self.reasoning.is_empty() {
+            long_obj.remove("reasoning");
+        } else {
             long_obj.insert(
-                "reasoning".to_string(),
+                "reasoning".to_owned(),
                 serde_json::Value::String(self.reasoning.clone()),
             );
-        } else {
-            long_obj.remove("reasoning");
         }
 
         // reasoning-format
-        if !self.reasoning_format.is_empty() {
+        if self.reasoning_format.is_empty() {
+            long_obj.remove("reasoning-format");
+        } else {
             long_obj.insert(
-                "reasoning-format".to_string(),
+                "reasoning-format".to_owned(),
                 serde_json::Value::String(self.reasoning_format.clone()),
             );
-        } else {
-            long_obj.remove("reasoning-format");
         }
 
         // reasoning-budget
-        if !self.reasoning_budget.is_empty() {
-            if let Ok(num) = self.reasoning_budget.parse::<i64>() {
-                long_obj.insert(
-                    "reasoning-budget".to_string(),
-                    serde_json::Value::Number(num.into()),
-                );
-            }
-        } else {
+        if self.reasoning_budget.is_empty() {
             long_obj.remove("reasoning-budget");
+        } else if let Ok(num) = self.reasoning_budget.parse::<i64>() {
+            long_obj.insert(
+                "reasoning-budget".to_owned(),
+                serde_json::Value::Number(num.into()),
+            );
         }
 
         // 6. total-layers
         if let Some(num) = self.total_layers {
             herd_obj.insert(
-                "total-layers".to_string(),
-                serde_json::Value::Number((num as i64).into()),
+                "total-layers".to_owned(),
+                serde_json::Value::Number(
+                    #[allow(clippy::cast_possible_wrap)]
+                    {
+                        (num as i64).into()
+                    },
+                ),
             );
         } else {
             herd_obj.remove("total-layers");
@@ -768,7 +842,7 @@ impl AppState {
             _ => String::new(),
         };
         if !draft_val.is_empty() && draft_val != "None (Disabled)" {
-            herd_obj.insert("draft".to_string(), serde_json::Value::String(draft_val));
+            herd_obj.insert("draft".to_owned(), serde_json::Value::String(draft_val));
         } else {
             herd_obj.remove("draft");
         }
@@ -782,20 +856,17 @@ impl AppState {
             _ => String::new(),
         };
         if !mmproj_val.is_empty() && mmproj_val != "None (Disabled)" {
-            herd_obj.insert("mmproj".to_string(), serde_json::Value::String(mmproj_val));
+            herd_obj.insert("mmproj".to_owned(), serde_json::Value::String(mmproj_val));
         } else {
             herd_obj.remove("mmproj");
         }
 
         if !herd_obj.is_empty() {
-            current_config.insert(
-                "llama-herd".to_string(),
-                serde_json::Value::Object(herd_obj),
-            );
+            current_config.insert("llama-herd".to_owned(), serde_json::Value::Object(herd_obj));
         }
         if !long_obj.is_empty() {
             current_config.insert(
-                "llama-server-long".to_string(),
+                "llama-server-long".to_owned(),
                 serde_json::Value::Object(long_obj),
             );
         }
@@ -830,16 +901,20 @@ impl AppState {
         Ok(())
     }
 
+    /// Resolves and returns the customized user settings for model deployment.
+    #[must_use]
     pub fn get_user_settings(&self) -> UserSettings {
         UserSettings {
             ctx: self.ctx,
             ngl: self.ngl.clone(),
-            mmproj: self.mmproj_list[self.mmproj_index].clone(),
-            draft_model: self.draft_list[self.draft_index].clone(),
+            mmproj: self.mmproj_list.get(self.mmproj_index).cloned().flatten(),
+            draft_model: self.draft_list.get(self.draft_index).cloned().flatten(),
             draft_ngl: self.draft_ngl.clone(),
         }
     }
 
+    /// Checks if there are unsaved parameter configuration overrides in the dashboard.
+    #[must_use]
     pub fn has_unsaved_changes(&self) -> bool {
         self.ctx_str != self.original_ctx_str
             || self.ngl != self.original_ngl
@@ -859,6 +934,7 @@ impl AppState {
             || self.reasoning_budget != self.original_reasoning_budget
     }
 
+    /// Periodically scans the models directory in the background and invalidates/updates presets when file changes settle.
     pub fn check_models_dir_changes(&mut self) {
         if self.models_dir_changed_dirty && !self.has_unsaved_changes() {
             self.models_dir_changed_dirty = false;
@@ -909,6 +985,8 @@ impl AppState {
         }
     }
 
+    /// Regenerates the presets INI file and reloads the active list of presets into TUI memory.
+    #[allow(clippy::missing_errors_doc)]
     pub fn regenerate_and_reload_presets(&mut self) -> Result<(), std::io::Error> {
         let current_preset_name = if self.presets.is_empty() {
             None
@@ -944,4 +1022,19 @@ impl AppState {
         }
         Ok(())
     }
+}
+
+fn update_float_setting(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    val_str: &str,
+) {
+    if !val_str.is_empty()
+        && let Ok(f) = val_str.parse::<f64>()
+        && let Some(num) = serde_json::Number::from_f64(f)
+    {
+        obj.insert(key.to_owned(), serde_json::Value::Number(num));
+        return;
+    }
+    obj.remove(key);
 }

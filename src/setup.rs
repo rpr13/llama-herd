@@ -18,20 +18,31 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// The state representation for the setup wizard TUI.
+#[derive(Debug)]
 pub struct SetupState {
+    /// Path to the llama-server executable.
     pub server_path: String,
+    /// Path to the models directory.
     pub models_dir: String,
+    /// File/directory picker helper instance.
     pub picker: FilePicker,
+    /// Active styling theme.
     pub theme: Theme,
-    pub current_step: usize, // 0: Server, 1: Models, 2: Done
+    /// Current step in setup (0: Server, 1: Models, 2: Done).
+    pub current_step: usize,
+    /// Current error/warning message if validation fails.
     pub error_message: Option<String>,
+    /// Flag indicating whether the setup wizard should exit.
     pub should_exit: bool,
 }
 
-pub fn run_wizard(
+/// Runs the interactive setup wizard TUI.
+#[must_use]
+pub fn run_wizard<S: std::hash::BuildHasher>(
     lh_dir: &Path,
-    mut global_config: HashMap<String, serde_json::Value>,
-) -> Option<(PathBuf, PathBuf, HashMap<String, serde_json::Value>)> {
+    mut global_config: HashMap<String, serde_json::Value, S>,
+) -> Option<(PathBuf, PathBuf, HashMap<String, serde_json::Value, S>)> {
     // Initial values from config if present
     let initial_server = config::resolve_server_executable(&global_config)
         .map(|p| p.to_string_lossy().into_owned())
@@ -43,29 +54,31 @@ pub fn run_wizard(
     let theme = Theme::default();
 
     // Determine starting step
-    let mut current_step = 0;
-    if !initial_server.is_empty() && Path::new(&initial_server).is_file() {
-        current_step = 1;
-    }
-    if current_step == 1 && !initial_models.is_empty() && Path::new(&initial_models).is_dir() {
-        current_step = 2;
-    }
+    let current_step = if !initial_server.is_empty() && Path::new(&initial_server).is_file() {
+        if !initial_models.is_empty() && Path::new(&initial_models).is_dir() {
+            2
+        } else {
+            1
+        }
+    } else {
+        0
+    };
 
     let picker = if current_step == 0 {
-        let initial_path = if !initial_server.is_empty() {
-            PathBuf::from(&initial_server)
-                .parent()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| config::get_home_dir().unwrap_or_else(|| PathBuf::from(".")))
-        } else {
+        let initial_path = if initial_server.is_empty() {
             config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
+        } else {
+            PathBuf::from(&initial_server).parent().map_or_else(
+                || config::get_home_dir().unwrap_or_else(|| PathBuf::from(".")),
+                Path::to_path_buf,
+            )
         };
         FilePicker::new(initial_path, PickerMode::File)
     } else {
-        let initial_path = if !initial_models.is_empty() {
-            PathBuf::from(&initial_models)
-        } else {
+        let initial_path = if initial_models.is_empty() {
             config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
+        } else {
+            PathBuf::from(&initial_models)
         };
         FilePicker::new(initial_path, PickerMode::Directory)
     };
@@ -90,13 +103,10 @@ pub fn run_wizard(
         return None;
     }
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = match Terminal::new(backend) {
-        Ok(t) => t,
-        Err(_) => {
-            let _ = execute!(io::stdout(), LeaveAlternateScreen);
-            let _ = disable_raw_mode();
-            return None;
-        }
+    let Ok(mut terminal) = Terminal::new(backend) else {
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = disable_raw_mode();
+        return None;
     };
 
     while !state.should_exit && state.current_step < 2 {
@@ -105,7 +115,7 @@ pub fn run_wizard(
         }
 
         if let Ok(ev) = event::read() {
-            handle_event(&mut state, ev);
+            handle_event(&mut state, &ev);
         }
     }
 
@@ -122,23 +132,23 @@ pub fn run_wizard(
     let models_dir = PathBuf::from(state.models_dir.trim());
 
     global_config.insert(
-        "llama-server".to_string(),
+        "llama-server".to_owned(),
         serde_json::Value::String(server_exe.to_string_lossy().to_string()),
     );
     global_config.insert(
-        "models-dir".to_string(),
+        "models-dir".to_owned(),
         serde_json::Value::String(models_dir.to_string_lossy().to_string()),
     );
 
     let config_path = lh_dir.join("config.toml");
     if let Err(e) = config::save_config(&config_path, &global_config) {
-        eprintln!("Warning: Failed to save config: {}", e);
+        eprintln!("Warning: Failed to save config: {e}");
     }
 
     Some((server_exe, models_dir, global_config))
 }
 
-fn handle_event(state: &mut SetupState, event: Event) {
+fn handle_event(state: &mut SetupState, event: &Event) {
     if let Event::Key(key) = event
         && key.kind == event::KeyEventKind::Press
     {
@@ -147,18 +157,19 @@ fn handle_event(state: &mut SetupState, event: Event) {
                 state.should_exit = true;
             }
             _ => {
-                if let Some(path) = state.picker.handle_event(key) {
+                if let Some(path) = state.picker.handle_event(*key) {
                     state.error_message = None;
                     if state.current_step == 0 {
                         if path.is_file() {
                             state.server_path = path.to_string_lossy().into_owned();
                             state.current_step = 1;
-                            let initial_models_path = if !state.models_dir.is_empty() {
-                                PathBuf::from(&state.models_dir)
+                            let initial_models_path = if state.models_dir.is_empty() {
+                                path.parent().map_or_else(
+                                    || config::get_home_dir().unwrap_or_else(|| PathBuf::from(".")),
+                                    Path::to_path_buf,
+                                )
                             } else {
-                                path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| {
-                                    config::get_home_dir().unwrap_or_else(|| PathBuf::from("."))
-                                })
+                                PathBuf::from(&state.models_dir)
                             };
                             state.picker =
                                 FilePicker::new(initial_models_path, PickerMode::Directory);
@@ -169,7 +180,7 @@ fn handle_event(state: &mut SetupState, event: Event) {
                                 state.current_step = 2;
                             }
                         } else {
-                            state.error_message = Some("Selected path is not a file".to_string());
+                            state.error_message = Some("Selected path is not a file".to_owned());
                         }
                     } else if state.current_step == 1 {
                         if path.is_dir() {
@@ -177,7 +188,7 @@ fn handle_event(state: &mut SetupState, event: Event) {
                             state.current_step = 2;
                         } else {
                             state.error_message =
-                                Some("Selected path is not a directory".to_string());
+                                Some("Selected path is not a directory".to_owned());
                         }
                     }
                 }
@@ -186,7 +197,7 @@ fn handle_event(state: &mut SetupState, event: Event) {
     }
 }
 
-fn render_wizard(f: &mut Frame, state: &SetupState) {
+fn render_wizard(f: &mut Frame<'_>, state: &SetupState) {
     let theme = &state.theme;
     let size = f.area();
 
@@ -239,7 +250,7 @@ fn render_wizard(f: &mut Frame, state: &SetupState) {
 
     if let Some(ref err) = state.error_message {
         f.render_widget(
-            Paragraph::new(format!("[!] {}", err)).style(Style::default().fg(theme.error)),
+            Paragraph::new(format!("[!] {err}")).style(Style::default().fg(theme.error)),
             chunks[3],
         );
     }

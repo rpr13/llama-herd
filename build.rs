@@ -1,3 +1,5 @@
+//! Build script to inject Git tag/commit version and compile settings.
+
 use std::process::Command;
 
 fn main() {
@@ -7,8 +9,7 @@ fn main() {
     let is_git = Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
 
     if is_git {
         let git_ver = Command::new("git")
@@ -28,7 +29,7 @@ fn main() {
         if let Some(git_ver) = git_ver {
             let trimmed = git_ver.trim();
             if !trimmed.is_empty() {
-                version = trimmed.to_string();
+                trimmed.clone_into(&mut version);
             }
         }
 
@@ -45,10 +46,10 @@ fn main() {
 
         if let Some(git_dir_str) = git_dir {
             let git_dir = git_dir_str.trim();
-            println!("cargo:rerun-if-changed={}/refs/heads", git_dir);
-            println!("cargo:rerun-if-changed={}/refs/tags", git_dir);
+            println!("cargo:rerun-if-changed={git_dir}/refs/heads");
+            println!("cargo:rerun-if-changed={git_dir}/refs/tags");
         }
     }
 
-    println!("cargo:rustc-env=APP_VERSION={}", version);
+    println!("cargo:rustc-env=APP_VERSION={version}");
 }

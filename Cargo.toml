@@ -1,6 +1,8 @@
 [package]
 name = "llama-herd"
-version = "1.0.11"
+version = "1.0.12"
+keywords = ["llama", "tui", "cli", "llama-server", "orchestrator"]
+categories = ["command-line-utilities", "development-tools"]
 edition = "2024"
 rust-version = "1.85"
 description = "A native Rust TUI and CLI companion for orchestrating, pairing, and routing local LLM services driven by llama.cpp's llama-server."
@@ -25,7 +27,56 @@ arboard = "3.6.1"
 regex = "1.12.4"
 toml = "1.1.2"
 sysinfo = "0.39.3"
+thiserror = "2"
 
 [dev-dependencies]
 tempfile = "3"
 cargo-husky = { version = "1", features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy", "run-cargo-fmt"] }
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+# Optimize dependencies in development so the TUI dashboard does not lag
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+unused_qualifications = "warn"
+keyword_idents = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+restriction = { level = "allow", priority = -1 }
+clone_on_ref_ptr = "deny"
+dbg_macro = "deny"
+empty_drop = "deny"
+exit = "deny"
+filetype_is_file = "deny"
+float_cmp_const = "deny"
+get_unwrap = "deny"
+lossy_float_literal = "deny"
+map_err_ignore = "deny"
+mem_forget = "deny"
+missing_assert_message = "deny"
+mutex_atomic = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+str_to_string = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+verbose_file_reads = "deny"

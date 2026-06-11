@@ -8,25 +8,40 @@ use ratatui::{
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The operational mode for the file picker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickerMode {
+    /// Pick a single file.
     File,
+    /// Pick a directory.
     Directory,
 }
 
+/// A single entry in the file/directory listing.
+#[derive(Debug)]
 pub struct PickerEntry {
+    /// File or directory name.
     pub name: String,
+    /// Flag indicating whether the entry is a directory.
     pub is_dir: bool,
 }
 
+/// Component that displays a scrollable folder tree picker overlay.
+#[derive(Debug)]
 pub struct FilePicker {
+    /// Currently navigated path.
     pub current_path: PathBuf,
+    /// Loaded sub-entries inside the current path.
     pub entries: Vec<PickerEntry>,
+    /// Selected item index in the picker list.
     pub selected_index: usize,
+    /// Active picker mode (File or Directory).
     pub mode: PickerMode,
 }
 
 impl FilePicker {
+    /// Creates a new `FilePicker` starting at the specified path in the given mode.
+    #[must_use]
     pub fn new(initial_path: PathBuf, mode: PickerMode) -> Self {
         let mut picker = Self {
             current_path: initial_path,
@@ -38,6 +53,7 @@ impl FilePicker {
         picker
     }
 
+    /// Refreshes the subdirectory/file listing based on the current navigated path.
     pub fn refresh(&mut self) {
         self.entries.clear();
         self.selected_index = 0;
@@ -49,7 +65,7 @@ impl FilePicker {
 
         if self.mode == PickerMode::Directory && !is_empty {
             self.entries.push(PickerEntry {
-                name: ".[Select current directory]".to_string(),
+                name: ".[Select current directory]".to_owned(),
                 is_dir: true,
             });
         }
@@ -75,7 +91,7 @@ impl FilePicker {
 
         if has_parent {
             self.entries.push(PickerEntry {
-                name: "..".to_string(),
+                name: "..".to_owned(),
                 is_dir: true,
             });
         }
@@ -98,6 +114,7 @@ impl FilePicker {
         }
     }
 
+    /// Handles user key event inputs to navigate up/down or enter directories.
     pub fn handle_event(&mut self, key: KeyEvent) -> Option<PathBuf> {
         #[cfg(target_os = "windows")]
         let is_empty = self.current_path.to_string_lossy().is_empty();
@@ -192,7 +209,8 @@ impl FilePicker {
         None
     }
 
-    pub fn render(&self, f: &mut Frame, area: Rect, theme: &crate::tui::theme::Theme) {
+    /// Renders the picker list view overlay on top of the frame.
+    pub fn render(&self, f: &mut Frame<'_>, area: Rect, theme: &crate::tui::theme::Theme) {
         let title = match self.mode {
             PickerMode::File => " Select File ",
             PickerMode::Directory => " Select Folder ",
@@ -223,15 +241,15 @@ impl FilePicker {
             " Path: "
         };
         let display_path = if self.current_path.as_os_str().is_empty() {
-            "Drives List".to_string()
+            "Drives List".to_owned()
         } else {
             self.current_path.to_string_lossy().into_owned()
         };
-        let breadcrumbs = Paragraph::new(format!("{}{}", breadcrumb_prefix, display_path))
+        let breadcrumbs = Paragraph::new(format!("{breadcrumb_prefix}{display_path}"))
             .style(Style::default().fg(theme.primary));
         f.render_widget(breadcrumbs, chunks[0]);
 
-        let items: Vec<ListItem> = self
+        let items: Vec<ListItem<'_>> = self
             .entries
             .iter()
             .enumerate()
@@ -254,7 +272,7 @@ impl FilePicker {
 
                 let display_name = if entry.name == ".[Select current directory]" {
                     let prefix = if theme.show_emojis { "✅ " } else { "* " };
-                    format!("{}Select this folder", prefix)
+                    format!("{prefix}Select this folder")
                 } else {
                     entry.name.clone()
                 };
@@ -267,7 +285,7 @@ impl FilePicker {
                 } else {
                     ""
                 };
-                let content = format!(" {} {}{}", icon, display_name, suffix);
+                let content = format!(" {icon} {display_name}{suffix}");
 
                 ListItem::new(content).style(style)
             })

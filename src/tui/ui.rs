@@ -8,15 +8,24 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap},
 };
 
+/// Representation of a global settings parameter item.
+#[derive(Debug)]
 pub struct SettingItem {
+    /// Friendly label/name of the setting.
     pub label: &'static str,
+    /// Configuration key in the INI/TOML files.
     pub key: &'static str,
+    /// Default fallback value as string.
     pub default_val: &'static str,
+    /// Decorative emoji icon for the setting.
     pub emoji: &'static str,
+    /// Brief description of the setting's purpose.
     pub description: &'static str,
+    /// Tab/visual category group name.
     pub group: &'static str,
 }
 
+/// The list of global settings items displayed in Tab 2.
 pub const SETTINGS: &[SettingItem] = &[
     // Group: llama herd
     SettingItem {
@@ -263,7 +272,9 @@ pub const SETTINGS: &[SettingItem] = &[
     },
 ];
 
-pub fn draw(f: &mut Frame, state: &mut AppState) {
+/// Main TUI render callback function to draw the user interface onto the terminal.
+#[allow(clippy::too_many_lines)]
+pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
     let size = f.area();
     let theme = &state.theme;
 
@@ -859,7 +870,8 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     f.render_widget(footer, main_layout[main_layout.len() - 1]);
 }
 
-fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
+#[allow(clippy::too_many_lines)]
+fn render_mc_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let theme = &state.theme;
     let logo_full = if theme.show_emojis {
         " 🦙 LlamaHerd "
@@ -887,11 +899,13 @@ fn render_mc_header(f: &mut Frame, state: &AppState, area: Rect) {
     let show_full_logo = area.width >= 75;
     let show_version = area.width >= 55;
 
+    #[allow(clippy::cast_possible_truncation)]
     let logo_len = if show_full_logo {
         logo_full.len() as u16
     } else {
         logo_short.len() as u16
     };
+    #[allow(clippy::cast_possible_truncation)]
     let version_len = if show_version {
         version_str.len() as u16
     } else {
@@ -1055,6 +1069,8 @@ fn render_header_tab<'a>(title: &'a str, is_active: bool, theme: &Theme) -> Span
     }
 }
 
+/// Helper function to create a centered layout Rect relative to parent.
+#[must_use]
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -1075,21 +1091,24 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
+/// Helper function to truncate a string in the middle if it exceeds the maximum length.
+#[must_use]
 pub fn truncate_middle(s: &str, max_len: usize) -> String {
     let chars: Vec<char> = s.chars().collect();
     if chars.len() <= max_len {
-        return s.to_string();
+        return s.to_owned();
     }
     if max_len <= 3 {
-        return "...".to_string();
+        return "...".to_owned();
     }
     let keep = (max_len - 3) / 2;
     let start: String = chars[..keep].iter().collect();
     let end: String = chars[chars.len() - (max_len - 3 - keep)..].iter().collect();
-    format!("{}...{}", start, end)
+    format!("{start}...{end}")
 }
 
-fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
+#[allow(clippy::too_many_lines)]
+fn render_settings_tab(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let theme = &state.theme;
     let block = Block::default()
         .borders(Borders::TOP | Borders::BOTTOM)
@@ -1128,7 +1147,7 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
         let label_str = if theme.show_emojis {
             format!("{} {}", item.emoji, item.label)
         } else {
-            item.label.to_string()
+            item.label.to_owned()
         };
 
         let val_str = match item.key {
@@ -1227,7 +1246,7 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
         if theme.show_emojis {
             format!("{} {}", selected_item.emoji, selected_item.label)
         } else {
-            selected_item.label.to_string()
+            selected_item.label.to_owned()
         },
         Style::default()
             .fg(theme.primary)
@@ -1372,11 +1391,13 @@ fn render_settings_tab(f: &mut Frame, state: &mut AppState, area: Rect) {
     }
 }
 
-fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
+#[allow(clippy::too_many_lines)]
+fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let theme = &state.theme;
     let size = f.area();
     // Split Content Area into Left (Presets List) and Right (Preset Parameters Details)
     let content_layout = if size.width < 110 {
+        #[allow(clippy::cast_possible_truncation)]
         let presets_height = (state.presets.len() as u16 + 2).clamp(5, 8);
         Layout::default()
             .direction(Direction::Vertical)
@@ -1392,7 +1413,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
     // LEFT Panel: Presets List
     let list_val_width = content_layout[0].width.saturating_sub(6) as usize;
     let is_left_focused = state.dashboard_focus == DashboardFocus::Left;
-    let items: Vec<ListItem> = state
+    let items: Vec<ListItem<'_>> = state
         .presets
         .iter()
         .enumerate()
@@ -1400,20 +1421,20 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             let display_name = truncate_middle(name, list_val_width);
             if idx == state.preset_index {
                 if is_left_focused {
-                    ListItem::new(format!(" ➤ {} ", display_name)).style(
+                    ListItem::new(format!(" ➤ {display_name} ")).style(
                         Style::default()
                             .fg(theme.selection)
                             .add_modifier(Modifier::BOLD),
                     )
                 } else {
-                    ListItem::new(format!(" • {} ", display_name)).style(
+                    ListItem::new(format!(" • {display_name} ")).style(
                         Style::default()
                             .fg(theme.secondary)
                             .add_modifier(Modifier::BOLD),
                     )
                 }
             } else {
-                ListItem::new(format!("   {} ", display_name)).style(Style::default().fg(theme.fg))
+                ListItem::new(format!("   {display_name} ")).style(Style::default().fg(theme.fg))
             }
         })
         .collect();
@@ -1443,9 +1464,9 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
     let config_changed = state.has_unsaved_changes();
 
     let right_title = if config_changed {
-        " Preset Details & Parameters (Unsaved Changes: Ctrl+S to save) ".to_string()
+        " Preset Details & Parameters (Unsaved Changes: Ctrl+S to save) ".to_owned()
     } else {
-        " Preset Details & Parameters ".to_string()
+        " Preset Details & Parameters ".to_owned()
     };
 
     let right_border_color = if state.dashboard_focus == DashboardFocus::Right {
@@ -1462,13 +1483,13 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         .border_style(Style::default().fg(right_border_color));
 
     let preset_name = if state.presets.is_empty() {
-        "None".to_string()
+        "None".to_owned()
     } else {
         state.presets[state.preset_index].0.clone()
     };
 
     let model_name = if state.presets.is_empty() {
-        "None".to_string()
+        "None".to_owned()
     } else {
         state.presets[state.preset_index]
             .1
@@ -1477,35 +1498,39 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             .unwrap_or_default()
     };
 
-    let mmproj_val = match &state.mmproj_list[state.mmproj_index] {
-        Some(p) => p
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "None".to_string()),
-        None => "None (Disabled)".to_string(),
-    };
-    let original_mmproj_val = match &state.mmproj_list[state.original_mmproj_index] {
-        Some(p) => p
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "None".to_string()),
-        None => "None (Disabled)".to_string(),
-    };
+    let mmproj_val = state.mmproj_list[state.mmproj_index].as_ref().map_or_else(
+        || "None (Disabled)".to_owned(),
+        |p| {
+            p.file_name()
+                .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+        },
+    );
+    let original_mmproj_val = state.mmproj_list[state.original_mmproj_index]
+        .as_ref()
+        .map_or_else(
+            || "None (Disabled)".to_owned(),
+            |p| {
+                p.file_name()
+                    .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+            },
+        );
 
-    let draft_val = match &state.draft_list[state.draft_index] {
-        Some(p) => p
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "None".to_string()),
-        None => "None (Disabled)".to_string(),
-    };
-    let original_draft_val = match &state.draft_list[state.original_draft_index] {
-        Some(p) => p
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "None".to_string()),
-        None => "None (Disabled)".to_string(),
-    };
+    let draft_val = state.draft_list[state.draft_index].as_ref().map_or_else(
+        || "None (Disabled)".to_owned(),
+        |p| {
+            p.file_name()
+                .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+        },
+    );
+    let original_draft_val = state.draft_list[state.original_draft_index]
+        .as_ref()
+        .map_or_else(
+            || "None (Disabled)".to_owned(),
+            |p| {
+                p.file_name()
+                    .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+            },
+        );
 
     let val_width = content_layout[1].width.saturating_sub(26) as usize;
     let display_preset_name = truncate_middle(&preset_name, val_width);
@@ -1515,11 +1540,11 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         let display_orig = if orig.is_empty() { "none" } else { orig };
         let display_curr = if curr.is_empty() { "none" } else { curr };
         if display_orig == display_curr {
-            Cell::from(Span::styled(display_curr.to_string(), default_style))
+            Cell::from(Span::styled(display_curr.to_owned(), default_style))
         } else {
             Cell::from(Line::from(vec![
                 Span::styled(
-                    display_orig.to_string(),
+                    display_orig.to_owned(),
                     Style::default().fg(theme.secondary),
                 ),
                 Span::styled(
@@ -1529,7 +1554,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    display_curr.to_string(),
+                    display_curr.to_owned(),
                     Style::default()
                         .fg(theme.success)
                         .add_modifier(Modifier::BOLD),
@@ -1547,21 +1572,21 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
 
             let prompt_cell = if is_selected {
                 Cell::from(Span::styled(
-                    format!(" ➤ [{}]", key_char),
+                    format!(" ➤ [{key_char}]"),
                     Style::default()
                         .fg(theme.selection)
                         .add_modifier(Modifier::BOLD),
                 ))
             } else if is_last_selected {
                 Cell::from(Span::styled(
-                    format!(" • [{}]", key_char),
+                    format!(" • [{key_char}]"),
                     Style::default()
                         .fg(theme.secondary)
                         .add_modifier(Modifier::BOLD),
                 ))
             } else {
                 Cell::from(Span::styled(
-                    format!("    [{}]", key_char),
+                    format!("    [{key_char}]"),
                     Style::default()
                         .fg(theme.primary)
                         .add_modifier(Modifier::BOLD),
@@ -1570,21 +1595,21 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
 
             let label_cell = if is_selected {
                 Cell::from(Span::styled(
-                    label.to_string(),
+                    label.to_owned(),
                     Style::default()
                         .fg(theme.selection)
                         .add_modifier(Modifier::BOLD),
                 ))
             } else if is_last_selected {
                 Cell::from(Span::styled(
-                    label.to_string(),
+                    label.to_owned(),
                     Style::default()
                         .fg(theme.secondary)
                         .add_modifier(Modifier::BOLD),
                 ))
             } else {
                 Cell::from(Span::styled(
-                    label.to_string(),
+                    label.to_owned(),
                     Style::default().fg(theme.secondary),
                 ))
             };
@@ -1949,14 +1974,14 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 let is_selected = state.similar_config_index == Some(idx);
                 if is_selected {
                     popup_text.push(Line::from(Span::styled(
-                        format!(" ➤ {} ", filename),
+                        format!(" ➤ {filename} "),
                         Style::default()
                             .fg(theme.selection)
                             .add_modifier(Modifier::BOLD),
                     )));
                 } else {
                     popup_text.push(Line::from(Span::styled(
-                        format!("    {} ", filename),
+                        format!("    {filename} "),
                         Style::default().fg(theme.fg),
                     )));
                 }
@@ -1985,13 +2010,16 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             let opts: Vec<String> = state
                 .mmproj_list
                 .iter()
-                .map(|opt| match opt {
-                    Some(p) => p
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned(),
-                    None => "None (Disabled)".to_string(),
+                .map(|opt| {
+                    opt.as_ref().map_or_else(
+                        || "None (Disabled)".to_owned(),
+                        |p| {
+                            p.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .into_owned()
+                        },
+                    )
                 })
                 .collect();
             (" Select MMProj (Vision) ", opts, state.mmproj_index)
@@ -1999,13 +2027,16 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             let opts: Vec<String> = state
                 .draft_list
                 .iter()
-                .map(|opt| match opt {
-                    Some(p) => p
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned(),
-                    None => "None (Disabled)".to_string(),
+                .map(|opt| {
+                    opt.as_ref().map_or_else(
+                        || "None (Disabled)".to_owned(),
+                        |p| {
+                            p.file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .into_owned()
+                        },
+                    )
                 })
                 .collect();
             (" Select Draft Model ", opts, state.draft_index)
@@ -2015,7 +2046,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 .iter()
                 .map(|opt| {
                     if opt.is_empty() {
-                        "Omit (Default)".to_string()
+                        "Omit (Default)".to_owned()
                     } else {
                         opt.clone()
                     }
@@ -2028,7 +2059,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                 .iter()
                 .map(|opt| {
                     if opt.is_empty() {
-                        "Omit (Default)".to_string()
+                        "Omit (Default)".to_owned()
                     } else {
                         opt.clone()
                     }
@@ -2096,34 +2127,38 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             .border_style(Style::default().fg(theme.selection));
 
         let mut changes = Vec::new();
-        let mmproj_val = match &state.mmproj_list[state.mmproj_index] {
-            Some(p) => p
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "None".to_string()),
-            None => "None (Disabled)".to_string(),
-        };
-        let original_mmproj_val = match &state.mmproj_list[state.original_mmproj_index] {
-            Some(p) => p
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "None".to_string()),
-            None => "None (Disabled)".to_string(),
-        };
-        let draft_val = match &state.draft_list[state.draft_index] {
-            Some(p) => p
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "None".to_string()),
-            None => "None (Disabled)".to_string(),
-        };
-        let original_draft_val = match &state.draft_list[state.original_draft_index] {
-            Some(p) => p
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "None".to_string()),
-            None => "None (Disabled)".to_string(),
-        };
+        let mmproj_val = state.mmproj_list[state.mmproj_index].as_ref().map_or_else(
+            || "None (Disabled)".to_owned(),
+            |p| {
+                p.file_name()
+                    .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+            },
+        );
+        let original_mmproj_val = state.mmproj_list[state.original_mmproj_index]
+            .as_ref()
+            .map_or_else(
+                || "None (Disabled)".to_owned(),
+                |p| {
+                    p.file_name()
+                        .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+                },
+            );
+        let draft_val = state.draft_list[state.draft_index].as_ref().map_or_else(
+            || "None (Disabled)".to_owned(),
+            |p| {
+                p.file_name()
+                    .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+            },
+        );
+        let original_draft_val = state.draft_list[state.original_draft_index]
+            .as_ref()
+            .map_or_else(
+                || "None (Disabled)".to_owned(),
+                |p| {
+                    p.file_name()
+                        .map_or_else(|| "None".to_owned(), |n| n.to_string_lossy().into_owned())
+                },
+            );
 
         if state.config_file_name != state.original_config_file_name {
             changes.push((
@@ -2198,12 +2233,12 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         }
         if state.reasoning != state.original_reasoning {
             let orig = if state.original_reasoning.is_empty() {
-                "Omit (Default)".to_string()
+                "Omit (Default)".to_owned()
             } else {
                 state.original_reasoning.clone()
             };
             let curr = if state.reasoning.is_empty() {
-                "Omit (Default)".to_string()
+                "Omit (Default)".to_owned()
             } else {
                 state.reasoning.clone()
             };
@@ -2211,12 +2246,12 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
         }
         if state.reasoning_format != state.original_reasoning_format {
             let orig = if state.original_reasoning_format.is_empty() {
-                "Omit (Default)".to_string()
+                "Omit (Default)".to_owned()
             } else {
                 state.original_reasoning_format.clone()
             };
             let curr = if state.reasoning_format.is_empty() {
-                "Omit (Default)".to_string()
+                "Omit (Default)".to_owned()
             } else {
                 state.reasoning_format.clone()
             };
@@ -2242,11 +2277,8 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
             let display_old = if old.is_empty() { "none" } else { &old };
             let display_new = if new.is_empty() { "none" } else { &new };
             text_lines.push(Line::from(vec![
-                Span::styled(format!("  • {}: ", label), Style::default().fg(theme.fg)),
-                Span::styled(
-                    display_old.to_string(),
-                    Style::default().fg(theme.secondary),
-                ),
+                Span::styled(format!("  • {label}: "), Style::default().fg(theme.fg)),
+                Span::styled(display_old.to_owned(), Style::default().fg(theme.secondary)),
                 Span::styled(
                     " -> ",
                     Style::default()
@@ -2254,7 +2286,7 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    display_new.to_string(),
+                    display_new.to_owned(),
                     Style::default()
                         .fg(theme.success)
                         .add_modifier(Modifier::BOLD),
@@ -2396,12 +2428,18 @@ fn render_dashboard(f: &mut Frame, state: &mut AppState, area: Rect) {
     }
 }
 
-fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
+fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
     let theme = &state.theme;
     let size = f.area();
     // Running logs viewer view
     let preset_name = if state.presets.is_empty() {
-        "None".to_string()
+        "None".to_owned()
     } else {
         state.presets[state.preset_index].0.clone()
     };
@@ -2412,11 +2450,11 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         .and_then(|v| v.as_str())
         .unwrap_or("127.0.0.1");
     let port = if let Some(ref _server) = state.active_server {
-        let mut p = "8080".to_string();
+        let mut p = "8080".to_owned();
         let mut idx = 0;
         while idx < state.last_launch_args.len() {
             if state.last_launch_args[idx] == "--port" && idx + 1 < state.last_launch_args.len() {
-                p = state.last_launch_args[idx + 1].clone();
+                p.clone_from(&state.last_launch_args[idx + 1]);
                 break;
             }
             idx += 1;
@@ -2427,13 +2465,11 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
             .global_config
             .get("port")
             .and_then(|v| {
-                if let Some(i) = v.as_i64() {
-                    Some(i.to_string())
-                } else {
-                    v.as_str().map(|s| s.to_string())
-                }
+                v.as_i64()
+                    .map(|i| i.to_string())
+                    .or_else(|| v.as_str().map(ToOwned::to_owned))
             })
-            .unwrap_or_else(|| "auto".to_string())
+            .unwrap_or_else(|| "auto".to_owned())
     };
 
     let status_span = if state.logs_paused {
@@ -2459,7 +2495,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
             } else {
                 "Server Mode: "
             },
-            "Router".to_string(),
+            "Router".to_owned(),
         )
     } else {
         (
@@ -2483,7 +2519,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
             ),
             Span::styled(" | URL: ", Style::default().fg(theme.secondary)),
             Span::styled(
-                format!("http://{}:{} ", host, port),
+                format!("http://{host}:{port} "),
                 Style::default().fg(theme.primary),
             ),
             Span::styled(" | ", Style::default().fg(theme.secondary)),
@@ -2493,14 +2529,14 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         Line::from(vec![
             Span::styled(label, Style::default().fg(theme.secondary)),
             Span::styled(
-                format!("{} ", display_name),
+                format!("{display_name} "),
                 Style::default()
                     .fg(theme.primary)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(" |  Address: ", Style::default().fg(theme.secondary)),
             Span::styled(
-                format!("http://{}:{} ", host, port),
+                format!("http://{host}:{port} "),
                 Style::default().fg(theme.primary),
             ),
             Span::styled(" |  Status: ", Style::default().fg(theme.secondary)),
@@ -2511,9 +2547,9 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
     let mut raw_logs = std::collections::VecDeque::new();
     if let Some(ref server) = state.active_server {
         if state.logs_paused {
-            raw_logs = state.paused_logs_buffer.clone();
+            raw_logs.clone_from(&state.paused_logs_buffer);
         } else if let Ok(l) = server.logs.lock() {
-            raw_logs = l.clone();
+            raw_logs.clone_from(&l);
         }
     }
 
@@ -2567,7 +2603,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
             server_metrics = m.clone();
         }
     } else {
-        server_metrics.status = "OFFLINE".to_string();
+        "OFFLINE".clone_into(&mut server_metrics.status);
     }
 
     let metrics_block = Block::default()
@@ -2611,8 +2647,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
             Span::styled(
                 server_metrics
                     .pid
-                    .map(|p| p.to_string())
-                    .unwrap_or_else(|| "N/A".to_string()),
+                    .map_or_else(|| "N/A".to_owned(), |p| p.to_string()),
                 Style::default().fg(theme.fg),
             ),
         ]),
@@ -2628,10 +2663,9 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
     let max_models_str = if server_metrics.is_router {
         server_metrics
             .max_models
-            .map(|m| m.to_string())
-            .unwrap_or_else(|| "1".to_string())
+            .map_or_else(|| "1".to_owned(), |m| m.to_string())
     } else {
-        "N/A".to_string()
+        "N/A".to_owned()
     };
     let col2_text = vec![
         Line::from(vec![
@@ -2654,8 +2688,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
     let active_model_str = server_metrics.active_model.as_deref().unwrap_or("None");
     let active_port_str = server_metrics
         .active_port
-        .map(|p| p.to_string())
-        .unwrap_or_else(|| "N/A".to_string());
+        .map_or_else(|| "N/A".to_owned(), |p| p.to_string());
     let active_model_truncated = truncate_middle(
         active_model_str,
         metrics_cols[2].width.saturating_sub(16) as usize,
@@ -2695,7 +2728,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         let bar = if bar_width > 0 {
             format!(" {}", get_vram_bar(Some((used, total)), bar_width))
         } else {
-            "".to_string()
+            String::new()
         };
         col4_text.push(Line::from(vec![
             Span::styled(" RAM:  ", Style::default().fg(theme.secondary)),
@@ -2726,7 +2759,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
         let bar = if bar_width > 0 {
             format!(" {}", get_vram_bar(Some((used, total)), bar_width))
         } else {
-            "".to_string()
+            String::new()
         };
         col4_text.push(Line::from(vec![
             Span::styled(" VRAM: ", Style::default().fg(theme.secondary)),
@@ -2763,7 +2796,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
     } as usize;
 
     // Compile logs styling and wrapping
-    let mut rendered_lines: Vec<Line> = Vec::new();
+    let mut rendered_lines: Vec<Line<'_>> = Vec::new();
     for line in &raw_logs {
         if state.logs_wrap {
             // Build a flat list of (char, style) to wrap at width boundaries
@@ -2778,7 +2811,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
                 rendered_lines.push(Line::from(""));
             } else {
                 for chunk in chars.chunks(width.max(1)) {
-                    let mut spans_out: Vec<Span> = Vec::new();
+                    let mut spans_out: Vec<Span<'_>> = Vec::new();
                     let mut cur_text = String::new();
                     let mut cur_style = chunk[0].1;
 
@@ -2799,7 +2832,7 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
                 }
             }
         } else {
-            let spans_out: Vec<Span> = line
+            let spans_out: Vec<Span<'_>> = line
                 .spans
                 .iter()
                 .map(|s| Span::styled(s.text.clone(), s.style))
@@ -2838,6 +2871,11 @@ fn render_logs(f: &mut Frame, state: &mut AppState, area: Rect) {
     f.render_widget(paragraph, running_layout[3]);
 }
 
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
 fn get_vram_bar(vram: Option<(u64, u64)>, bar_width: usize) -> String {
     let Some((used, total)) = vram else {
         return "-".repeat(bar_width);
@@ -2858,13 +2896,15 @@ fn get_vram_bar(vram: Option<(u64, u64)>, bar_width: usize) -> String {
     bar
 }
 
+/// Masks sensitive command-line arguments (like --api-key) for display.
+#[must_use]
 pub fn mask_sensitive_args(args: &[String]) -> String {
     let mut masked_args = Vec::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         masked_args.push(arg.clone());
         if arg == "--api-key" && iter.next().is_some() {
-            masked_args.push("[MASKED]".to_string());
+            masked_args.push("[MASKED]".to_owned());
         }
     }
     masked_args.join(" ")

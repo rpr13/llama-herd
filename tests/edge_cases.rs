@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -135,16 +145,7 @@ fn test_active_pid_tracking_file() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().to_path_buf();
 
-    let var_name = if cfg!(target_os = "windows") {
-        "APPDATA"
-    } else {
-        "HOME"
-    };
-    let original_val = std::env::var(var_name).ok();
-
-    unsafe {
-        std::env::set_var(var_name, &path);
-    }
+    llama_herd::config::set_llama_herd_dir_override(Some(path));
 
     // Check that we can add pids
     llama_herd::launcher::add_active_pid(12345);
@@ -172,16 +173,8 @@ fn test_active_pid_tracking_file() -> Result<(), Box<dyn std::error::Error>> {
     llama_herd::launcher::kill_existing_servers();
     assert!(!pids_file.exists());
 
-    // Restore environment
-    if let Some(val) = original_val {
-        unsafe {
-            std::env::set_var(var_name, val);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var(var_name);
-        }
-    }
+    // Restore environment override
+    llama_herd::config::set_llama_herd_dir_override(None);
 
     Ok(())
 }

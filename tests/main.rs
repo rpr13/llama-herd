@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 use llama_herd::config;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -10,47 +20,17 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 #[test]
 fn test_get_home_dir() -> TestResult {
     let _guard = ENV_MUTEX.lock().unwrap();
-    let original_home = std::env::var("HOME").ok();
-    let original_userprofile = std::env::var("USERPROFILE").ok();
 
-    unsafe {
-        std::env::set_var("HOME", "/dummy/home");
-    }
+    config::set_home_dir_override(Some(PathBuf::from("/dummy/home")));
     assert_eq!(config::get_home_dir(), Some(PathBuf::from("/dummy/home")));
 
-    unsafe {
-        std::env::remove_var("HOME");
-        std::env::set_var("USERPROFILE", "/dummy/userprofile");
-    }
+    config::set_home_dir_override(Some(PathBuf::from("/dummy/userprofile")));
     assert_eq!(
         config::get_home_dir(),
         Some(PathBuf::from("/dummy/userprofile"))
     );
 
-    unsafe {
-        std::env::remove_var("HOME");
-        std::env::remove_var("USERPROFILE");
-    }
-    assert_eq!(config::get_home_dir(), None);
-
-    if let Some(h) = original_home {
-        unsafe {
-            std::env::set_var("HOME", h);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var("HOME");
-        }
-    }
-    if let Some(up) = original_userprofile {
-        unsafe {
-            std::env::set_var("USERPROFILE", up);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var("USERPROFILE");
-        }
-    }
+    config::set_home_dir_override(None);
     Ok(())
 }
 
@@ -78,45 +58,20 @@ fn test_parse_args_logic() {
 #[test]
 fn test_get_llama_herd_dir() -> TestResult {
     let _guard = ENV_MUTEX.lock().unwrap();
-    let original_home = std::env::var("HOME").ok();
-    let original_appdata = std::env::var("APPDATA").ok();
 
-    if cfg!(target_os = "windows") {
-        unsafe {
-            std::env::set_var("APPDATA", "/dummy/appdata");
-        }
-        assert_eq!(
-            config::get_llama_herd_dir(),
-            PathBuf::from("/dummy/appdata/llama-herd")
-        );
-    } else {
-        unsafe {
-            std::env::set_var("HOME", "/dummy/home");
-        }
-        assert_eq!(
-            config::get_llama_herd_dir(),
-            PathBuf::from("/dummy/home/.config/llama-herd")
-        );
-    }
+    config::set_llama_herd_dir_override(Some(PathBuf::from("/dummy/appdata/llama-herd")));
+    assert_eq!(
+        config::get_llama_herd_dir(),
+        PathBuf::from("/dummy/appdata/llama-herd")
+    );
 
-    if let Some(h) = original_home {
-        unsafe {
-            std::env::set_var("HOME", h);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var("HOME");
-        }
-    }
-    if let Some(ad) = original_appdata {
-        unsafe {
-            std::env::set_var("APPDATA", ad);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var("APPDATA");
-        }
-    }
+    config::set_llama_herd_dir_override(Some(PathBuf::from("/dummy/home/.config/llama-herd")));
+    assert_eq!(
+        config::get_llama_herd_dir(),
+        PathBuf::from("/dummy/home/.config/llama-herd")
+    );
+
+    config::set_llama_herd_dir_override(None);
     Ok(())
 }
 

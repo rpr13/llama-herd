@@ -1,24 +1,44 @@
 pub use crate::config::discover_assets;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
+static MODEL_ID_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"([b-zB-Z])(\d+)([a-zA-Z])").expect("Static regex is valid")
+});
+static MULTIPLE_DASHES_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"-+").expect("Static regex is valid"));
+static VARIANT_SUFFIX_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"-([a-zA-Z0-9_]+)$").expect("Static regex is valid"));
+static SIZE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\b\d+(?:\.\d+)?(?:x\d+)?[bm]\b").expect("Static regex is valid")
+});
+static QUANT_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\b(?:q\d+(?:_?[k\d](?:_[sml])?)?|f16|fp16|bf16)\b")
+        .expect("Static regex is valid")
+});
+static SPLIT_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[-._\s]+").expect("Static regex is valid"));
+
+/// Normalizes a model path stem into a standard clean model ID string.
+#[must_use]
 pub fn clean_model_id(path: &Path) -> String {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     let with_hyphens = stem.replace('.', "-");
 
-    let re = regex::Regex::new(r"([b-zB-Z])(\d+)([a-zA-Z])").unwrap();
-    let formatted = re.replace_all(&with_hyphens, "$1-$2$3");
-
-    let re_multiple = regex::Regex::new(r"-+").unwrap();
-    re_multiple.replace_all(&formatted, "-").into_owned()
+    let formatted = MODEL_ID_RE.replace_all(&with_hyphens, "$1-$2$3");
+    MULTIPLE_DASHES_RE.replace_all(&formatted, "-").into_owned()
 }
 
+/// Inserts a suffix (like 'vision' or 'draft') into a model ID before its final segment.
+#[must_use]
 pub fn insert_variant_suffix(name: &str, suffix: &str) -> String {
-    let re = regex::Regex::new(r"-([a-zA-Z0-9_]+)$").unwrap();
-    let rep = format!("-{}-${{1}}", suffix);
-    re.replace(name, rep.as_str()).into_owned()
+    let rep = format!("-{suffix}-${{1}}");
+    VARIANT_SUFFIX_RE.replace(name, rep.as_str()).into_owned()
 }
 
+/// Finds the most compatible multimodal projector model (`mmproj`) for a given model.
+#[must_use]
 pub fn find_matching_mmproj(model_path: &Path, mmproj_files: &[PathBuf]) -> Option<PathBuf> {
     if mmproj_files.is_empty() {
         return None;
@@ -48,6 +68,8 @@ pub fn find_matching_mmproj(model_path: &Path, mmproj_files: &[PathBuf]) -> Opti
     None
 }
 
+/// Finds a compatible speculative draft model for a main model based on name token matching.
+#[must_use]
 pub fn find_matching_draft(model_path: &Path, draft_files: &[PathBuf]) -> Option<PathBuf> {
     let model_name_lower = model_path
         .file_stem()
@@ -56,12 +78,8 @@ pub fn find_matching_draft(model_path: &Path, draft_files: &[PathBuf]) -> Option
         .to_lowercase();
 
     let clean_tokens = |name: &str| -> Vec<String> {
-        let size_re = regex::Regex::new(r"\b\d+(?:\.\d+)?(?:x\d+)?[bm]\b").unwrap();
-        let quant_re =
-            regex::Regex::new(r"\b(?:q\d+(?:_?[k\d](?:_[sml])?)?|f16|fp16|bf16)\b").unwrap();
-
-        let cleaned_size = size_re.replace_all(name, " ");
-        let cleaned_quant = quant_re.replace_all(&cleaned_size, " ");
+        let cleaned_size = SIZE_RE.replace_all(name, " ");
+        let cleaned_quant = QUANT_RE.replace_all(&cleaned_size, " ");
 
         let ignore_tokens = [
             "assistant",
@@ -74,11 +92,10 @@ pub fn find_matching_draft(model_path: &Path, draft_files: &[PathBuf]) -> Option
             "vision",
         ];
 
-        let split_re = regex::Regex::new(r"[-._\s]+").unwrap();
-        split_re
+        SPLIT_RE
             .split(&cleaned_quant)
             .filter(|&t| !t.is_empty() && !ignore_tokens.contains(&t))
-            .map(|t| t.to_string())
+            .map(str::to_owned)
             .collect()
     };
 
@@ -99,6 +116,8 @@ pub fn find_matching_draft(model_path: &Path, draft_files: &[PathBuf]) -> Option
     None
 }
 
+/// Discovers active preset names and model file paths defined in a preset INI file.
+#[must_use]
 pub fn discover_presets_from_ini(preset_path: &Path) -> Vec<(String, PathBuf)> {
     if !preset_path.exists() {
         return Vec::new();
@@ -112,7 +131,7 @@ pub fn discover_presets_from_ini(preset_path: &Path) -> Vec<(String, PathBuf)> {
 
         for section in sorted_keys {
             if let Some(map) = sections.get(section) {
-                if map.get("is-draft").map(|v| v.as_str()) == Some("true") {
+                if map.get("is-draft").map(String::as_str) == Some("true") {
                     continue;
                 }
                 if let Some(model_val) = map.get("model") {
@@ -125,10 +144,16 @@ pub fn discover_presets_from_ini(preset_path: &Path) -> Vec<(String, PathBuf)> {
     Vec::new()
 }
 
-pub fn generate_presets_ini(
+/// Generates a `models-preset.ini` file dynamically by scanning the models directory.
+///
+/// # Errors
+///
+/// Returns an `std::io::Error` if the models directory cannot be read or if the output file cannot be written.
+#[allow(clippy::too_many_lines)]
+pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
     models_dir: &Path,
     output_path: &Path,
-    global_config: &HashMap<String, serde_json::Value>,
+    global_config: &HashMap<String, serde_json::Value, S>,
 ) -> Result<PathBuf, std::io::Error> {
     let mut all_ggufs = Vec::new();
     if let Ok(entries) = std::fs::read_dir(models_dir) {
@@ -179,8 +204,9 @@ pub fn generate_presets_ini(
             if stem.starts_with(&js_stem) {
                 let cfg = crate::config::load_toml_silent(js);
                 if let Some(lh) = cfg.get("llama-herd")
-                    && (lh.get("is-draft").and_then(|v| v.as_bool()) == Some(true)
-                        || lh.get("is-draft-only").and_then(|v| v.as_bool()) == Some(true))
+                    && (lh.get("is-draft").and_then(serde_json::Value::as_bool) == Some(true)
+                        || lh.get("is-draft-only").and_then(serde_json::Value::as_bool)
+                            == Some(true))
                 {
                     is_draft = true;
                 }
@@ -211,7 +237,7 @@ pub fn generate_presets_ini(
             if stem.starts_with(&js_stem) {
                 let cfg = crate::config::load_toml_silent(js);
                 if let Some(lh) = cfg.get("llama-herd")
-                    && lh.get("is-default").and_then(|v| v.as_bool()) == Some(true)
+                    && lh.get("is-default").and_then(serde_json::Value::as_bool) == Some(true)
                 {
                     default_candidates.push(model.clone());
                 }
@@ -223,20 +249,12 @@ pub fn generate_presets_ini(
     let designated_default = if !default_candidates.is_empty() {
         default_candidates
             .iter()
-            .min_by_key(|m| {
-                std::fs::metadata(m)
-                    .map(|meta| meta.len())
-                    .unwrap_or(u64::MAX)
-            })
+            .min_by_key(|m| std::fs::metadata(m).map_or(u64::MAX, |meta| meta.len()))
             .cloned()
     } else if !main_models.is_empty() {
         main_models
             .iter()
-            .min_by_key(|m| {
-                std::fs::metadata(m)
-                    .map(|meta| meta.len())
-                    .unwrap_or(u64::MAX)
-            })
+            .min_by_key(|m| std::fs::metadata(m).map_or(u64::MAX, |meta| meta.len()))
             .cloned()
     } else {
         None
@@ -260,12 +278,6 @@ pub fn generate_presets_ini(
     }
     mmproj_files.sort();
 
-    let _get_global_lh = |key: &str| -> Option<&serde_json::Value> {
-        global_config
-            .get("llama-herd")
-            .and_then(|lh| lh.get(key))
-            .or_else(|| global_config.get(key))
-    };
     let get_global_long = |key: &str| -> Option<&serde_json::Value> {
         global_config
             .get("llama-server-long")
@@ -286,48 +298,48 @@ pub fn generate_presets_ini(
         .unwrap_or("f16");
 
     let ctx_checkpoints = get_global_long("ctx-checkpoints").and_then(|v| {
-        if let Some(s) = v.as_str() {
-            s.parse::<i64>().ok()
-        } else if let Some(n) = v.as_u64() {
-            Some(n as i64)
-        } else {
-            v.as_i64()
-        }
+        v.as_str().map_or_else(
+            || {
+                #[allow(clippy::cast_possible_wrap)]
+                v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+            },
+            |s| s.parse::<i64>().ok(),
+        )
     });
 
     let checkpoint_min_step = get_global_long("checkpoint-min-step").and_then(|v| {
-        if let Some(s) = v.as_str() {
-            s.parse::<i64>().ok()
-        } else if let Some(n) = v.as_u64() {
-            Some(n as i64)
-        } else {
-            v.as_i64()
-        }
+        v.as_str().map_or_else(
+            || {
+                #[allow(clippy::cast_possible_wrap)]
+                v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+            },
+            |s| s.parse::<i64>().ok(),
+        )
     });
 
     let no_mmap = get_global_long("no-mmap")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
     let mut lines = Vec::new();
-    lines.push("version = 1".to_string());
-    lines.push("; Global settings shared across all presets".to_string());
-    lines.push("[*]".to_string());
-    lines.push("flash-attn = auto".to_string());
-    lines.push("jinja = true".to_string());
-    lines.push(format!("cache-type-k = {}", cache_type_k));
-    lines.push(format!("cache-type-v = {}", cache_type_v));
-    lines.push("kv-unified = true".to_string());
+    lines.push("version = 1".to_owned());
+    lines.push("; Global settings shared across all presets".to_owned());
+    lines.push("[*]".to_owned());
+    lines.push("flash-attn = auto".to_owned());
+    lines.push("jinja = true".to_owned());
+    lines.push(format!("cache-type-k = {cache_type_k}"));
+    lines.push(format!("cache-type-v = {cache_type_v}"));
+    lines.push("kv-unified = true".to_owned());
     if let Some(checkpoints) = ctx_checkpoints {
-        lines.push(format!("ctx-checkpoints = {}", checkpoints));
+        lines.push(format!("ctx-checkpoints = {checkpoints}"));
     }
     if let Some(step) = checkpoint_min_step {
-        lines.push(format!("checkpoint-min-step = {}", step));
+        lines.push(format!("checkpoint-min-step = {step}"));
     }
     if no_mmap {
-        lines.push("no-mmap = true".to_string());
+        lines.push("no-mmap = true".to_owned());
     }
-    lines.push("".to_string());
+    lines.push(String::new());
 
     let mut default_preset_lines = Vec::new();
 
@@ -347,39 +359,37 @@ pub fn generate_presets_ini(
                 .or_else(|| assets.config.get(key))
         };
 
+        let default_ctx_val = serde_json::Value::String("131072".to_owned());
         let ctx_val = get_lh_val("ctx-size")
             .or_else(|| get_long_val("ctx-size"))
-            .unwrap_or(&serde_json::Value::String("131072".to_string()))
+            .unwrap_or(&default_ctx_val)
             .clone();
-        let ctx_size = crate::config::parse_ctx(&ctx_val).unwrap_or(131072);
+        let ctx_size = crate::config::parse_ctx(&ctx_val).unwrap_or(131_072);
 
         let mut ngl = get_lh_val("ngl")
             .or_else(|| get_long_val("ngl"))
             .and_then(|v| {
-                if let Some(s) = v.as_str() {
-                    Some(s.to_string())
-                } else {
-                    v.as_i64().map(|i| i.to_string())
-                }
+                v.as_str()
+                    .map_or_else(|| v.as_i64().map(|i| i.to_string()), |s| Some(s.to_owned()))
             })
-            .unwrap_or_else(|| "auto".to_string());
+            .unwrap_or_else(|| "auto".to_owned());
         if ngl == "auto"
-            && let Some(total) = get_lh_val("total-layers").and_then(|v| v.as_u64())
+            && let Some(total) = get_lh_val("total-layers").and_then(serde_json::Value::as_u64)
         {
             ngl = total.to_string();
         }
 
         let temp = get_lh_val("temp")
             .or_else(|| get_long_val("temp"))
-            .and_then(|v| v.as_f64())
+            .and_then(serde_json::Value::as_f64)
             .unwrap_or(0.8);
         let top_p = get_lh_val("top-p")
             .or_else(|| get_long_val("top-p"))
-            .and_then(|v| v.as_f64())
+            .and_then(serde_json::Value::as_f64)
             .unwrap_or(0.95);
         let top_k = get_lh_val("top-k")
             .or_else(|| get_long_val("top-k"))
-            .and_then(|v| v.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or(40);
         let reasoning = get_lh_val("reasoning")
             .or_else(|| get_long_val("reasoning"))
@@ -389,30 +399,30 @@ pub fn generate_presets_ini(
         let model_ctx_checkpoints = get_lh_val("ctx-checkpoints")
             .or_else(|| get_long_val("ctx-checkpoints"))
             .and_then(|v| {
-                if let Some(s) = v.as_str() {
-                    s.parse::<i64>().ok()
-                } else if let Some(n) = v.as_u64() {
-                    Some(n as i64)
-                } else {
-                    v.as_i64()
-                }
+                v.as_str().map_or_else(
+                    || {
+                        #[allow(clippy::cast_possible_wrap)]
+                        v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                    },
+                    |s| s.parse::<i64>().ok(),
+                )
             });
 
         let model_checkpoint_min_step = get_lh_val("checkpoint-min-step")
             .or_else(|| get_long_val("checkpoint-min-step"))
             .and_then(|v| {
-                if let Some(s) = v.as_str() {
-                    s.parse::<i64>().ok()
-                } else if let Some(n) = v.as_u64() {
-                    Some(n as i64)
-                } else {
-                    v.as_i64()
-                }
+                v.as_str().map_or_else(
+                    || {
+                        #[allow(clippy::cast_possible_wrap)]
+                        v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                    },
+                    |s| s.parse::<i64>().ok(),
+                )
             });
 
         let model_no_mmap = get_lh_val("no-mmap")
             .or_else(|| get_long_val("no-mmap"))
-            .and_then(|v| v.as_bool());
+            .and_then(serde_json::Value::as_bool);
 
         let mut mmproj_file = None;
         if let Some(mmproj_cfg) = get_lh_val("mmproj")
@@ -478,8 +488,8 @@ pub fn generate_presets_ini(
 
         for (preset_name, use_draft, use_vision) in presets_to_generate {
             let mut current_preset = Vec::new();
-            current_preset.push(format!("; --- {} ---", preset_name));
-            current_preset.push(format!("[{}]", preset_name));
+            current_preset.push(format!("; --- {preset_name} ---"));
+            current_preset.push(format!("[{preset_name}]"));
             current_preset.push(format!(
                 "model = {}",
                 model_path.to_string_lossy().replace('\\', "/")
@@ -492,26 +502,26 @@ pub fn generate_presets_ini(
                 ));
             }
 
-            current_preset.push(format!("ctx-size = {}", ctx_size));
-            current_preset.push(format!("n-gpu-layers = {}", ngl));
-            current_preset.push(format!("temp = {}", temp));
-            current_preset.push(format!("top-p = {}", top_p));
-            current_preset.push(format!("top-k = {}", top_k));
+            current_preset.push(format!("ctx-size = {ctx_size}"));
+            current_preset.push(format!("n-gpu-layers = {ngl}"));
+            current_preset.push(format!("temp = {temp}"));
+            current_preset.push(format!("top-p = {top_p}"));
+            current_preset.push(format!("top-k = {top_k}"));
 
             if let Some(checkpoints) = model_ctx_checkpoints {
-                current_preset.push(format!("ctx-checkpoints = {}", checkpoints));
+                current_preset.push(format!("ctx-checkpoints = {checkpoints}"));
             }
             if let Some(step) = model_checkpoint_min_step {
-                current_preset.push(format!("checkpoint-min-step = {}", step));
+                current_preset.push(format!("checkpoint-min-step = {step}"));
             }
             if let Some(mmap) = model_no_mmap {
-                current_preset.push(format!("no-mmap = {}", mmap));
+                current_preset.push(format!("no-mmap = {mmap}"));
             }
 
             if reasoning != "auto" {
-                current_preset.push(format!("reasoning = {}", reasoning));
+                current_preset.push(format!("reasoning = {reasoning}"));
                 if reasoning == "on" {
-                    current_preset.push("reasoning-format = deepseek".to_string());
+                    current_preset.push("reasoning-format = deepseek".to_owned());
                 }
             }
 
@@ -523,23 +533,19 @@ pub fn generate_presets_ini(
                     }
                     let ini_key = k;
                     if let Some(s) = val.as_str() {
-                        current_preset.push(format!("{} = {}", ini_key, s));
+                        current_preset.push(format!("{ini_key} = {s}"));
                     } else if let Some(b) = val.as_bool() {
-                        current_preset.push(format!("{} = {}", ini_key, b));
+                        current_preset.push(format!("{ini_key} = {b}"));
                     } else if let Some(n) = val.as_i64() {
-                        current_preset.push(format!("{} = {}", ini_key, n));
+                        current_preset.push(format!("{ini_key} = {n}"));
                     } else if let Some(f) = val.as_f64() {
-                        current_preset.push(format!("{} = {}", ini_key, f));
+                        current_preset.push(format!("{ini_key} = {f}"));
                     } else if let Some(arr) = val.as_array() {
                         let items: Vec<String> = arr
                             .iter()
-                            .map(|v| {
-                                v.as_str()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_else(|| v.to_string())
-                            })
+                            .map(|v| v.as_str().map_or_else(|| v.to_string(), ToOwned::to_owned))
                             .collect();
-                        current_preset.push(format!("{} = {}", ini_key, items.join(",")));
+                        current_preset.push(format!("{ini_key} = {}", items.join(",")));
                     }
                 };
 
@@ -580,13 +586,13 @@ pub fn generate_presets_ini(
                     }
                     let val = &short_obj[k];
                     if let Some(s) = val.as_str() {
-                        current_preset.push(format!("{} = {}", k, s));
+                        current_preset.push(format!("{k} = {s}"));
                     } else if let Some(b) = val.as_bool() {
-                        current_preset.push(format!("{} = {}", k, b));
+                        current_preset.push(format!("{k} = {b}"));
                     } else if let Some(n) = val.as_i64() {
-                        current_preset.push(format!("{} = {}", k, n));
+                        current_preset.push(format!("{k} = {n}"));
                     } else if let Some(f) = val.as_f64() {
-                        current_preset.push(format!("{} = {}", k, f));
+                        current_preset.push(format!("{k} = {f}"));
                     }
                 }
             }
@@ -617,9 +623,6 @@ pub fn generate_presets_ini(
                     }
                 }
 
-                let get_draft_lh = |key: &str| -> Option<&serde_json::Value> {
-                    draft_config.get("llama-herd").and_then(|lh| lh.get(key))
-                };
                 let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
                     draft_config
                         .get("llama-server-long")
@@ -635,32 +638,34 @@ pub fn generate_presets_ini(
                 }
 
                 let spec_draft_n_max = get_draft_long("spec-draft-n-max")
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(4);
                 let spec_draft_p_min = get_draft_long("spec-draft-p-min")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.0);
-                let d_ngl = get_draft_lh("total-layers")
+                let d_ngl = draft_config
+                    .get("llama-herd")
+                    .and_then(|lh| lh.get("total-layers"))
                     .or_else(|| get_draft_long("total-layers"))
-                    .and_then(|v| v.as_u64())
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or(4);
 
                 current_preset.push(format!(
                     "model-draft = {}",
                     df.to_string_lossy().replace('\\', "/")
                 ));
-                current_preset.push(format!("spec-type = {}", spec_type));
-                current_preset.push(format!("spec-draft-n-max = {}", spec_draft_n_max));
-                current_preset.push(format!("spec-draft-p-min = {}", spec_draft_p_min));
-                current_preset.push(format!("gpu-layers-draft = {}", d_ngl));
+                current_preset.push(format!("spec-type = {spec_type}"));
+                current_preset.push(format!("spec-draft-n-max = {spec_draft_n_max}"));
+                current_preset.push(format!("spec-draft-p-min = {spec_draft_p_min}"));
+                current_preset.push(format!("gpu-layers-draft = {d_ngl}"));
             }
 
-            current_preset.push("".to_string());
+            current_preset.push(String::new());
 
             if is_default && preset_name == clean_name {
                 default_preset_lines = current_preset
                     .iter()
-                    .map(|line| line.replace(&format!("[{}]", clean_name), "[default]"))
+                    .map(|line| line.replace(&format!("[{clean_name}]"), "[default]"))
                     .collect();
             }
 

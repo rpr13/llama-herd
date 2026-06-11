@@ -1,7 +1,19 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::manual_let_else,
+    clippy::option_if_let_else,
+    clippy::assigning_clones,
+    clippy::missing_errors_doc
+)]
+/// Application state and logic.
 pub mod app;
+/// Server logging and process management.
 pub mod logs;
+/// File and directory picker components.
 pub mod picker;
+/// Application themes and colors.
 pub mod theme;
+/// User interface layout drawing.
 pub mod ui;
 
 use crossterm::{
@@ -17,13 +29,24 @@ use std::time::Duration;
 pub use app::{AppScreen, AppState, DashboardFocus};
 pub use logs::ActiveServer;
 
+/// Events handled by the TUI event loop.
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
+    /// Keyboard input event.
     Input(KeyEvent),
+    /// Periodic tick event for background processes.
     Tick,
+    /// Log line received event.
     LogReceived,
 }
 
+/// Handles TUI keyboard events and updates the application state.
+#[allow(
+    clippy::too_many_lines,
+    clippy::manual_let_else,
+    clippy::option_if_let_else,
+    clippy::assigning_clones
+)]
 pub fn handle_key_event(
     state: &mut AppState,
     key: KeyEvent,
@@ -127,7 +150,10 @@ pub fn handle_key_event(
             KeyCode::Char('f') => {
                 state.screen = AppScreen::EditingConfigFileName;
                 state.input_buffer = state.config_file_name.clone();
-                if !state.presets.is_empty() {
+                if state.presets.is_empty() {
+                    state.similar_config_files.clear();
+                    state.similar_config_index = None;
+                } else {
                     let (_, model_path) = &state.presets[state.preset_index];
                     state.similar_config_files =
                         crate::config::find_similar_config_files(model_path, &state.models_dir);
@@ -135,9 +161,6 @@ pub fn handle_key_event(
                         .similar_config_files
                         .iter()
                         .position(|f| f == &state.input_buffer);
-                } else {
-                    state.similar_config_files.clear();
-                    state.similar_config_index = None;
                 }
             }
             KeyCode::Char('m') => {
@@ -230,10 +253,10 @@ pub fn handle_key_event(
                         if let Some(i) = v.as_i64() {
                             Some(i.to_string())
                         } else {
-                            v.as_str().map(|s| s.to_string())
+                            v.as_str().map(ToOwned::to_owned)
                         }
                     })
-                    .unwrap_or_else(|| "auto".to_string());
+                    .unwrap_or_else(|| "auto".to_owned());
                 let resolved_port = match crate::launcher::resolve_port(&port_str) {
                     Ok(p) => p,
                     Err(_) => return false,
@@ -277,7 +300,10 @@ pub fn handle_key_event(
                         0 => {
                             state.screen = AppScreen::EditingConfigFileName;
                             state.input_buffer = state.config_file_name.clone();
-                            if !state.presets.is_empty() {
+                            if state.presets.is_empty() {
+                                state.similar_config_files.clear();
+                                state.similar_config_index = None;
+                            } else {
                                 let (_, model_path) = &state.presets[state.preset_index];
                                 state.similar_config_files =
                                     crate::config::find_similar_config_files(
@@ -288,9 +314,6 @@ pub fn handle_key_event(
                                     .similar_config_files
                                     .iter()
                                     .position(|f| f == &state.input_buffer);
-                            } else {
-                                state.similar_config_files.clear();
-                                state.similar_config_index = None;
                             }
                         }
                         1 => {
@@ -375,10 +398,10 @@ pub fn handle_key_event(
                             if let Some(i) = v.as_i64() {
                                 Some(i.to_string())
                             } else {
-                                v.as_str().map(|s| s.to_string())
+                                v.as_str().map(ToOwned::to_owned)
                             }
                         })
-                        .unwrap_or_else(|| "auto".to_string());
+                        .unwrap_or_else(|| "auto".to_owned());
                     let resolved_port = match crate::launcher::resolve_port(&port_str) {
                         Ok(p) => p,
                         Err(_) => return false,
@@ -424,16 +447,16 @@ pub fn handle_key_event(
         AppScreen::Settings => match key.code {
             KeyCode::Up => {
                 if state.settings_index == 0 {
-                    state.settings_index = crate::tui::ui::SETTINGS.len() - 1;
+                    state.settings_index = ui::SETTINGS.len() - 1;
                 } else {
                     state.settings_index -= 1;
                 }
             }
             KeyCode::Down => {
-                state.settings_index = (state.settings_index + 1) % crate::tui::ui::SETTINGS.len();
+                state.settings_index = (state.settings_index + 1) % ui::SETTINGS.len();
             }
             KeyCode::Enter => {
-                let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                let selected_item = &ui::SETTINGS[state.settings_index];
                 match selected_item.key {
                     "llama-server" => {
                         state.screen = AppScreen::PickingServerPath;
@@ -443,12 +466,11 @@ pub fn handle_key_event(
                             state
                                 .server_exe
                                 .parent()
-                                .map(|p| p.to_path_buf())
-                                .unwrap_or_else(|| PathBuf::from("."))
+                                .map_or_else(|| PathBuf::from("."), std::path::Path::to_path_buf)
                         };
-                        state.picker = Some(crate::tui::picker::FilePicker::new(
+                        state.picker = Some(picker::FilePicker::new(
                             initial_path,
-                            crate::tui::picker::PickerMode::File,
+                            picker::PickerMode::File,
                         ));
                     }
                     "models-dir" => {
@@ -458,9 +480,9 @@ pub fn handle_key_event(
                         } else {
                             state.models_dir.clone()
                         };
-                        state.picker = Some(crate::tui::picker::FilePicker::new(
+                        state.picker = Some(picker::FilePicker::new(
                             initial_path,
-                            crate::tui::picker::PickerMode::Directory,
+                            picker::PickerMode::Directory,
                         ));
                     }
                     "flash-attn" | "cache-type-k" | "cache-type-v" | "log-verbosity" | "numa"
@@ -468,45 +490,45 @@ pub fn handle_key_event(
                         // Option selectors for flash-attn, cache-type-k, cache-type-v, log-verbosity, numa, split-mode
                         let option_list = match selected_item.key {
                             "flash-attn" => vec![
-                                "auto".to_string(),
-                                "1".to_string(),
-                                "0".to_string(),
-                                "(Custom / Manual...)".to_string(),
+                                "auto".to_owned(),
+                                "1".to_owned(),
+                                "0".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
                             ],
                             "log-verbosity" => vec![
-                                "0".to_string(),
-                                "1".to_string(),
-                                "2".to_string(),
-                                "3".to_string(),
-                                "4".to_string(),
-                                "5".to_string(),
-                                "(Custom / Manual...)".to_string(),
+                                "0".to_owned(),
+                                "1".to_owned(),
+                                "2".to_owned(),
+                                "3".to_owned(),
+                                "4".to_owned(),
+                                "5".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
                             ],
                             "numa" => vec![
-                                "none".to_string(),
-                                "distribute".to_string(),
-                                "isolate".to_string(),
-                                "numactl".to_string(),
-                                "(Custom / Manual...)".to_string(),
+                                "none".to_owned(),
+                                "distribute".to_owned(),
+                                "isolate".to_owned(),
+                                "numactl".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
                             ],
                             "split-mode" => vec![
-                                "layer".to_string(),
-                                "none".to_string(),
-                                "row".to_string(),
-                                "tensor".to_string(),
-                                "(Custom / Manual...)".to_string(),
+                                "layer".to_owned(),
+                                "none".to_owned(),
+                                "row".to_owned(),
+                                "tensor".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
                             ],
                             _ => vec![
-                                "f16".to_string(),
-                                "q8_0".to_string(),
-                                "q4_0".to_string(),
-                                "q4_1".to_string(),
-                                "iq4_nl".to_string(),
-                                "q5_0".to_string(),
-                                "q5_1".to_string(),
-                                "f32".to_string(),
-                                "bf16".to_string(),
-                                "(Custom / Manual...)".to_string(),
+                                "f16".to_owned(),
+                                "q8_0".to_owned(),
+                                "q4_0".to_owned(),
+                                "q4_1".to_owned(),
+                                "iq4_nl".to_owned(),
+                                "q5_0".to_owned(),
+                                "q5_1".to_owned(),
+                                "f32".to_owned(),
+                                "bf16".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
                             ],
                         };
                         let val_str = crate::config::get_global_config_string(
@@ -544,7 +566,7 @@ pub fn handle_key_event(
                                     .and_then(|lh| lh.get(selected_item.key))
                             })
                             .or_else(|| state.global_config.get(selected_item.key))
-                            .and_then(|v| v.as_bool())
+                            .and_then(serde_json::Value::as_bool)
                             .unwrap_or(default_val);
                         let next_val = !current_val;
                         if next_val == default_val {
@@ -585,13 +607,13 @@ pub fn handle_key_event(
                         state.server_exe = path.clone();
                         state.server_version = crate::launcher::get_server_version(&path);
                         state.global_config.insert(
-                            "llama-server".to_string(),
+                            "llama-server".to_owned(),
                             serde_json::Value::String(path.to_string_lossy().to_string()),
                         );
                     } else {
                         state.models_dir = path.clone();
                         state.global_config.insert(
-                            "models-dir".to_string(),
+                            "models-dir".to_owned(),
                             serde_json::Value::String(path.to_string_lossy().to_string()),
                         );
                         // Refresh presets list when models dir changes
@@ -603,7 +625,7 @@ pub fn handle_key_event(
                         state.presets =
                             crate::discovery::discover_presets_from_ini(&state.preset_path);
                         state.preset_index = 0;
-                        let new_state = crate::tui::app::get_models_dir_state(&state.models_dir);
+                        let new_state = app::get_models_dir_state(&state.models_dir);
                         state.last_models_dir_state = new_state.clone();
                         state.last_stable_models_dir_state = new_state;
                         state.load_current_preset_settings(None);
@@ -643,7 +665,7 @@ pub fn handle_key_event(
             KeyCode::Enter => {
                 match state.screen {
                     AppScreen::EditingCtx => {
-                        let val = state.input_buffer.trim().to_string();
+                        let val = state.input_buffer.trim().to_owned();
                         if let Ok(parsed) = crate::config::parse_ctx_str(&val) {
                             state.ctx_str = val;
                             state.ctx = parsed;
@@ -651,23 +673,23 @@ pub fn handle_key_event(
                         }
                     }
                     AppScreen::EditingNgl => {
-                        state.ngl = state.input_buffer.trim().to_string();
+                        state.ngl = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingDraftNgl => {
-                        state.draft_ngl = state.input_buffer.trim().to_string();
+                        state.draft_ngl = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingTemp => {
-                        state.temp = state.input_buffer.trim().to_string();
+                        state.temp = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingTopP => {
-                        state.top_p = state.input_buffer.trim().to_string();
+                        state.top_p = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingTopK => {
-                        state.top_k = state.input_buffer.trim().to_string();
+                        state.top_k = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingTotalLayers => {
@@ -680,28 +702,28 @@ pub fn handle_key_event(
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingConfigFileName => {
-                        state.config_file_name = state.input_buffer.trim().to_string();
+                        state.config_file_name = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingMinP => {
-                        state.min_p = state.input_buffer.trim().to_string();
+                        state.min_p = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingRepeatPenalty => {
-                        state.repeat_penalty = state.input_buffer.trim().to_string();
+                        state.repeat_penalty = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingRepeatLastN => {
-                        state.repeat_last_n = state.input_buffer.trim().to_string();
+                        state.repeat_last_n = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingReasoningBudget => {
-                        state.reasoning_budget = state.input_buffer.trim().to_string();
+                        state.reasoning_budget = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingGlobalSetting => {
-                        let val_str = state.input_buffer.trim().to_string();
-                        let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                        let val_str = state.input_buffer.trim().to_owned();
+                        let selected_item = &ui::SETTINGS[state.settings_index];
                         let key_to_update = selected_item.key;
 
                         if val_str == selected_item.default_val {
@@ -834,7 +856,7 @@ pub fn handle_key_event(
             }
             KeyCode::Enter => {
                 let selected_opt = state.option_selector_list[state.option_selector_index].clone();
-                let selected_item = &crate::tui::ui::SETTINGS[state.settings_index];
+                let selected_item = &ui::SETTINGS[state.settings_index];
                 let key_to_update = selected_item.key;
 
                 if selected_opt == "(Custom / Manual...)" {
@@ -915,9 +937,9 @@ pub fn handle_key_event(
             }
             KeyCode::Enter => {
                 if state.draft_list[state.draft_index].is_none() {
-                    state.draft_ngl = "".to_string();
+                    state.draft_ngl = String::new();
                 } else if state.draft_ngl.is_empty() {
-                    state.draft_ngl = "auto".to_string();
+                    state.draft_ngl = "auto".to_owned();
                 }
                 state.screen = AppScreen::Dashboard;
             }
@@ -981,11 +1003,11 @@ pub fn handle_key_event(
             _ => {}
         },
         AppScreen::WarnDiscardChanges => match key.code {
-            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+            KeyCode::Esc | KeyCode::Char('n' | 'N') => {
                 state.pending_preset_index = None;
                 state.screen = AppScreen::Dashboard;
             }
-            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+            KeyCode::Enter | KeyCode::Char('y' | 'Y') => {
                 if let Some(target) = state.pending_preset_index.take() {
                     state.preset_index = target;
                     state.load_current_preset_settings(None);
@@ -1053,7 +1075,7 @@ pub fn handle_key_event(
                     && let Ok(hist) = server.raw_history.lock()
                 {
                     let total_len: usize =
-                        hist.iter().map(|s| s.len()).sum::<usize>() + hist.len().saturating_sub(1);
+                        hist.iter().map(String::len).sum::<usize>() + hist.len().saturating_sub(1);
                     let mut full_text = String::with_capacity(total_len);
                     for (i, s) in hist.iter().enumerate() {
                         if i > 0 {
@@ -1115,6 +1137,10 @@ pub fn handle_key_event(
     should_quit
 }
 
+/// Starts the TUI event loop and renders the dashboard.
+///
+/// # Errors
+/// Returns an `io::Result` if terminal setup or the event loop fails.
 pub fn run_tui(mut state: AppState) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -1129,8 +1155,8 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
         let event_tx = event_tx.clone();
         std::thread::spawn(move || {
             loop {
-                if let Ok(true) = crossterm::event::poll(Duration::from_millis(100)) {
-                    match crossterm::event::read() {
+                if matches!(event::poll(Duration::from_millis(100)), Ok(true)) {
+                    match event::read() {
                         Ok(Event::Key(key))
                             if key.kind == event::KeyEventKind::Press
                                 && event_tx.send(TuiEvent::Input(key)).is_err() =>

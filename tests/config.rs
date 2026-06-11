@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 use llama_herd::config::{
     calculate_ngl, format_arg_name, format_ini_key, get_global_config_string, get_optimal_threads,
     is_restricted_key, load_settings_from_ini, load_toml_safe, load_toml_silent, parse_ctx,

@@ -1,0 +1,13 @@
+[alias]
+# Convenient shortcuts for standard validation
+check-all = "clippy --all-targets --all-features"
+test-all = "test --all-targets --all-features"
+fmt-check = "fmt --all -- --check"
+
+[target.x86_64-unknown-linux-gnu]
+# Use lld linker on Linux for faster rebuilds
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[target.x86_64-pc-windows-msvc]
+# Use lld-link on Windows for faster rebuilds
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]

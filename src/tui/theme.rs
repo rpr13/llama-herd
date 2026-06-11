@@ -3,48 +3,78 @@ use ratatui::widgets::BorderType;
 use serde::Deserialize;
 use std::path::Path;
 
+/// The resolved application theme with parsed terminal colors and styles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
+    /// Color for primary highlights.
     pub primary: Color,
+    /// Color for secondary elements.
     pub secondary: Color,
+    /// Color for accents/warnings.
     pub accent: Color,
+    /// Color for success indicators.
     pub success: Color,
+    /// Color for error indicators.
     pub error: Color,
+    /// Color for selection highlights.
     pub selection: Color,
+    /// Background color.
     pub bg: Color,
+    /// Foreground color.
     pub fg: Color,
+    /// Background color for the headers.
     pub header_bg: Color,
+    /// Background color for the footers.
     pub footer_bg: Color,
+    /// Flag indicating whether to show emojis in the UI.
     pub show_emojis: bool,
+    /// Border style type.
     pub border_type: BorderType,
 }
 
-#[derive(Deserialize, Default)]
+/// Parsed raw configuration for styling the TUI application.
+#[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub struct ThemeConfig {
+    /// Optional color palette configuration.
     pub palette: Option<PaletteConfig>,
+    /// Optional UI layout config (emojis, borders).
     pub ui: Option<UiConfig>,
 }
 
-#[derive(Deserialize)]
+/// Color palette options defined in the theme TOML file.
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub struct PaletteConfig {
+    /// Primary highlight color string.
     pub primary: Option<String>,
+    /// Secondary elements color string.
     pub secondary: Option<String>,
+    /// Accent color string.
     pub accent: Option<String>,
+    /// Success indicator color string.
     pub success: Option<String>,
+    /// Error indicator color string.
     pub error: Option<String>,
+    /// Selection highlight color string.
     pub selection: Option<String>,
+    /// Background color string.
     pub bg: Option<String>,
+    /// Foreground color string.
     pub fg: Option<String>,
+    /// Header panel background color string.
     pub header_bg: Option<String>,
+    /// Footer panel background color string.
     pub footer_bg: Option<String>,
 }
 
-#[derive(Deserialize)]
+/// General UI aesthetic preferences defined in the theme TOML file.
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub struct UiConfig {
+    /// Flag indicating whether emojis should be displayed.
     pub show_emojis: Option<bool>,
+    /// Border type name.
     pub border_type: Option<String>,
 }
 
@@ -68,6 +98,8 @@ impl Default for Theme {
 }
 
 impl Theme {
+    /// Loads a theme TOML file, falling back to default theme on error.
+    #[must_use]
     pub fn load(path: &Path) -> Self {
         if let Ok(content) = std::fs::read_to_string(path) {
             match toml::from_str::<ThemeConfig>(&content) {
@@ -84,6 +116,7 @@ impl Theme {
         Self::default()
     }
 
+    /// Converts parsed raw configuration into resolved terminal colors and styles.
     pub fn from_config(config: ThemeConfig) -> Self {
         let mut theme = Self::default();
 
@@ -181,7 +214,7 @@ fn parse_color(s: &str) -> Option<Color> {
                     Some(Color::Rgb(r, g, b))
                 }
                 _ => {
-                    eprintln!("Warning: Unknown color format '{}'", s);
+                    eprintln!("Warning: Unknown color format '{s}'");
                     None
                 }
             }
@@ -191,13 +224,12 @@ fn parse_color(s: &str) -> Option<Color> {
 
 fn parse_border(s: &str) -> Option<BorderType> {
     match s.to_lowercase().as_str() {
-        "plain" => Some(BorderType::Plain),
+        "plain" | "none" => Some(BorderType::Plain),
         "rounded" => Some(BorderType::Rounded),
         "thick" => Some(BorderType::Thick),
         "double" => Some(BorderType::Double),
-        "none" => Some(BorderType::Plain),
         _ => {
-            eprintln!("Warning: Unknown border type '{}'", s);
+            eprintln!("Warning: Unknown border type '{s}'");
             None
         }
     }
@@ -269,7 +301,7 @@ mod tests {
             show-emojis = false
             border-type = "rounded"
         "#;
-        let config: ThemeConfig = toml::from_str(toml_str).unwrap();
+        let config: ThemeConfig = toml::from_str(toml_str).expect("Failed to parse valid TOML");
         let theme = Theme::from_config(config);
         assert!(!theme.show_emojis);
         assert_eq!(theme.border_type, BorderType::Rounded);
@@ -277,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_theme_load_valid_and_invalid() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("Failed to create temp directory");
         let valid_path = dir.path().join("theme_valid.toml");
         let malformed_path = dir.path().join("theme_malformed.toml");
         let missing_path = dir.path().join("missing.toml");
@@ -302,9 +334,10 @@ mod tests {
             border-type = "double"
         "#,
         )
-        .unwrap();
+        .expect("Failed to write valid theme file");
 
-        fs::write(&malformed_path, "invalid toml syntax").unwrap();
+        fs::write(&malformed_path, "invalid toml syntax")
+            .expect("Failed to write malformed theme file");
 
         let theme_valid = Theme::load(&valid_path);
         assert_eq!(theme_valid.primary, Color::Cyan);

@@ -1,3 +1,13 @@
+#![allow(
+    missing_docs,
+    unused_qualifications,
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::restriction
+)]
+
 use llama_herd::tui::logs::{apply_sgr, parse_ansi_line};
 use ratatui::style::{Color, Modifier, Style};
 
