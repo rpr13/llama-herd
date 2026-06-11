@@ -1,6 +1,6 @@
 [package]
 name = "llama-herd"
-version = "1.0.12"
+version = "1.0.13"
 keywords = ["llama", "tui", "cli", "llama-server", "orchestrator"]
 categories = ["command-line-utilities", "development-tools"]
 edition = "2024"
