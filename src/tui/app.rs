@@ -56,6 +56,22 @@ pub enum AppScreen {
     SelectingReasoning,
     /// Editing reasoning budget parameter input mode.
     EditingReasoningBudget,
+    /// Selecting speculative type dropdown mode.
+    SelectingSpecType,
+    /// Editing DRY sampling multiplier.
+    EditingDryMultiplier,
+    /// Editing DRY sampling base.
+    EditingDryBase,
+    /// Editing DRY sampling allowed length.
+    EditingDryAllowedLength,
+    /// Editing DRY sampling penalty last N.
+    EditingDryPenaltyLastN,
+    /// Editing DRY sampling sequence breaker.
+    EditingDrySequenceBreaker,
+    /// Editing speculative draft max tokens (spec-draft-n-max).
+    EditingSpecDraftNMax,
+    /// Editing speculative draft min probability (spec-draft-p-min).
+    EditingSpecDraftPMin,
 }
 
 /// The focus panels on the TUI dashboard tab.
@@ -206,12 +222,28 @@ pub struct AppState {
     pub repeat_penalty: String,
     /// Override repeat last N tokens.
     pub repeat_last_n: String,
+    /// DRY sampling multiplier.
+    pub dry_multiplier: String,
+    /// DRY sampling base.
+    pub dry_base: String,
+    /// DRY sampling allowed length.
+    pub dry_allowed_length: String,
+    /// DRY sampling penalty last N.
+    pub dry_penalty_last_n: String,
+    /// DRY sampling sequence breaker.
+    pub dry_sequence_breaker: String,
     /// Override reasoning setting.
     pub reasoning: String,
     /// Override reasoning format.
     pub reasoning_format: String,
     /// Override reasoning budget.
     pub reasoning_budget: String,
+    /// Override speculative type (spec-type).
+    pub spec_type: String,
+    /// Override speculative draft max tokens (spec-draft-n-max).
+    pub spec_draft_n_max: String,
+    /// Override speculative draft min probability (spec-draft-p-min).
+    pub spec_draft_p_min: String,
 
     /// List of reasoning settings options.
     pub reasoning_list: Vec<String>,
@@ -226,6 +258,13 @@ pub struct AppState {
     pub reasoning_format_index: usize,
     /// Backup of the selected reasoning format index.
     pub reasoning_format_index_backup: usize,
+
+    /// List of speculative type options.
+    pub spec_type_list: Vec<String>,
+    /// Selected speculative type index.
+    pub spec_type_index: usize,
+    /// Backup of the selected speculative type index.
+    pub spec_type_backup: usize,
 
     /// Original context size input string (to check for edits).
     pub original_ctx_str: String,
@@ -256,6 +295,16 @@ pub struct AppState {
     pub original_repeat_penalty: String,
     /// Original repeat last N tokens (to check for edits).
     pub original_repeat_last_n: String,
+    /// Original DRY sampling multiplier.
+    pub original_dry_multiplier: String,
+    /// Original DRY sampling base.
+    pub original_dry_base: String,
+    /// Original DRY sampling allowed length.
+    pub original_dry_allowed_length: String,
+    /// Original DRY sampling penalty last N.
+    pub original_dry_penalty_last_n: String,
+    /// Original DRY sampling sequence breaker.
+    pub original_dry_sequence_breaker: String,
     /// Original reasoning setting (to check for edits).
     pub original_reasoning: String,
     /// Original reasoning format (to check for edits).
@@ -266,6 +315,14 @@ pub struct AppState {
     pub original_reasoning_index: usize,
     /// Original reasoning format index (to check for edits).
     pub original_reasoning_format_index: usize,
+    /// Original speculative type setting (to check for edits).
+    pub original_spec_type: String,
+    /// Original speculative type index (to check for edits).
+    pub original_spec_type_index: usize,
+    /// Original speculative draft max tokens (to check for edits).
+    pub original_spec_draft_n_max: String,
+    /// Original speculative draft min probability (to check for edits).
+    pub original_spec_draft_p_min: String,
 
     /// Number of clock ticks (useful for flash animations).
     pub tick_count: u64,
@@ -344,9 +401,17 @@ impl AppState {
             min_p: String::new(),
             repeat_penalty: String::new(),
             repeat_last_n: String::new(),
+            dry_multiplier: String::new(),
+            dry_base: String::new(),
+            dry_allowed_length: String::new(),
+            dry_penalty_last_n: String::new(),
+            dry_sequence_breaker: String::new(),
             reasoning: String::new(),
             reasoning_format: String::new(),
             reasoning_budget: String::new(),
+            spec_type: String::new(),
+            spec_draft_n_max: String::new(),
+            spec_draft_p_min: String::new(),
             reasoning_list: vec![
                 String::new(),
                 "auto".to_owned(),
@@ -364,6 +429,15 @@ impl AppState {
             ],
             reasoning_format_index: 0,
             reasoning_format_index_backup: 0,
+            spec_type_list: vec![
+                String::new(),
+                "none".to_owned(),
+                "draft".to_owned(),
+                "draft-mtp".to_owned(),
+                "draft-eagle3".to_owned(),
+            ],
+            spec_type_index: 0,
+            spec_type_backup: 0,
             original_ctx_str: String::new(),
             original_ctx: 131_072,
             original_ngl: "auto".to_owned(),
@@ -378,11 +452,20 @@ impl AppState {
             original_min_p: String::new(),
             original_repeat_penalty: String::new(),
             original_repeat_last_n: String::new(),
+            original_dry_multiplier: String::new(),
+            original_dry_base: String::new(),
+            original_dry_allowed_length: String::new(),
+            original_dry_penalty_last_n: String::new(),
+            original_dry_sequence_breaker: String::new(),
             original_reasoning: String::new(),
             original_reasoning_format: String::new(),
             original_reasoning_budget: String::new(),
             original_reasoning_index: 0,
             original_reasoning_format_index: 0,
+            original_spec_type: String::new(),
+            original_spec_type_index: 0,
+            original_spec_draft_n_max: String::new(),
+            original_spec_draft_p_min: String::new(),
             tick_count: 0,
             last_models_dir_state: last_models_dir_state.clone(),
             last_stable_models_dir_state: last_models_dir_state,
@@ -557,7 +640,21 @@ impl AppState {
         self.draft_index = 0;
         self.draft_ngl = String::new();
 
-        if preset_name.to_lowercase().contains("draft") {
+        let model_is_draft = {
+            let stem = model_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            self.draft_list.iter().filter_map(|o| o.as_ref()).any(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase()
+                    == stem
+            })
+        };
+        if !model_is_draft {
             if let Some(active_draft) = ini_settings.remove("model-draft") {
                 let active_name = Path::new(&active_draft).file_name().unwrap_or_default();
                 for (idx, opt) in self.draft_list.iter().enumerate() {
@@ -610,6 +707,19 @@ impl AppState {
                 .and_then(|l| l.get(key))
                 .or_else(|| config.get(key))
         };
+        let draft_model_opt = self.draft_list.get(self.draft_index).cloned().flatten();
+        let draft_config = draft_model_opt.map(|df| {
+            let df_path = self.models_dir.join(df);
+            let df_toml_path = crate::config::resolve_toml_path(&df_path, &self.models_dir);
+            crate::config::load_toml_silent(&df_toml_path)
+        });
+        let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
+            draft_config.as_ref().and_then(|dc| {
+                dc.get("llama-server-long")
+                    .and_then(|l| l.get(key))
+                    .or_else(|| dc.get(key))
+            })
+        };
         let get_string_val = |v: Option<&serde_json::Value>| -> String {
             match v {
                 Some(serde_json::Value::String(s)) => s.clone(),
@@ -632,9 +742,20 @@ impl AppState {
         let min_p_val = get_string_val(get_long_val("min-p"));
         let repeat_penalty_val = get_string_val(get_long_val("repeat-penalty"));
         let repeat_last_n_val = get_string_val(get_long_val("repeat-last-n"));
+        let dry_multiplier_val = get_string_val(get_long_val("dry-multiplier"));
+        let dry_base_val = get_string_val(get_long_val("dry-base"));
+        let dry_allowed_length_val = get_string_val(get_long_val("dry-allowed-length"));
+        let dry_penalty_last_n_val = get_string_val(get_long_val("dry-penalty-last-n"));
+        let dry_sequence_breaker_val = get_string_val(get_long_val("dry-sequence-breaker"));
         let reasoning_val = get_string_val(get_long_val("reasoning"));
         let reasoning_format_val = get_string_val(get_long_val("reasoning-format"));
         let reasoning_budget_val = get_string_val(get_long_val("reasoning-budget"));
+        let spec_draft_n_max_val = get_string_val(
+            get_long_val("spec-draft-n-max").or_else(|| get_draft_long("spec-draft-n-max")),
+        );
+        let spec_draft_p_min_val = get_string_val(
+            get_long_val("spec-draft-p-min").or_else(|| get_draft_long("spec-draft-p-min")),
+        );
 
         self.config_file_name = config_file_name.clone();
         self.original_config_file_name = config_file_name;
@@ -666,7 +787,16 @@ impl AppState {
 
         self.repeat_last_n = repeat_last_n_val.clone();
         self.original_repeat_last_n = repeat_last_n_val;
-
+        self.dry_multiplier = dry_multiplier_val.clone();
+        self.original_dry_multiplier = dry_multiplier_val;
+        self.dry_base = dry_base_val.clone();
+        self.original_dry_base = dry_base_val;
+        self.dry_allowed_length = dry_allowed_length_val.clone();
+        self.original_dry_allowed_length = dry_allowed_length_val;
+        self.dry_penalty_last_n = dry_penalty_last_n_val.clone();
+        self.original_dry_penalty_last_n = dry_penalty_last_n_val;
+        self.dry_sequence_breaker = dry_sequence_breaker_val.clone();
+        self.original_dry_sequence_breaker = dry_sequence_breaker_val;
         self.reasoning.clone_from(&reasoning_val);
         self.original_reasoning.clone_from(&reasoning_val);
         self.reasoning_index = self
@@ -675,6 +805,9 @@ impl AppState {
             .position(|r| r == &reasoning_val)
             .unwrap_or(0);
         self.original_reasoning_index = self.reasoning_index;
+
+        let spec_type_val =
+            get_string_val(get_long_val("spec-type").or_else(|| get_draft_long("spec-type")));
 
         self.reasoning_format.clone_from(&reasoning_format_val);
         self.original_reasoning_format
@@ -688,6 +821,21 @@ impl AppState {
 
         self.reasoning_budget = reasoning_budget_val.clone();
         self.original_reasoning_budget = reasoning_budget_val;
+
+        self.spec_type.clone_from(&spec_type_val);
+        self.original_spec_type.clone_from(&spec_type_val);
+        self.spec_type_index = self
+            .spec_type_list
+            .iter()
+            .position(|s| s == &spec_type_val)
+            .unwrap_or(0);
+        self.original_spec_type_index = self.spec_type_index;
+
+        self.spec_draft_n_max = spec_draft_n_max_val.clone();
+        self.original_spec_draft_n_max = spec_draft_n_max_val;
+
+        self.spec_draft_p_min = spec_draft_p_min_val.clone();
+        self.original_spec_draft_p_min = spec_draft_p_min_val;
 
         self.original_total_layers = self.total_layers;
     }
@@ -787,7 +935,32 @@ impl AppState {
                 serde_json::Value::Number(num.into()),
             );
         }
-
+        update_float_setting(&mut long_obj, "dry-multiplier", &self.dry_multiplier);
+        update_float_setting(&mut long_obj, "dry-base", &self.dry_base);
+        if self.dry_allowed_length.is_empty() {
+            long_obj.remove("dry-allowed-length");
+        } else if let Ok(num) = self.dry_allowed_length.parse::<i64>() {
+            long_obj.insert(
+                "dry-allowed-length".to_owned(),
+                serde_json::Value::Number(num.into()),
+            );
+        }
+        if self.dry_penalty_last_n.is_empty() {
+            long_obj.remove("dry-penalty-last-n");
+        } else if let Ok(num) = self.dry_penalty_last_n.parse::<i64>() {
+            long_obj.insert(
+                "dry-penalty-last-n".to_owned(),
+                serde_json::Value::Number(num.into()),
+            );
+        }
+        if self.dry_sequence_breaker.is_empty() {
+            long_obj.remove("dry-sequence-breaker");
+        } else {
+            long_obj.insert(
+                "dry-sequence-breaker".to_owned(),
+                serde_json::Value::String(self.dry_sequence_breaker.clone()),
+            );
+        }
         // reasoning
         if self.reasoning.is_empty() {
             long_obj.remove("reasoning");
@@ -816,6 +989,35 @@ impl AppState {
                 "reasoning-budget".to_owned(),
                 serde_json::Value::Number(num.into()),
             );
+        }
+
+        // spec-type
+        if self.spec_type.is_empty() {
+            long_obj.remove("spec-type");
+        } else {
+            long_obj.insert(
+                "spec-type".to_owned(),
+                serde_json::Value::String(self.spec_type.clone()),
+            );
+        }
+
+        // spec-draft-n-max
+        if self.spec_draft_n_max.is_empty() {
+            long_obj.remove("spec-draft-n-max");
+        } else if let Ok(num) = self.spec_draft_n_max.parse::<i64>() {
+            long_obj.insert(
+                "spec-draft-n-max".to_owned(),
+                serde_json::Value::Number(num.into()),
+            );
+        }
+
+        // spec-draft-p-min
+        if self.spec_draft_p_min.is_empty() {
+            long_obj.remove("spec-draft-p-min");
+        } else if let Ok(num) = self.spec_draft_p_min.parse::<f64>() {
+            if let Some(n) = serde_json::Number::from_f64(num) {
+                long_obj.insert("spec-draft-p-min".to_owned(), serde_json::Value::Number(n));
+            }
         }
 
         // 6. total-layers
@@ -929,9 +1131,17 @@ impl AppState {
             || self.min_p != self.original_min_p
             || self.repeat_penalty != self.original_repeat_penalty
             || self.repeat_last_n != self.original_repeat_last_n
+            || self.dry_multiplier != self.original_dry_multiplier
+            || self.dry_base != self.original_dry_base
+            || self.dry_allowed_length != self.original_dry_allowed_length
+            || self.dry_penalty_last_n != self.original_dry_penalty_last_n
+            || self.dry_sequence_breaker != self.original_dry_sequence_breaker
             || self.reasoning != self.original_reasoning
             || self.reasoning_format != self.original_reasoning_format
             || self.reasoning_budget != self.original_reasoning_budget
+            || self.spec_type != self.original_spec_type
+            || self.spec_draft_n_max != self.original_spec_draft_n_max
+            || self.spec_draft_p_min != self.original_spec_draft_p_min
     }
 
     /// Periodically scans the models directory in the background and invalidates/updates presets when file changes settle.

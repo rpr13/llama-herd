@@ -172,8 +172,10 @@ mod tests {
             Theme::default(),
         );
         state.ctx = 123;
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 2; // Context Size
         let key = KeyEvent {
-            code: KeyCode::Char('c'),
+            code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
@@ -229,6 +231,54 @@ mod tests {
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.ngl, "auto");
+    }
+
+    #[test]
+    fn test_handle_key_event_edit_spec_draft_params() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.spec_draft_n_max = "4".to_string();
+        state.spec_draft_p_min = "0.0".to_string();
+
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 8; // Spec Draft N Max
+
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // Go to spec-draft-n-max edit screen
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingSpecDraftNMax);
+        assert_eq!(state.input_buffer, "4");
+
+        // Save new val
+        state.input_buffer = "8".to_string();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.spec_draft_n_max, "8");
+
+        // Go to spec-draft-p-min edit screen (index 9)
+        state.dashboard_param_index = 9;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingSpecDraftPMin);
+        assert_eq!(state.input_buffer, "0.0");
+
+        // Save new val
+        state.input_buffer = "0.85".to_string();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.spec_draft_p_min, "0.85");
     }
 
     #[test]
@@ -304,6 +354,48 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_key_event_editing_global_settings_manual() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.config_path = config_path;
+        state.screen = AppScreen::EditingGlobalSetting;
+
+        let dry_mult_idx = llama_herd::tui::ui::SETTINGS
+            .iter()
+            .position(|item| item.key == "dry-multiplier")
+            .unwrap();
+        state.settings_index = dry_mult_idx;
+        state.input_buffer = "1.5".to_string();
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Settings);
+
+        let saved_val = state
+            .global_config
+            .get("dry-multiplier")
+            .and_then(|v| v.as_f64())
+            .unwrap();
+        assert_eq!(saved_val, 1.5);
+    }
+
+    #[test]
     fn test_handle_key_event_selecting_mmproj() {
         let mut state = AppState::new(
             vec![],
@@ -323,9 +415,11 @@ mod tests {
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
 
-        // 1. Press 'v' -> enters MMProj selection popup
+        // 1. Enter key -> enters MMProj selection popup
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 4; // MMProj
         let key_v = KeyEvent {
-            code: KeyCode::Char('v'),
+            code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
@@ -392,9 +486,11 @@ mod tests {
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
 
-        // 1. Press 'd' -> enters Draft model selection popup
+        // 1. Enter key -> enters Draft model selection popup
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 5; // Draft Model
         let key_d = KeyEvent {
-            code: KeyCode::Char('d'),
+            code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
@@ -649,9 +745,11 @@ temp = 0.7
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
 
-        // Trigger config filename edit screen
+        // Trigger config filename edit screen (index 0 on right pane)
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 0; // Target Config File
         let key_f = KeyEvent {
-            code: KeyCode::Char('f'),
+            code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
@@ -925,5 +1023,65 @@ temp = 0.7
         // 3. Edgecase: api-key at the end of the argument list without a value
         let args_edge = vec!["llama-server".to_string(), "--api-key".to_string()];
         assert_eq!(mask_sensitive_args(&args_edge), "llama-server --api-key");
+    }
+
+    #[test]
+    fn test_load_settings_from_draft_config_fallbacks() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+
+        let model_path = models_dir.join("main.gguf");
+        std::fs::write(&model_path, b"main").unwrap();
+
+        let draft_path = models_dir.join("draft.gguf");
+        std::fs::write(&draft_path, b"draft").unwrap();
+
+        // Draft config with spec-draft-n-max
+        let draft_config_path = models_dir.join("draft.toml");
+        std::fs::write(
+            &draft_config_path,
+            r#"[llama-herd]
+total-layers = 4
+is-draft-only = true
+
+[llama-server-long]
+spec-draft-n-max = 2
+spec-draft-p-min = 0.85
+spec-type = "draft-eagle3"
+"#,
+        )
+        .unwrap();
+
+        // Main config (no speculative settings overrides)
+        let main_config_path = models_dir.join("main.toml");
+        std::fs::write(&main_config_path, "").unwrap();
+
+        let preset_path = temp_dir.path().join("models-preset.ini");
+        std::fs::write(
+            &preset_path,
+            r#"[main]
+model = main.gguf
+model-draft = draft.gguf
+gpu-layers-draft = 4
+"#,
+        )
+        .unwrap();
+        let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+
+        let mut state = AppState::new(
+            presets,
+            models_dir.clone(),
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        // Load the settings
+        state.load_current_preset_settings(None);
+
+        assert_eq!(state.spec_draft_n_max, "2");
+        assert_eq!(state.spec_draft_p_min, "0.85");
+        assert_eq!(state.spec_type, "draft-eagle3");
     }
 }

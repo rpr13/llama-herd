@@ -78,6 +78,7 @@ pub fn handle_key_event(
             | AppScreen::SelectingReasoningFormat
             | AppScreen::SelectingReasoning
             | AppScreen::EditingReasoningBudget
+            | AppScreen::SelectingSpecType
     ) {
         match key.code {
             KeyCode::Char('1') => {
@@ -104,89 +105,6 @@ pub fn handle_key_event(
             KeyCode::Char('q') => {
                 should_quit = true;
             }
-            KeyCode::Char('c') => {
-                state.screen = AppScreen::EditingCtx;
-                state.input_buffer = if state.ctx_str.is_empty() {
-                    state.ctx.to_string()
-                } else {
-                    state.ctx_str.clone()
-                };
-            }
-            KeyCode::Char('n') => {
-                state.screen = AppScreen::EditingNgl;
-                state.input_buffer = state.ngl.clone();
-            }
-            KeyCode::Char('g') => {
-                state.screen = AppScreen::EditingDraftNgl;
-                state.input_buffer = state.draft_ngl.clone();
-            }
-            KeyCode::Char('v') => {
-                state.mmproj_index_backup = state.mmproj_index;
-                state.screen = AppScreen::SelectingMMProj;
-            }
-            KeyCode::Char('d') => {
-                state.draft_index_backup = state.draft_index;
-                state.screen = AppScreen::SelectingDraftModel;
-            }
-            KeyCode::Char('t') => {
-                state.screen = AppScreen::EditingTemp;
-                state.input_buffer = state.temp.clone();
-            }
-            KeyCode::Char('p') => {
-                state.screen = AppScreen::EditingTopP;
-                state.input_buffer = state.top_p.clone();
-            }
-            KeyCode::Char('k') => {
-                state.screen = AppScreen::EditingTopK;
-                state.input_buffer = state.top_k.clone();
-            }
-            KeyCode::Char('l') => {
-                state.screen = AppScreen::EditingTotalLayers;
-                state.input_buffer = state
-                    .total_layers
-                    .map(|l| l.to_string())
-                    .unwrap_or_default();
-            }
-            KeyCode::Char('f') => {
-                state.screen = AppScreen::EditingConfigFileName;
-                state.input_buffer = state.config_file_name.clone();
-                if state.presets.is_empty() {
-                    state.similar_config_files.clear();
-                    state.similar_config_index = None;
-                } else {
-                    let (_, model_path) = &state.presets[state.preset_index];
-                    state.similar_config_files =
-                        crate::config::find_similar_config_files(model_path, &state.models_dir);
-                    state.similar_config_index = state
-                        .similar_config_files
-                        .iter()
-                        .position(|f| f == &state.input_buffer);
-                }
-            }
-            KeyCode::Char('m') => {
-                state.screen = AppScreen::EditingMinP;
-                state.input_buffer = state.min_p.clone();
-            }
-            KeyCode::Char('e') => {
-                state.screen = AppScreen::EditingRepeatPenalty;
-                state.input_buffer = state.repeat_penalty.clone();
-            }
-            KeyCode::Char('a') => {
-                state.screen = AppScreen::EditingRepeatLastN;
-                state.input_buffer = state.repeat_last_n.clone();
-            }
-            KeyCode::Char('o') => {
-                state.reasoning_format_index_backup = state.reasoning_format_index;
-                state.screen = AppScreen::SelectingReasoningFormat;
-            }
-            KeyCode::Char('u') => {
-                state.reasoning_index_backup = state.reasoning_index;
-                state.screen = AppScreen::SelectingReasoning;
-            }
-            KeyCode::Char('b') => {
-                state.screen = AppScreen::EditingReasoningBudget;
-                state.input_buffer = state.reasoning_budget.clone();
-            }
             KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if state.has_unsaved_changes() {
                     state.screen = AppScreen::ConfirmSaveConfig;
@@ -202,7 +120,7 @@ pub fn handle_key_event(
             KeyCode::Up => {
                 if state.dashboard_focus == DashboardFocus::Right {
                     if state.dashboard_param_index == 0 {
-                        state.dashboard_param_index = 15;
+                        state.dashboard_param_index = 23;
                     } else {
                         state.dashboard_param_index -= 1;
                     }
@@ -223,7 +141,7 @@ pub fn handle_key_event(
             }
             KeyCode::Down => {
                 if state.dashboard_focus == DashboardFocus::Right {
-                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 16;
+                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 24;
                 } else if !state.presets.is_empty() {
                     let target_index = (state.preset_index + 1) % state.presets.len();
                     if state.has_unsaved_changes() {
@@ -294,98 +212,8 @@ pub fn handle_key_event(
                     Err(_e) => {}
                 }
             }
-            KeyCode::Enter => {
-                if state.dashboard_focus == DashboardFocus::Right {
-                    match state.dashboard_param_index {
-                        0 => {
-                            state.screen = AppScreen::EditingConfigFileName;
-                            state.input_buffer = state.config_file_name.clone();
-                            if state.presets.is_empty() {
-                                state.similar_config_files.clear();
-                                state.similar_config_index = None;
-                            } else {
-                                let (_, model_path) = &state.presets[state.preset_index];
-                                state.similar_config_files =
-                                    crate::config::find_similar_config_files(
-                                        model_path,
-                                        &state.models_dir,
-                                    );
-                                state.similar_config_index = state
-                                    .similar_config_files
-                                    .iter()
-                                    .position(|f| f == &state.input_buffer);
-                            }
-                        }
-                        1 => {
-                            state.screen = AppScreen::EditingTotalLayers;
-                            state.input_buffer = state
-                                .total_layers
-                                .map(|l| l.to_string())
-                                .unwrap_or_default();
-                        }
-                        2 => {
-                            state.screen = AppScreen::EditingCtx;
-                            state.input_buffer = if state.ctx_str.is_empty() {
-                                state.ctx.to_string()
-                            } else {
-                                state.ctx_str.clone()
-                            };
-                        }
-                        3 => {
-                            state.screen = AppScreen::EditingNgl;
-                            state.input_buffer = state.ngl.clone();
-                        }
-                        4 => {
-                            state.mmproj_index_backup = state.mmproj_index;
-                            state.screen = AppScreen::SelectingMMProj;
-                        }
-                        5 => {
-                            state.draft_index_backup = state.draft_index;
-                            state.screen = AppScreen::SelectingDraftModel;
-                        }
-                        6 => {
-                            state.screen = AppScreen::EditingDraftNgl;
-                            state.input_buffer = state.draft_ngl.clone();
-                        }
-                        7 => {
-                            state.screen = AppScreen::EditingTemp;
-                            state.input_buffer = state.temp.clone();
-                        }
-                        8 => {
-                            state.screen = AppScreen::EditingTopP;
-                            state.input_buffer = state.top_p.clone();
-                        }
-                        9 => {
-                            state.screen = AppScreen::EditingTopK;
-                            state.input_buffer = state.top_k.clone();
-                        }
-                        10 => {
-                            state.screen = AppScreen::EditingMinP;
-                            state.input_buffer = state.min_p.clone();
-                        }
-                        11 => {
-                            state.screen = AppScreen::EditingRepeatPenalty;
-                            state.input_buffer = state.repeat_penalty.clone();
-                        }
-                        12 => {
-                            state.screen = AppScreen::EditingRepeatLastN;
-                            state.input_buffer = state.repeat_last_n.clone();
-                        }
-                        13 => {
-                            state.reasoning_format_index_backup = state.reasoning_format_index;
-                            state.screen = AppScreen::SelectingReasoningFormat;
-                        }
-                        14 => {
-                            state.reasoning_index_backup = state.reasoning_index;
-                            state.screen = AppScreen::SelectingReasoning;
-                        }
-                        15 => {
-                            state.screen = AppScreen::EditingReasoningBudget;
-                            state.input_buffer = state.reasoning_budget.clone();
-                        }
-                        _ => {}
-                    }
-                } else if !state.presets.is_empty() {
+            KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if !state.presets.is_empty() {
                     // Spawns preset server
                     crate::launcher::kill_existing_servers();
                     let (_preset_name, model_path) = &state.presets[state.preset_index];
@@ -440,6 +268,128 @@ pub fn handle_key_event(
                         }
                         Err(_e) => {}
                     }
+                }
+            }
+            KeyCode::Enter if state.dashboard_focus == DashboardFocus::Right => {
+                match state.dashboard_param_index {
+                    0 => {
+                        state.screen = AppScreen::EditingConfigFileName;
+                        state.input_buffer = state.config_file_name.clone();
+                        if state.presets.is_empty() {
+                            state.similar_config_files.clear();
+                            state.similar_config_index = None;
+                        } else {
+                            let (_, model_path) = &state.presets[state.preset_index];
+                            state.similar_config_files = crate::config::find_similar_config_files(
+                                model_path,
+                                &state.models_dir,
+                            );
+                            state.similar_config_index = state
+                                .similar_config_files
+                                .iter()
+                                .position(|f| f == &state.input_buffer);
+                        }
+                    }
+                    1 => {
+                        state.screen = AppScreen::EditingTotalLayers;
+                        state.input_buffer = state
+                            .total_layers
+                            .map(|l| l.to_string())
+                            .unwrap_or_default();
+                    }
+                    2 => {
+                        state.screen = AppScreen::EditingCtx;
+                        state.input_buffer = if state.ctx_str.is_empty() {
+                            state.ctx.to_string()
+                        } else {
+                            state.ctx_str.clone()
+                        };
+                    }
+                    3 => {
+                        state.screen = AppScreen::EditingNgl;
+                        state.input_buffer = state.ngl.clone();
+                    }
+                    4 => {
+                        state.mmproj_index_backup = state.mmproj_index;
+                        state.screen = AppScreen::SelectingMMProj;
+                    }
+                    5 => {
+                        state.draft_index_backup = state.draft_index;
+                        state.screen = AppScreen::SelectingDraftModel;
+                    }
+                    6 => {
+                        state.screen = AppScreen::EditingDraftNgl;
+                        state.input_buffer = state.draft_ngl.clone();
+                    }
+                    7 => {
+                        state.spec_type_backup = state.spec_type_index;
+                        state.screen = AppScreen::SelectingSpecType;
+                    }
+                    8 => {
+                        state.screen = AppScreen::EditingSpecDraftNMax;
+                        state.input_buffer = state.spec_draft_n_max.clone();
+                    }
+                    9 => {
+                        state.screen = AppScreen::EditingSpecDraftPMin;
+                        state.input_buffer = state.spec_draft_p_min.clone();
+                    }
+                    10 => {
+                        state.screen = AppScreen::EditingTemp;
+                        state.input_buffer = state.temp.clone();
+                    }
+                    11 => {
+                        state.screen = AppScreen::EditingTopP;
+                        state.input_buffer = state.top_p.clone();
+                    }
+                    12 => {
+                        state.screen = AppScreen::EditingTopK;
+                        state.input_buffer = state.top_k.clone();
+                    }
+                    13 => {
+                        state.screen = AppScreen::EditingMinP;
+                        state.input_buffer = state.min_p.clone();
+                    }
+                    14 => {
+                        state.screen = AppScreen::EditingRepeatPenalty;
+                        state.input_buffer = state.repeat_penalty.clone();
+                    }
+                    15 => {
+                        state.screen = AppScreen::EditingRepeatLastN;
+                        state.input_buffer = state.repeat_last_n.clone();
+                    }
+                    16 => {
+                        state.screen = AppScreen::EditingDryMultiplier;
+                        state.input_buffer = state.dry_multiplier.clone();
+                    }
+                    17 => {
+                        state.screen = AppScreen::EditingDryBase;
+                        state.input_buffer = state.dry_base.clone();
+                    }
+                    18 => {
+                        state.screen = AppScreen::EditingDryAllowedLength;
+                        state.input_buffer = state.dry_allowed_length.clone();
+                    }
+                    19 => {
+                        state.screen = AppScreen::EditingDryPenaltyLastN;
+                        state.input_buffer = state.dry_penalty_last_n.clone();
+                    }
+                    20 => {
+                        state.screen = AppScreen::EditingDrySequenceBreaker;
+                        state.input_buffer = state.dry_sequence_breaker.clone();
+                    }
+                    21 => {
+                        state.reasoning_format_index_backup = state.reasoning_format_index;
+                        state.screen = AppScreen::SelectingReasoningFormat;
+                    }
+                    22 => {
+                        state.reasoning_index_backup = state.reasoning_index;
+                        state.screen = AppScreen::SelectingReasoning;
+                    }
+                    23 => {
+                        state.screen = AppScreen::EditingReasoningBudget;
+                        state.input_buffer = state.reasoning_budget.clone();
+                    }
+                    _ => {}
                 }
             }
             _ => {}
@@ -654,7 +604,14 @@ pub fn handle_key_event(
         | AppScreen::EditingMinP
         | AppScreen::EditingRepeatPenalty
         | AppScreen::EditingRepeatLastN
-        | AppScreen::EditingReasoningBudget => match key.code {
+        | AppScreen::EditingReasoningBudget
+        | AppScreen::EditingDryMultiplier
+        | AppScreen::EditingDryBase
+        | AppScreen::EditingDryAllowedLength
+        | AppScreen::EditingDryPenaltyLastN
+        | AppScreen::EditingDrySequenceBreaker
+        | AppScreen::EditingSpecDraftNMax
+        | AppScreen::EditingSpecDraftPMin => match key.code {
             KeyCode::Esc => {
                 if state.screen == AppScreen::EditingGlobalSetting {
                     state.screen = AppScreen::Settings;
@@ -705,6 +662,14 @@ pub fn handle_key_event(
                         state.config_file_name = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
+                    AppScreen::EditingSpecDraftNMax => {
+                        state.spec_draft_n_max = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingSpecDraftPMin => {
+                        state.spec_draft_p_min = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
+                    }
                     AppScreen::EditingMinP => {
                         state.min_p = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
@@ -721,6 +686,26 @@ pub fn handle_key_event(
                         state.reasoning_budget = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
+                    AppScreen::EditingDryMultiplier => {
+                        state.dry_multiplier = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingDryBase => {
+                        state.dry_base = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingDryAllowedLength => {
+                        state.dry_allowed_length = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingDryPenaltyLastN => {
+                        state.dry_penalty_last_n = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
+                    }
+                    AppScreen::EditingDrySequenceBreaker => {
+                        state.dry_sequence_breaker = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
+                    }
                     AppScreen::EditingGlobalSetting => {
                         let val_str = state.input_buffer.trim().to_owned();
                         let selected_item = &ui::SETTINGS[state.settings_index];
@@ -733,9 +718,19 @@ pub fn handle_key_event(
                             );
                         } else {
                             match selected_item.key {
-                                "host" | "flash-attn" | "cache-type-k" | "cache-type-v"
-                                | "api-key" | "device" | "api-key-file" | "ssl-key-file"
-                                | "ssl-cert-file" => {
+                                "host"
+                                | "flash-attn"
+                                | "cache-type-k"
+                                | "cache-type-v"
+                                | "api-key"
+                                | "device"
+                                | "api-key-file"
+                                | "ssl-key-file"
+                                | "ssl-cert-file"
+                                | "dry-sequence-breaker"
+                                | "split-mode"
+                                | "numa"
+                                | "spec-type" => {
                                     crate::config::update_global_config_value(
                                         &mut state.global_config,
                                         key_to_update,
@@ -763,13 +758,27 @@ pub fn handle_key_event(
                                 | "ctx-checkpoints"
                                 | "checkpoint-min-step"
                                 | "log-verbosity"
-                                | "cache-ram" => {
+                                | "cache-ram"
+                                | "dry-allowed-length"
+                                | "dry-penalty-last-n"
+                                | "spec-draft-n-max" => {
                                     if let Ok(num) = val_str.parse::<i64>() {
                                         crate::config::update_global_config_value(
                                             &mut state.global_config,
                                             key_to_update,
                                             serde_json::Value::Number(num.into()),
                                         );
+                                    }
+                                }
+                                "dry-multiplier" | "dry-base" | "spec-draft-p-min" => {
+                                    if let Ok(num) = val_str.parse::<f64>() {
+                                        if let Some(n) = serde_json::Number::from_f64(num) {
+                                            crate::config::update_global_config_value(
+                                                &mut state.global_config,
+                                                key_to_update,
+                                                serde_json::Value::Number(n),
+                                            );
+                                        }
                                     }
                                 }
                                 _ => {}
@@ -985,6 +994,27 @@ pub fn handle_key_event(
             KeyCode::Enter => {
                 state.reasoning_format =
                     state.reasoning_format_list[state.reasoning_format_index].clone();
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::SelectingSpecType => match key.code {
+            KeyCode::Esc => {
+                state.spec_type_index = state.spec_type_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.spec_type_list.is_empty() => {
+                if state.spec_type_index == 0 {
+                    state.spec_type_index = state.spec_type_list.len() - 1;
+                } else {
+                    state.spec_type_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.spec_type_list.is_empty() => {
+                state.spec_type_index = (state.spec_type_index + 1) % state.spec_type_list.len();
+            }
+            KeyCode::Enter => {
+                state.spec_type = state.spec_type_list[state.spec_type_index].clone();
                 state.screen = AppScreen::Dashboard;
             }
             _ => {}

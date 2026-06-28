@@ -157,6 +157,9 @@ const RESTRICTED_LONG: &[&str] = &[
     "spec-draft-ngl",
     "model-draft",
     "spec-draft-model",
+    "spec-type",
+    "spec-draft-n-max",
+    "spec-draft-p-min",
     "is-draft",
     "is-default",
     "is-draft-only",
@@ -194,6 +197,11 @@ const RESTRICTED_LONG: &[&str] = &[
     "min-p",
     "repeat-penalty",
     "repeat-last-n",
+    "dry-multiplier",
+    "dry-base",
+    "dry-allowed-length",
+    "dry-penalty-last-n",
+    "dry-sequence-breaker",
     "reasoning-budget",
     "cache-prompt",
     "no-cache-prompt",
@@ -294,11 +302,6 @@ pub fn load_toml_safe(path: &Path) -> Result<HashMap<String, serde_json::Value>,
         path: path.to_path_buf(),
         source: e,
     })?;
-
-    println!(
-        "[*] Loaded parameters from: {}",
-        path.file_name().unwrap_or_default().to_string_lossy()
-    );
 
     Ok(toml_to_json(value, true))
 }

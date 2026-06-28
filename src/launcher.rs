@@ -396,6 +396,7 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
 
             let spec_draft_n_max = get_long_val("spec-draft-n-max")
                 .or_else(|| get_draft_long("spec-draft-n-max"))
+                .or_else(|| get_global_long("spec-draft-n-max"))
                 .and_then(|v| {
                     v.as_str().map_or_else(
                         || {
@@ -411,6 +412,7 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
 
             let spec_draft_p_min = get_long_val("spec-draft-p-min")
                 .or_else(|| get_draft_long("spec-draft-p-min"))
+                .or_else(|| get_global_long("spec-draft-p-min"))
                 .and_then(|v| {
                     v.as_str().map_or_else(
                         || {
@@ -424,37 +426,12 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
                 })
                 .unwrap_or(0.0);
 
-            let has_main_spec_type = assets.config.contains_key("spec-type")
-                || assets
-                    .config
-                    .get("llama-server-long")
-                    .and_then(|l| l.get("spec-type"))
-                    .is_some();
-            let has_main_n_max = assets.config.contains_key("spec-draft-n-max")
-                || assets
-                    .config
-                    .get("llama-server-long")
-                    .and_then(|l| l.get("spec-draft-n-max"))
-                    .is_some();
-            let has_main_p_min = assets.config.contains_key("spec-draft-p-min")
-                || assets
-                    .config
-                    .get("llama-server-long")
-                    .and_then(|l| l.get("spec-draft-p-min"))
-                    .is_some();
-
-            if !has_main_spec_type {
-                params.push("--spec-type".to_owned());
-                params.push(spec_type.to_owned());
-            }
-            if !has_main_n_max {
-                params.push("--spec-draft-n-max".to_owned());
-                params.push(spec_draft_n_max.to_string());
-            }
-            if !has_main_p_min {
-                params.push("--spec-draft-p-min".to_owned());
-                params.push(spec_draft_p_min.to_string());
-            }
+            params.push("--spec-type".to_owned());
+            params.push(spec_type.to_owned());
+            params.push("--spec-draft-n-max".to_owned());
+            params.push(spec_draft_n_max.to_string());
+            params.push("--spec-draft-p-min".to_owned());
+            params.push(spec_draft_p_min.to_string());
         }
     }
 
@@ -682,6 +659,89 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
     if let Some(rln) = repeat_last_n {
         params.push("--repeat-last-n".to_owned());
         params.push(rln.to_string());
+    }
+
+    let dry_multiplier = get_lh_val("dry-multiplier")
+        .or_else(|| get_long_val("dry-multiplier"))
+        .or_else(|| get_global_long("dry-multiplier"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    v.as_f64().or_else(|| {
+                        #[allow(clippy::cast_precision_loss)]
+                        v.as_i64().map(|i| i as f64)
+                    })
+                },
+                |s| s.parse::<f64>().ok(),
+            )
+        });
+    if let Some(dm) = dry_multiplier {
+        params.push("--dry-multiplier".to_owned());
+        params.push(dm.to_string());
+    }
+
+    let dry_base = get_lh_val("dry-base")
+        .or_else(|| get_long_val("dry-base"))
+        .or_else(|| get_global_long("dry-base"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    v.as_f64().or_else(|| {
+                        #[allow(clippy::cast_precision_loss)]
+                        v.as_i64().map(|i| i as f64)
+                    })
+                },
+                |s| s.parse::<f64>().ok(),
+            )
+        });
+    if let Some(db) = dry_base {
+        params.push("--dry-base".to_owned());
+        params.push(db.to_string());
+    }
+
+    let dry_allowed_length = get_lh_val("dry-allowed-length")
+        .or_else(|| get_long_val("dry-allowed-length"))
+        .or_else(|| get_global_long("dry-allowed-length"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    #[allow(clippy::cast_possible_wrap)]
+                    v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                },
+                |s| s.parse::<i64>().ok(),
+            )
+        });
+    if let Some(dal) = dry_allowed_length {
+        params.push("--dry-allowed-length".to_owned());
+        params.push(dal.to_string());
+    }
+
+    let dry_penalty_last_n = get_lh_val("dry-penalty-last-n")
+        .or_else(|| get_long_val("dry-penalty-last-n"))
+        .or_else(|| get_global_long("dry-penalty-last-n"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    #[allow(clippy::cast_possible_wrap)]
+                    v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                },
+                |s| s.parse::<i64>().ok(),
+            )
+        });
+    if let Some(dpn) = dry_penalty_last_n {
+        params.push("--dry-penalty-last-n".to_owned());
+        params.push(dpn.to_string());
+    }
+
+    let dry_sequence_breaker = get_lh_val("dry-sequence-breaker")
+        .or_else(|| get_long_val("dry-sequence-breaker"))
+        .or_else(|| get_global_long("dry-sequence-breaker"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    if let Some(dsb) = dry_sequence_breaker {
+        params.push("--dry-sequence-breaker".to_owned());
+        params.push(dsb);
     }
 
     let reasoning = get_lh_val("reasoning")
@@ -921,6 +981,75 @@ pub fn build_router_launch_parameters<S: std::hash::BuildHasher>(
     if ssl_cert_file != "none" && !ssl_cert_file.is_empty() {
         params.push("--ssl-cert-file".to_owned());
         params.push(ssl_cert_file.to_owned());
+    }
+
+    let dry_multiplier = get_global_long("dry-multiplier").and_then(|v| {
+        v.as_str().map_or_else(
+            || {
+                v.as_f64().or_else(|| {
+                    #[allow(clippy::cast_precision_loss)]
+                    v.as_i64().map(|i| i as f64)
+                })
+            },
+            |s| s.parse::<f64>().ok(),
+        )
+    });
+    if let Some(dm) = dry_multiplier {
+        params.push("--dry-multiplier".to_owned());
+        params.push(dm.to_string());
+    }
+
+    let dry_base = get_global_long("dry-base").and_then(|v| {
+        v.as_str().map_or_else(
+            || {
+                v.as_f64().or_else(|| {
+                    #[allow(clippy::cast_precision_loss)]
+                    v.as_i64().map(|i| i as f64)
+                })
+            },
+            |s| s.parse::<f64>().ok(),
+        )
+    });
+    if let Some(db) = dry_base {
+        params.push("--dry-base".to_owned());
+        params.push(db.to_string());
+    }
+
+    let dry_allowed_length = get_global_long("dry-allowed-length").and_then(|v| {
+        v.as_str().map_or_else(
+            || {
+                #[allow(clippy::cast_possible_wrap)]
+                v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+            },
+            |s| s.parse::<i64>().ok(),
+        )
+    });
+    if let Some(dal) = dry_allowed_length {
+        params.push("--dry-allowed-length".to_owned());
+        params.push(dal.to_string());
+    }
+
+    let dry_penalty_last_n = get_global_long("dry-penalty-last-n").and_then(|v| {
+        v.as_str().map_or_else(
+            || {
+                #[allow(clippy::cast_possible_wrap)]
+                v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+            },
+            |s| s.parse::<i64>().ok(),
+        )
+    });
+    if let Some(dpn) = dry_penalty_last_n {
+        params.push("--dry-penalty-last-n".to_owned());
+        params.push(dpn.to_string());
+    }
+
+    let dry_sequence_breaker = get_global_long("dry-sequence-breaker")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    if let Some(dsb) = dry_sequence_breaker {
+        params.push("--dry-sequence-breaker".to_owned());
+        params.push(dsb);
     }
 
     params
