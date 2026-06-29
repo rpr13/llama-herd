@@ -665,9 +665,6 @@ impl AppState {
                         break;
                     }
                 }
-                self.draft_ngl = ini_settings
-                    .remove("gpu-layers-draft")
-                    .unwrap_or_else(|| "auto".to_owned());
             } else {
                 // Automatically select draft if discovered by heuristic
                 let heuristic_draft = crate::discovery::find_matching_draft(
@@ -687,9 +684,44 @@ impl AppState {
                             break;
                         }
                     }
-                    "auto".clone_into(&mut self.draft_ngl);
                 }
             }
+        }
+
+        let get_string_val = |v: Option<&serde_json::Value>| -> String {
+            match v {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Number(n)) => n.to_string(),
+                Some(serde_json::Value::Bool(b)) => b.to_string(),
+                _ => String::new(),
+            }
+        };
+
+        let draft_model_opt = self.draft_list.get(self.draft_index).cloned().flatten();
+        let draft_config = draft_model_opt.map(|df| {
+            let df_path = self.models_dir.join(df);
+            let df_toml_path = crate::config::resolve_toml_path(&df_path, &self.models_dir);
+            crate::config::load_toml_silent(&df_toml_path)
+        });
+        let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
+            draft_config.as_ref().and_then(|dc| {
+                dc.get("llama-server-long")
+                    .and_then(|l| l.get(key))
+                    .or_else(|| dc.get(key))
+            })
+        };
+
+        if !model_is_draft && self.draft_index > 0 {
+            let draft_ngl_val = ini_settings
+                .remove("gpu-layers-draft")
+                .unwrap_or_else(|| get_string_val(get_draft_long("ngl")));
+            self.draft_ngl = if draft_ngl_val.is_empty() {
+                "auto".to_owned()
+            } else {
+                draft_ngl_val
+            };
+        } else {
+            self.draft_ngl = "auto".to_owned();
         }
 
         let toml_path = toml_path_override
@@ -706,27 +738,6 @@ impl AppState {
                 .get("llama-server-long")
                 .and_then(|l| l.get(key))
                 .or_else(|| config.get(key))
-        };
-        let draft_model_opt = self.draft_list.get(self.draft_index).cloned().flatten();
-        let draft_config = draft_model_opt.map(|df| {
-            let df_path = self.models_dir.join(df);
-            let df_toml_path = crate::config::resolve_toml_path(&df_path, &self.models_dir);
-            crate::config::load_toml_silent(&df_toml_path)
-        });
-        let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
-            draft_config.as_ref().and_then(|dc| {
-                dc.get("llama-server-long")
-                    .and_then(|l| l.get(key))
-                    .or_else(|| dc.get(key))
-            })
-        };
-        let get_string_val = |v: Option<&serde_json::Value>| -> String {
-            match v {
-                Some(serde_json::Value::String(s)) => s.clone(),
-                Some(serde_json::Value::Number(n)) => n.to_string(),
-                Some(serde_json::Value::Bool(b)) => b.to_string(),
-                _ => String::new(),
-            }
         };
 
         // Context representation
@@ -991,34 +1002,10 @@ impl AppState {
             );
         }
 
-        // spec-type
-        if self.spec_type.is_empty() {
-            long_obj.remove("spec-type");
-        } else {
-            long_obj.insert(
-                "spec-type".to_owned(),
-                serde_json::Value::String(self.spec_type.clone()),
-            );
-        }
-
-        // spec-draft-n-max
-        if self.spec_draft_n_max.is_empty() {
-            long_obj.remove("spec-draft-n-max");
-        } else if let Ok(num) = self.spec_draft_n_max.parse::<i64>() {
-            long_obj.insert(
-                "spec-draft-n-max".to_owned(),
-                serde_json::Value::Number(num.into()),
-            );
-        }
-
-        // spec-draft-p-min
-        if self.spec_draft_p_min.is_empty() {
-            long_obj.remove("spec-draft-p-min");
-        } else if let Ok(num) = self.spec_draft_p_min.parse::<f64>() {
-            if let Some(n) = serde_json::Number::from_f64(num) {
-                long_obj.insert("spec-draft-p-min".to_owned(), serde_json::Value::Number(n));
-            }
-        }
+        // spec-type, spec-draft-n-max, spec-draft-p-min are NOT saved in main model's config
+        long_obj.remove("spec-type");
+        long_obj.remove("spec-draft-n-max");
+        long_obj.remove("spec-draft-p-min");
 
         // 6. total-layers
         if let Some(num) = self.total_layers {
@@ -1044,7 +1031,70 @@ impl AppState {
             _ => String::new(),
         };
         if !draft_val.is_empty() && draft_val != "None (Disabled)" {
-            herd_obj.insert("draft".to_owned(), serde_json::Value::String(draft_val));
+            herd_obj.insert(
+                "draft".to_owned(),
+                serde_json::Value::String(draft_val.clone()),
+            );
+
+            // Save draft-related configuration to the draft model's own TOML!
+            let df_path = self.models_dir.join(&draft_val);
+            let df_toml_path = crate::config::resolve_toml_path(&df_path, &self.models_dir);
+            let mut draft_config = crate::config::load_toml_silent(&df_toml_path);
+            let mut draft_long_obj = draft_config
+                .remove("llama-server-long")
+                .and_then(|v| v.as_object().cloned())
+                .unwrap_or_default();
+
+            // 1. ngl (for draft)
+            if self.draft_ngl.is_empty() {
+                draft_long_obj.remove("ngl");
+            } else if let Ok(num) = self.draft_ngl.parse::<i64>() {
+                draft_long_obj.insert("ngl".to_owned(), serde_json::Value::Number(num.into()));
+            } else {
+                draft_long_obj.insert(
+                    "ngl".to_owned(),
+                    serde_json::Value::String(self.draft_ngl.clone()),
+                );
+            }
+
+            // 2. spec-draft-n-max
+            if self.spec_draft_n_max.is_empty() {
+                draft_long_obj.remove("spec-draft-n-max");
+            } else if let Ok(num) = self.spec_draft_n_max.parse::<i64>() {
+                draft_long_obj.insert(
+                    "spec-draft-n-max".to_owned(),
+                    serde_json::Value::Number(num.into()),
+                );
+            }
+
+            // 3. spec-draft-p-min
+            if self.spec_draft_p_min.is_empty() {
+                draft_long_obj.remove("spec-draft-p-min");
+            } else if let Ok(num) = self.spec_draft_p_min.parse::<f64>() {
+                if let Some(n) = serde_json::Number::from_f64(num) {
+                    draft_long_obj
+                        .insert("spec-draft-p-min".to_owned(), serde_json::Value::Number(n));
+                }
+            }
+
+            // 4. spec-type
+            if self.spec_type.is_empty() {
+                draft_long_obj.remove("spec-type");
+            } else {
+                draft_long_obj.insert(
+                    "spec-type".to_owned(),
+                    serde_json::Value::String(self.spec_type.clone()),
+                );
+            }
+
+            if !draft_long_obj.is_empty() {
+                draft_config.insert(
+                    "llama-server-long".to_owned(),
+                    serde_json::Value::Object(draft_long_obj),
+                );
+            }
+
+            let _ = crate::config::save_config(&df_toml_path, &draft_config);
         } else {
             herd_obj.remove("draft");
         }

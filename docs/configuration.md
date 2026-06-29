@@ -128,7 +128,8 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 
 Model preset parameters are visually grouped in the Preset Details & Parameters panel on Tab 1 (Dashboard) using styled headers:
 - **llama herd**: Unique orchestrator parameters (Preset Name, Model File, Target Config File, and Total Layers) placed on top.
-- **Common params**: Main options (Context Size, GPU Layers, MMProj vision projector, and Draft Model settings).
+- **Common params**: Main options (Context Size, GPU Layers, and MMProj vision projector).
+- **Draft params**: Speculative decoding parameters (Draft Model, Draft NGL Layers, Speculative Type, Max Speculative Predictions, and Min Probability Threshold).
 - **Sampling params**: Sampling hyper-parameters (Temperature, Top P, Top K, Min P, Repeat Penalty, and Repeat Last N).
 - **Server-specific params**: Reasoning format extraction, Reasoning Mode, and Reasoning Budget settings.
 
@@ -136,7 +137,7 @@ Model preset parameters are visually grouped in the Preset Details & Parameters 
 
 ## API Endpoint Overview (Router Mode)
 
-When started in **Router Mode** (using `llama-herd --cli` -> Mode 1, or through the TUI -> `Ctrl + R`), `llama-server` functions as a dynamic gateway. It coordinates the lifecycle of multiple model presets based on client calls:
+When started in **Router Mode** (using `llama-herd --cli` -> Mode 1, or through the TUI -> `F6`), `llama-server` functions as a dynamic gateway. It coordinates the lifecycle of multiple model presets based on client calls:
 
 ```
 [Client App] ---> (POST /v1/chat/completions { "model": "qwen2-5-7b-instruct-draft" })

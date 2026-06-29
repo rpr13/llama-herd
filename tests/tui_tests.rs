@@ -702,14 +702,14 @@ temp = 0.7
         handle_key_event(&mut state, key_tab, &tx);
         assert_eq!(state.dashboard_focus, DashboardFocus::Left);
 
-        // 4. Numeric key '2' should switch active tab to Settings
-        let key_2 = KeyEvent {
-            code: KeyCode::Char('2'),
+        // 4. F2 key should switch active tab to Settings
+        let key_f2 = KeyEvent {
+            code: KeyCode::F(2),
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         };
-        handle_key_event(&mut state, key_2, &tx);
+        handle_key_event(&mut state, key_f2, &tx);
         assert_eq!(state.active_tab, 1);
         assert_eq!(state.screen, AppScreen::Settings);
     }

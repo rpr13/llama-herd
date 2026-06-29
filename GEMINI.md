@@ -97,7 +97,8 @@ To enhance visual organization, parameters on both TUI screens are categorized a
 
 - **Dashboard Tab (Tab 1) - Preset Details & Parameters**:
   - **llama herd**: Contains orchestrator settings like Preset Name, Model File, Target Config File, and Total Layers. Placed at the top of the dashboard.
-  - **Common params**: Contains context size, GPU offload layers, vision projector, and speculative draft models.
+  - **Common params**: Contains context size, GPU offload layers, and vision projector.
+  - **Draft params**: Contains speculative draft models, draft GPU offload layers, speculative decoding type, max speculative predictions, and min probability threshold.
   - **Sampling params**: Contains temperature, Top P, Top K, Min P, and repetition penalties.
   - **Server-specific params**: Contains reasoning/thinking configurations (mode, format, budget).
 - **Settings Tab (Tab 2) - Global Settings**:
@@ -166,3 +167,9 @@ The TUI must not use network-scraping or HTTP requests to poll performance metri
 - Subprocess `stdout`/`stderr` output streams are parsed dynamically to extract runtime info (e.g. startup completion, sub-instance routing details, port mapping).
 - Subprocess state and PID are monitored directly via local OS child processes check (e.g. `try_wait`).
 - Lingering or zombie instances are cleaned up by tracking subprocess PIDs in `active_pids.txt` within the global configuration directory and terminating them using the `sysinfo` library upon startup or exit.
+
+### 7. TUI Keyboard Navigation & Launch Shortcuts
+
+To ensure wide terminal compatibility and eliminate modifier capture conflicts:
+- **Tab switching** must be mapped to **`F1`** (Dashboard), **`F2`** (Settings), and **`F3`** (Logs). Plain numbers `1`, `2`, `3` must not trigger tab switching when the user is editing a field or picking a file.
+- **Server launching** must be mapped to **`F5`** (Start selected preset model) and **`F6`** (Start router mode server). Traditional shortcuts like `Ctrl+Enter` or `Ctrl+R` must be avoided to prevent terminal capture and formatting issues.

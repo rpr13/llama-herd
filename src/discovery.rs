@@ -643,12 +643,21 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                 let spec_draft_p_min = get_draft_long("spec-draft-p-min")
                     .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.0);
-                let d_ngl = draft_config
-                    .get("llama-herd")
-                    .and_then(|lh| lh.get("total-layers"))
-                    .or_else(|| get_draft_long("total-layers"))
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(4);
+                let d_ngl_val = get_draft_long("ngl")
+                    .or_else(|| {
+                        draft_config
+                            .get("llama-herd")
+                            .and_then(|lh| lh.get("total-layers"))
+                    })
+                    .or_else(|| get_draft_long("total-layers"));
+                let d_ngl = d_ngl_val
+                    .and_then(|v| {
+                        v.as_str()
+                            .map(ToOwned::to_owned)
+                            .or_else(|| v.as_i64().map(|n| n.to_string()))
+                            .or_else(|| v.as_u64().map(|u| u.to_string()))
+                    })
+                    .unwrap_or_else(|| "auto".to_owned());
 
                 current_preset.push(format!(
                     "model-draft = {}",

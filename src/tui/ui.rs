@@ -493,14 +493,14 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
             if state.dashboard_focus == DashboardFocus::Left {
                 first_line_spans.extend(vec![
                     Span::styled(
-                        " [Ctrl+Enter]",
+                        " [F5]",
                         Style::default()
                             .fg(theme.primary)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(launch_preset_label, Style::default().fg(theme.fg)),
                     Span::styled(
-                        " [Ctrl+R]",
+                        " [F6]",
                         Style::default()
                             .fg(theme.primary)
                             .add_modifier(Modifier::BOLD),
@@ -524,7 +524,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
                     ),
                     Span::styled(" Edit Selected  ", Style::default().fg(theme.fg)),
                     Span::styled(
-                        " [Ctrl+Enter]",
+                        " [F5]",
                         Style::default()
                             .fg(theme.primary)
                             .add_modifier(Modifier::BOLD),
@@ -931,9 +931,9 @@ fn render_mc_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             ),
             render_header_tab(
                 if theme.show_emojis {
-                    "[1] 📊 Dashboard"
+                    "[F1] 📊 Dashboard"
                 } else {
-                    "[1] Dashboard"
+                    "[F1] Dashboard"
                 },
                 state.active_tab == 0,
                 theme,
@@ -944,9 +944,9 @@ fn render_mc_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             ),
             render_header_tab(
                 if theme.show_emojis {
-                    "[2] ⚙ Settings"
+                    "[F2] ⚙ Settings"
                 } else {
-                    "[2] Settings"
+                    "[F2] Settings"
                 },
                 state.active_tab == 1,
                 theme,
@@ -957,9 +957,9 @@ fn render_mc_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             ),
             render_header_tab(
                 if theme.show_emojis {
-                    "[3] 📜 Logs"
+                    "[F3] 📜 Logs"
                 } else {
-                    "[3] Logs"
+                    "[F3] Logs"
                 },
                 state.active_tab == 2,
                 theme,
@@ -974,14 +974,14 @@ fn render_mc_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             render_header_tab(
                 if area.width >= 45 {
                     if theme.show_emojis {
-                        "[1] 📊 Dash"
+                        "[F1] 📊 Dash"
                     } else {
-                        "[1] Dash"
+                        "[F1] Dash"
                     }
                 } else if theme.show_emojis {
-                    "[1] 📊"
+                    "[F1] 📊"
                 } else {
-                    "[1] D"
+                    "[F1] D"
                 },
                 state.active_tab == 0,
                 theme,
@@ -990,14 +990,14 @@ fn render_mc_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             render_header_tab(
                 if area.width >= 45 {
                     if theme.show_emojis {
-                        "[2] ⚙ Set"
+                        "[F2] ⚙ Set"
                     } else {
-                        "[2] Set"
+                        "[F2] Set"
                     }
                 } else if theme.show_emojis {
-                    "[2] ⚙"
+                    "[F2] ⚙"
                 } else {
-                    "[2] S"
+                    "[F2] S"
                 },
                 state.active_tab == 1,
                 theme,
@@ -1006,14 +1006,14 @@ fn render_mc_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             render_header_tab(
                 if area.width >= 45 {
                     if theme.show_emojis {
-                        "[3] 📜 Logs"
+                        "[F3] 📜 Logs"
                     } else {
-                        "[3] Logs"
+                        "[F3] Logs"
                     }
                 } else if theme.show_emojis {
-                    "[3] 📜"
+                    "[F3] 📜"
                 } else {
-                    "[3] L"
+                    "[F3] L"
                 },
                 state.active_tab == 2,
                 theme,
@@ -1717,6 +1717,17 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 &mmproj_val,
                 Style::default().fg(theme.accent),
             ),
+        ]),
+        // GROUP HEADER: Draft params
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "── Draft params ──",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""),
         ]),
         Row::new(vec![
             d_prompt,

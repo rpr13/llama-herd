@@ -54,50 +54,23 @@ pub fn handle_key_event(
 ) -> bool {
     let mut should_quit = false;
 
-    if !matches!(
-        state.screen,
-        AppScreen::EditingCtx
-            | AppScreen::EditingNgl
-            | AppScreen::EditingDraftNgl
-            | AppScreen::PickingServerPath
-            | AppScreen::PickingModelsDir
-            | AppScreen::EditingGlobalSetting
-            | AppScreen::SelectingGlobalSettingOption
-            | AppScreen::SelectingMMProj
-            | AppScreen::SelectingDraftModel
-            | AppScreen::EditingTemp
-            | AppScreen::EditingTopP
-            | AppScreen::EditingTopK
-            | AppScreen::EditingTotalLayers
-            | AppScreen::EditingConfigFileName
-            | AppScreen::ConfirmSaveConfig
-            | AppScreen::WarnDiscardChanges
-            | AppScreen::EditingMinP
-            | AppScreen::EditingRepeatPenalty
-            | AppScreen::EditingRepeatLastN
-            | AppScreen::SelectingReasoningFormat
-            | AppScreen::SelectingReasoning
-            | AppScreen::EditingReasoningBudget
-            | AppScreen::SelectingSpecType
-    ) {
-        match key.code {
-            KeyCode::Char('1') => {
-                state.active_tab = 0;
-                state.screen = AppScreen::Dashboard;
-                return false;
-            }
-            KeyCode::Char('2') => {
-                state.active_tab = 1;
-                state.screen = AppScreen::Settings;
-                return false;
-            }
-            KeyCode::Char('3') => {
-                state.active_tab = 2;
-                state.screen = AppScreen::Logs;
-                return false;
-            }
-            _ => {}
+    match key.code {
+        KeyCode::F(1) => {
+            state.active_tab = 0;
+            state.screen = AppScreen::Dashboard;
+            return false;
         }
+        KeyCode::F(2) => {
+            state.active_tab = 1;
+            state.screen = AppScreen::Settings;
+            return false;
+        }
+        KeyCode::F(3) => {
+            state.active_tab = 2;
+            state.screen = AppScreen::Logs;
+            return false;
+        }
+        _ => {}
     }
 
     match state.screen {
@@ -153,7 +126,7 @@ pub fn handle_key_event(
                     }
                 }
             }
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::F(6) => {
                 // Spawns router mode server
                 crate::launcher::kill_existing_servers();
                 let preset_ini_path = match crate::discovery::generate_presets_ini(
@@ -212,7 +185,7 @@ pub fn handle_key_event(
                     Err(_e) => {}
                 }
             }
-            KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::F(5) => {
                 if !state.presets.is_empty() {
                     // Spawns preset server
                     crate::launcher::kill_existing_servers();
