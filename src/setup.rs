@@ -131,12 +131,14 @@ pub fn run_wizard<S: std::hash::BuildHasher>(
     let server_exe = PathBuf::from(state.server_path.trim());
     let models_dir = PathBuf::from(state.models_dir.trim());
 
-    global_config.insert(
-        "llama-server".to_owned(),
+    config::update_global_config_value(
+        &mut global_config,
+        "llama-server",
         serde_json::Value::String(server_exe.to_string_lossy().to_string()),
     );
-    global_config.insert(
-        "models-dir".to_owned(),
+    config::update_global_config_value(
+        &mut global_config,
+        "models-dir",
         serde_json::Value::String(models_dir.to_string_lossy().to_string()),
     );
 

@@ -200,6 +200,9 @@ fn parse_color(s: &str) -> Option<Color> {
             }
 
             let hex = s.strip_prefix('#').unwrap_or(s);
+            if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
             match hex.len() {
                 3 => {
                     let r = u8::from_str_radix(&hex[0..1], 16).ok()?;

@@ -38,6 +38,10 @@ pub enum TuiEvent {
     Tick,
     /// Log line received event.
     LogReceived,
+    /// Models directory state changed.
+    ModelsDirChanged(app::ModelsDirState),
+    /// Models directory has become invalid / inaccessible.
+    ModelsDirInvalid,
 }
 
 /// Handles TUI keyboard events and updates the application state.
@@ -529,14 +533,19 @@ pub fn handle_key_event(
                     if state.screen == AppScreen::PickingServerPath {
                         state.server_exe = path.clone();
                         state.server_version = crate::launcher::get_server_version(&path);
-                        state.global_config.insert(
-                            "llama-server".to_owned(),
+                        crate::config::update_global_config_value(
+                            &mut state.global_config,
+                            "llama-server",
                             serde_json::Value::String(path.to_string_lossy().to_string()),
                         );
                     } else {
                         state.models_dir = path.clone();
-                        state.global_config.insert(
-                            "models-dir".to_owned(),
+                        if let Ok(mut lock) = state.shared_models_dir.lock() {
+                            *lock = path.clone();
+                        }
+                        crate::config::update_global_config_value(
+                            &mut state.global_config,
+                            "models-dir",
                             serde_json::Value::String(path.to_string_lossy().to_string()),
                         );
                         // Refresh presets list when models dir changes
@@ -1012,7 +1021,11 @@ pub fn handle_key_event(
             }
             KeyCode::Enter | KeyCode::Char('y' | 'Y') => {
                 if let Some(target) = state.pending_preset_index.take() {
-                    state.preset_index = target;
+                    if target < state.presets.len() {
+                        state.preset_index = target;
+                    } else {
+                        state.preset_index = 0;
+                    }
                     state.load_current_preset_settings(None);
                 }
                 state.screen = AppScreen::Dashboard;
@@ -1174,6 +1187,71 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
         });
     }
 
+    // Spawn thread for models directory changes monitoring
+    {
+        let event_tx = event_tx.clone();
+        let models_dir_sharing = std::sync::Arc::clone(&state.shared_models_dir);
+        std::thread::spawn(move || {
+            let mut last_state: Option<app::ModelsDirState> = None;
+            let mut last_stable_state: Option<app::ModelsDirState> = None;
+
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+
+                let dir = {
+                    if let Ok(lock) = models_dir_sharing.lock() {
+                        lock.clone()
+                    } else {
+                        break;
+                    }
+                };
+
+                if std::fs::read_dir(&dir).is_err() {
+                    if event_tx.send(TuiEvent::ModelsDirInvalid).is_err() {
+                        break;
+                    }
+                    continue;
+                }
+
+                let current_state = app::get_models_dir_state(&dir);
+                if let Some(new_state) = current_state {
+                    if let Some(ref prev_state) = last_state {
+                        let mut is_stable = true;
+                        for (path, mtime, size) in &new_state.files {
+                            if let Some((_, prev_mtime, prev_size)) =
+                                prev_state.files.iter().find(|(p, _, _)| p == path)
+                            {
+                                if prev_size != size || prev_mtime != mtime {
+                                    is_stable = false;
+                                    break;
+                                }
+                            } else {
+                                is_stable = false;
+                            }
+                        }
+
+                        if is_stable {
+                            if let Some(ref stable_state) = last_stable_state {
+                                if stable_state != &new_state {
+                                    if event_tx
+                                        .send(TuiEvent::ModelsDirChanged(new_state.clone()))
+                                        .is_err()
+                                    {
+                                        break;
+                                    }
+                                    last_stable_state = Some(new_state.clone());
+                                }
+                            } else {
+                                last_stable_state = Some(new_state.clone());
+                            }
+                        }
+                    }
+                    last_state = Some(new_state);
+                }
+            }
+        });
+    }
+
     // Spawn thread for periodic ticks
     {
         let event_tx = event_tx.clone();
@@ -1208,9 +1286,19 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
 
                     TuiEvent::Tick => {
                         state.tick_count += 1;
-                        if state.tick_count % 4 == 0 {
-                            state.check_models_dir_changes();
+                        if state.tick_count % 4 == 0
+                            && state.models_dir_changed_dirty
+                            && !state.has_unsaved_changes()
+                        {
+                            state.models_dir_changed_dirty = false;
+                            state.load_current_preset_settings(None);
                         }
+                    }
+                    TuiEvent::ModelsDirChanged(new_state) => {
+                        state.handle_models_dir_changed(new_state);
+                    }
+                    TuiEvent::ModelsDirInvalid => {
+                        state.handle_models_dir_invalid();
                     }
                     TuiEvent::LogReceived => {}
                 }

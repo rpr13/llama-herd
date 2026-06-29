@@ -2,8 +2,20 @@ use crate::config::{ModelAssets, UserSettings};
 use std::collections::HashMap;
 use std::path::Path;
 
+use std::sync::{Mutex, OnceLock};
+
+fn pids_file_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 /// Appends a new server subprocess PID to the active PIDs tracking file.
+///
+/// # Panics
+///
+/// Panics if the internal file lock is poisoned.
 pub fn add_active_pid(pid: u32) {
+    let _guard = pids_file_lock().lock().expect("pids lock poisoned");
     let lh_dir = crate::config::get_llama_herd_dir();
     let _ = std::fs::create_dir_all(&lh_dir);
     let pids_file = lh_dir.join("active_pids.txt");
@@ -18,7 +30,12 @@ pub fn add_active_pid(pid: u32) {
 }
 
 /// Removes a server subprocess PID from the active PIDs tracking file.
+///
+/// # Panics
+///
+/// Panics if the internal file lock is poisoned.
 pub fn remove_active_pid(pid: u32) {
+    let _guard = pids_file_lock().lock().expect("pids lock poisoned");
     let pids_file = crate::config::get_llama_herd_dir().join("active_pids.txt");
     if !pids_file.exists() {
         return;
@@ -37,7 +54,12 @@ pub fn remove_active_pid(pid: u32) {
 }
 
 /// Terminates any stray or active servers tracked in the active PIDs file.
+///
+/// # Panics
+///
+/// Panics if the internal file lock is poisoned.
 pub fn kill_existing_servers() {
+    let _guard = pids_file_lock().lock().expect("pids lock poisoned");
     let pids_file = crate::config::get_llama_herd_dir().join("active_pids.txt");
     if !pids_file.exists() {
         return;

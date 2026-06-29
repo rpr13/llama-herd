@@ -334,6 +334,8 @@ pub struct AppState {
     pub models_dir_changed_dirty: bool,
     /// Flag indicating if GGUF models directory is inaccessible or deleted.
     pub models_dir_invalid: bool,
+    /// Thread-safe shared models directory path for the background scanner.
+    pub shared_models_dir: std::sync::Arc<std::sync::Mutex<PathBuf>>,
 }
 
 impl AppState {
@@ -350,6 +352,7 @@ impl AppState {
         let server_version = crate::launcher::get_server_version(&server_exe);
         let last_models_dir_state = get_models_dir_state(&models_dir);
         let models_dir_invalid = std::fs::read_dir(&models_dir).is_err();
+        let shared_models_dir = std::sync::Arc::new(std::sync::Mutex::new(models_dir.clone()));
 
         let mut state = Self {
             dashboard_focus: DashboardFocus::Left,
@@ -471,6 +474,7 @@ impl AppState {
             last_stable_models_dir_state: last_models_dir_state,
             models_dir_changed_dirty: false,
             models_dir_invalid,
+            shared_models_dir,
         };
 
         state.load_current_preset_settings(None);
@@ -487,6 +491,9 @@ impl AppState {
         self.models_dir_changed_dirty = false;
         if self.presets.is_empty() {
             return;
+        }
+        if self.preset_index >= self.presets.len() {
+            self.preset_index = 0;
         }
 
         let (preset_name, model_path) = &self.presets[self.preset_index];
@@ -925,11 +932,7 @@ impl AppState {
         update_float_setting(&mut long_obj, "top-p", &self.top_p);
 
         // 5. top-k
-        if self.top_k.is_empty() {
-            long_obj.remove("top-k");
-        } else if let Ok(num) = self.top_k.parse::<i64>() {
-            long_obj.insert("top-k".to_owned(), serde_json::Value::Number(num.into()));
-        }
+        update_int_setting(&mut long_obj, "top-k", &self.top_k);
 
         // min-p
         update_float_setting(&mut long_obj, "min-p", &self.min_p);
@@ -938,32 +941,19 @@ impl AppState {
         update_float_setting(&mut long_obj, "repeat-penalty", &self.repeat_penalty);
 
         // repeat-last-n
-        if self.repeat_last_n.is_empty() {
-            long_obj.remove("repeat-last-n");
-        } else if let Ok(num) = self.repeat_last_n.parse::<i64>() {
-            long_obj.insert(
-                "repeat-last-n".to_owned(),
-                serde_json::Value::Number(num.into()),
-            );
-        }
+        update_int_setting(&mut long_obj, "repeat-last-n", &self.repeat_last_n);
         update_float_setting(&mut long_obj, "dry-multiplier", &self.dry_multiplier);
         update_float_setting(&mut long_obj, "dry-base", &self.dry_base);
-        if self.dry_allowed_length.is_empty() {
-            long_obj.remove("dry-allowed-length");
-        } else if let Ok(num) = self.dry_allowed_length.parse::<i64>() {
-            long_obj.insert(
-                "dry-allowed-length".to_owned(),
-                serde_json::Value::Number(num.into()),
-            );
-        }
-        if self.dry_penalty_last_n.is_empty() {
-            long_obj.remove("dry-penalty-last-n");
-        } else if let Ok(num) = self.dry_penalty_last_n.parse::<i64>() {
-            long_obj.insert(
-                "dry-penalty-last-n".to_owned(),
-                serde_json::Value::Number(num.into()),
-            );
-        }
+        update_int_setting(
+            &mut long_obj,
+            "dry-allowed-length",
+            &self.dry_allowed_length,
+        );
+        update_int_setting(
+            &mut long_obj,
+            "dry-penalty-last-n",
+            &self.dry_penalty_last_n,
+        );
         if self.dry_sequence_breaker.is_empty() {
             long_obj.remove("dry-sequence-breaker");
         } else {
@@ -993,14 +983,7 @@ impl AppState {
         }
 
         // reasoning-budget
-        if self.reasoning_budget.is_empty() {
-            long_obj.remove("reasoning-budget");
-        } else if let Ok(num) = self.reasoning_budget.parse::<i64>() {
-            long_obj.insert(
-                "reasoning-budget".to_owned(),
-                serde_json::Value::Number(num.into()),
-            );
-        }
+        update_int_setting(&mut long_obj, "reasoning-budget", &self.reasoning_budget);
 
         // spec-type, spec-draft-n-max, spec-draft-p-min are NOT saved in main model's config
         long_obj.remove("spec-type");
@@ -1058,24 +1041,18 @@ impl AppState {
             }
 
             // 2. spec-draft-n-max
-            if self.spec_draft_n_max.is_empty() {
-                draft_long_obj.remove("spec-draft-n-max");
-            } else if let Ok(num) = self.spec_draft_n_max.parse::<i64>() {
-                draft_long_obj.insert(
-                    "spec-draft-n-max".to_owned(),
-                    serde_json::Value::Number(num.into()),
-                );
-            }
+            update_int_setting(
+                &mut draft_long_obj,
+                "spec-draft-n-max",
+                &self.spec_draft_n_max,
+            );
 
             // 3. spec-draft-p-min
-            if self.spec_draft_p_min.is_empty() {
-                draft_long_obj.remove("spec-draft-p-min");
-            } else if let Ok(num) = self.spec_draft_p_min.parse::<f64>() {
-                if let Some(n) = serde_json::Number::from_f64(num) {
-                    draft_long_obj
-                        .insert("spec-draft-p-min".to_owned(), serde_json::Value::Number(n));
-                }
-            }
+            update_float_setting(
+                &mut draft_long_obj,
+                "spec-draft-p-min",
+                &self.spec_draft_p_min,
+            );
 
             // 4. spec-type
             if self.spec_type.is_empty() {
@@ -1245,6 +1222,23 @@ impl AppState {
         }
     }
 
+    /// Handles models directory changes detected by the background watcher.
+    pub fn handle_models_dir_changed(&mut self, new_state: ModelsDirState) {
+        self.models_dir_invalid = false;
+        if self.has_unsaved_changes() {
+            self.models_dir_changed_dirty = true;
+        } else {
+            let _ = self.regenerate_and_reload_presets();
+        }
+        self.last_stable_models_dir_state = Some(new_state.clone());
+        self.last_models_dir_state = Some(new_state);
+    }
+
+    /// Handles invalid models directory state detected by the background watcher.
+    pub const fn handle_models_dir_invalid(&mut self) {
+        self.models_dir_invalid = true;
+    }
+
     /// Regenerates the presets INI file and reloads the active list of presets into TUI memory.
     #[allow(clippy::missing_errors_doc)]
     pub fn regenerate_and_reload_presets(&mut self) -> Result<(), std::io::Error> {
@@ -1294,6 +1288,20 @@ fn update_float_setting(
         && let Some(num) = serde_json::Number::from_f64(f)
     {
         obj.insert(key.to_owned(), serde_json::Value::Number(num));
+        return;
+    }
+    obj.remove(key);
+}
+
+fn update_int_setting(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    val_str: &str,
+) {
+    if !val_str.is_empty()
+        && let Ok(i) = val_str.parse::<i64>()
+    {
+        obj.insert(key.to_owned(), serde_json::Value::Number(i.into()));
         return;
     }
     obj.remove(key);

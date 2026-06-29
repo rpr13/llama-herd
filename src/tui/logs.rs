@@ -97,14 +97,22 @@ impl ActiveServer {
         let mut child = cmd.spawn()?;
         crate::launcher::add_active_pid(child.id());
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| std::io::Error::other("Failed to capture stdout"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| std::io::Error::other("Failed to capture stderr"))?;
+        let stdout = if let Some(out) = child.stdout.take() {
+            out
+        } else {
+            let _ = child.kill();
+            let _ = child.wait();
+            crate::launcher::remove_active_pid(child.id());
+            return Err(std::io::Error::other("Failed to capture stdout"));
+        };
+        let stderr = if let Some(err) = child.stderr.take() {
+            err
+        } else {
+            let _ = child.kill();
+            let _ = child.wait();
+            crate::launcher::remove_active_pid(child.id());
+            return Err(std::io::Error::other("Failed to capture stderr"));
+        };
 
         let logs = Arc::new(Mutex::new(VecDeque::new()));
         let raw_history = Arc::new(Mutex::new(VecDeque::new()));
@@ -288,23 +296,31 @@ impl ActiveServer {
     ///
     /// Panics if the internal `is_running` lock is poisoned.
     pub fn kill(&mut self) {
-        *self
+        let mut was_running = self
             .is_running
             .lock()
-            .expect("Failed to lock is_running state") = false;
+            .expect("Failed to lock is_running state");
+        if !*was_running {
+            return;
+        }
+        *was_running = false;
+        drop(was_running);
+
         let pid = self.child.lock().ok().map(|mut child| {
             let pid = child.id();
-            #[cfg(target_os = "windows")]
-            {
-                let _ = Command::new("taskkill")
-                    .args(["/F", "/PID", &pid.to_string(), "/T"])
-                    .output();
+            if matches!(child.try_wait(), Ok(None)) {
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = Command::new("taskkill")
+                        .args(["/F", "/PID", &pid.to_string(), "/T"])
+                        .output();
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = child.kill();
+                }
+                let _ = child.wait();
             }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = child.kill();
-            }
-            let _ = child.wait();
             pid
         });
         if let Some(pid) = pid {

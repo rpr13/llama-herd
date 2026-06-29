@@ -487,18 +487,25 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
         }
 
         for (preset_name, use_draft, use_vision) in presets_to_generate {
+            let preset_name = preset_name.replace(['\n', '\r'], " ");
             let mut current_preset = Vec::new();
             current_preset.push(format!("; --- {preset_name} ---"));
             current_preset.push(format!("[{preset_name}]"));
             current_preset.push(format!(
                 "model = {}",
-                model_path.to_string_lossy().replace('\\', "/")
+                model_path
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .replace(['\n', '\r'], " ")
             ));
 
             if let Some(template) = &assets.jinja_template {
                 current_preset.push(format!(
                     "chat-template-file = {}",
-                    template.to_string_lossy().replace('\\', "/")
+                    template
+                        .to_string_lossy()
+                        .replace('\\', "/")
+                        .replace(['\n', '\r'], " ")
                 ));
             }
 
@@ -533,7 +540,8 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                     }
                     let ini_key = k;
                     if let Some(s) = val.as_str() {
-                        current_preset.push(format!("{ini_key} = {s}"));
+                        let sanitized = s.replace(['\n', '\r'], " ");
+                        current_preset.push(format!("{ini_key} = {sanitized}"));
                     } else if let Some(b) = val.as_bool() {
                         current_preset.push(format!("{ini_key} = {b}"));
                     } else if let Some(n) = val.as_i64() {
@@ -586,7 +594,8 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                     }
                     let val = &short_obj[k];
                     if let Some(s) = val.as_str() {
-                        current_preset.push(format!("{k} = {s}"));
+                        let sanitized = s.replace(['\n', '\r'], " ");
+                        current_preset.push(format!("{k} = {sanitized}"));
                     } else if let Some(b) = val.as_bool() {
                         current_preset.push(format!("{k} = {b}"));
                     } else if let Some(n) = val.as_i64() {
@@ -600,7 +609,9 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
             if use_vision && let Some(ref mm) = mmproj_file {
                 current_preset.push(format!(
                     "mmproj = {}",
-                    mm.to_string_lossy().replace('\\', "/")
+                    mm.to_string_lossy()
+                        .replace('\\', "/")
+                        .replace(['\n', '\r'], " ")
                 ));
             }
 
@@ -661,7 +672,9 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
 
                 current_preset.push(format!(
                     "model-draft = {}",
-                    df.to_string_lossy().replace('\\', "/")
+                    df.to_string_lossy()
+                        .replace('\\', "/")
+                        .replace(['\n', '\r'], " ")
                 ));
                 current_preset.push(format!("spec-type = {spec_type}"));
                 current_preset.push(format!("spec-draft-n-max = {spec_draft_n_max}"));
