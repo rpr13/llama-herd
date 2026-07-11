@@ -1084,4 +1084,41 @@ gpu-layers-draft = 4
         assert_eq!(state.spec_draft_p_min, "0.85");
         assert_eq!(state.spec_type, "draft-eagle3");
     }
+
+    #[test]
+    fn test_tui_input_validation_temp() {
+        let mut state = AppState::new(
+            vec![("test".to_string(), PathBuf::from("test.gguf"))],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.screen = AppScreen::EditingTemp;
+        state.input_buffer = "invalid_temp".to_string();
+
+        let key = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        let _ = handle_key_event(&mut state, key, &tx);
+
+        // Should refuse to close and set validation error
+        assert_eq!(state.screen, AppScreen::EditingTemp);
+        assert!(state.validation_error.is_some());
+
+        // Typing a char should clear validation error
+        let type_key = KeyEvent {
+            code: KeyCode::Char('1'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let _ = handle_key_event(&mut state, type_key, &tx);
+        assert!(state.validation_error.is_none());
+    }
 }

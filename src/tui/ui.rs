@@ -5,7 +5,9 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Wrap},
+    widgets::{
+        Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, TableState, Wrap,
+    },
 };
 
 /// Representation of a global settings parameter item.
@@ -1111,6 +1113,7 @@ fn render_settings_tab(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(inner_area);
 
+    let mut selected_row_idx = 0;
     let mut rows = Vec::new();
     let mut last_group = "";
     for (idx, item) in SETTINGS.iter().enumerate() {
@@ -1129,6 +1132,9 @@ fn render_settings_tab(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         }
 
         let is_selected = idx == state.settings_index;
+        if is_selected {
+            selected_row_idx = rows.len();
+        }
 
         let label_str = if theme.show_emojis {
             format!("{} {}", item.emoji, item.label)
@@ -1194,7 +1200,9 @@ fn render_settings_tab(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             .border_style(Style::default().fg(theme.secondary))
             .border_type(theme.border_type),
     );
-    f.render_widget(table, content_layout[0]);
+    let mut table_state = TableState::default();
+    table_state.select(Some(selected_row_idx));
+    f.render_stateful_widget(table, content_layout[0], &mut table_state);
 
     // Right Column: Details Card
     let selected_item = &SETTINGS[state.settings_index];
@@ -1718,70 +1726,6 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 Style::default().fg(theme.accent),
             ),
         ]),
-        // GROUP HEADER: Draft params
-        Row::new(vec![
-            Cell::from(""),
-            Cell::from(Span::styled(
-                "── Draft params ──",
-                Style::default()
-                    .fg(theme.accent)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(""),
-        ]),
-        Row::new(vec![
-            d_prompt,
-            d_label,
-            make_val_cell(
-                &original_draft_val,
-                &draft_val,
-                Style::default().fg(theme.accent),
-            ),
-        ]),
-        Row::new(vec![
-            g_prompt,
-            g_label,
-            make_val_cell(
-                &state.original_draft_ngl,
-                &state.draft_ngl,
-                Style::default().fg(theme.accent),
-            ),
-        ]),
-        Row::new(vec![
-            y_prompt,
-            y_label,
-            make_val_cell(
-                if state.original_spec_type.is_empty() {
-                    "Omit (Default)"
-                } else {
-                    &state.original_spec_type
-                },
-                if state.spec_type.is_empty() {
-                    "Omit (Default)"
-                } else {
-                    &state.spec_type
-                },
-                Style::default().fg(theme.accent),
-            ),
-        ]),
-        Row::new(vec![
-            draft_max_tokens_prompt,
-            draft_max_tokens_label,
-            make_val_cell(
-                &state.original_spec_draft_n_max,
-                &state.spec_draft_n_max,
-                Style::default().fg(theme.accent),
-            ),
-        ]),
-        Row::new(vec![
-            draft_min_prob_prompt,
-            draft_min_prob_label,
-            make_val_cell(
-                &state.original_spec_draft_p_min,
-                &state.spec_draft_p_min,
-                Style::default().fg(theme.accent),
-            ),
-        ]),
         // GROUP HEADER: Sampling params
         Row::new(vec![
             Cell::from(""),
@@ -1946,6 +1890,85 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 Style::default().fg(theme.success),
             ),
         ]),
+        // LINE BREAK (blank row)
+        Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
+        // GROUP HEADER: Draft params
+        Row::new(vec![
+            Cell::from(""),
+            Cell::from(Span::styled(
+                "── Draft params ──",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""),
+        ]),
+        Row::new(vec![
+            d_prompt,
+            d_label,
+            make_val_cell(
+                &original_draft_val,
+                &draft_val,
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            g_prompt,
+            g_label,
+            make_val_cell(
+                &state.original_draft_ngl,
+                &state.draft_ngl,
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            Cell::from("   "),
+            Cell::from(Span::styled(
+                "Draft Total Layers",
+                Style::default().fg(theme.secondary),
+            )),
+            Cell::from(Span::styled(
+                state
+                    .draft_total_layers
+                    .map_or_else(|| "Unknown / None".to_owned(), |t| t.to_string()),
+                Style::default().fg(theme.accent),
+            )),
+        ]),
+        Row::new(vec![
+            y_prompt,
+            y_label,
+            make_val_cell(
+                if state.original_spec_type.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.original_spec_type
+                },
+                if state.spec_type.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.spec_type
+                },
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            draft_max_tokens_prompt,
+            draft_max_tokens_label,
+            make_val_cell(
+                &state.original_spec_draft_n_max,
+                &state.spec_draft_n_max,
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            draft_min_prob_prompt,
+            draft_min_prob_label,
+            make_val_cell(
+                &state.original_spec_draft_p_min,
+                &state.spec_draft_p_min,
+                Style::default().fg(theme.accent),
+            ),
+        ]),
     ];
 
     let table = Table::new(
@@ -1957,7 +1980,40 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         ],
     )
     .block(right_block);
-    f.render_widget(table, content_layout[1]);
+    let selected_row_idx = match state.dashboard_param_index {
+        0 => 3,
+        1 => 4,
+        2 => 6,
+        3 => 7,
+        4 => 8,
+        5 => 27,
+        6 => 28,
+        7 => 30,
+        8 => 31,
+        9 => 32,
+        10 => 10,
+        11 => 11,
+        12 => 12,
+        13 => 13,
+        14 => 14,
+        15 => 15,
+        16 => 16,
+        17 => 17,
+        18 => 18,
+        19 => 19,
+        20 => 20,
+        21 => 22,
+        22 => 23,
+        23 => 24,
+        _ => 0,
+    };
+    let mut table_state = TableState::default();
+    if state.dashboard_focus == DashboardFocus::Right {
+        table_state.select(Some(selected_row_idx));
+    } else {
+        table_state.select(Some(0));
+    }
+    f.render_stateful_widget(table, content_layout[1], &mut table_state);
 
     // Render Input Prompt Overlays
     if state.screen != AppScreen::Dashboard
@@ -2046,6 +2102,8 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
 
         let height_pct = if state.screen == AppScreen::EditingConfigFileName {
             45
+        } else if state.validation_error.is_some() {
+            30
         } else {
             20
         };
@@ -2072,6 +2130,14 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 ),
             ]),
         ];
+
+        if let Some(ref err) = state.validation_error {
+            popup_text.push(Line::from(""));
+            popup_text.push(Line::from(Span::styled(
+                format!("⚠ {err}"),
+                Style::default().fg(theme.error),
+            )));
+        }
 
         if state.screen == AppScreen::EditingConfigFileName
             && !state.similar_config_files.is_empty()

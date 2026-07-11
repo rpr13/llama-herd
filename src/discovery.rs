@@ -62,9 +62,6 @@ pub fn find_matching_mmproj(model_path: &Path, mmproj_files: &[PathBuf]) -> Opti
             return Some(mf.clone());
         }
     }
-    if mmproj_files.len() == 1 {
-        return Some(mmproj_files[0].clone());
-    }
     None
 }
 
@@ -366,15 +363,19 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
             .clone();
         let ctx_size = crate::config::parse_ctx(&ctx_val).unwrap_or(131_072);
 
-        let mut ngl = get_lh_val("ngl")
+        let ngl_val = get_lh_val("ngl")
             .or_else(|| get_long_val("ngl"))
             .and_then(|v| {
                 v.as_str()
                     .map_or_else(|| v.as_i64().map(|i| i.to_string()), |s| Some(s.to_owned()))
             })
             .unwrap_or_else(|| "auto".to_owned());
+        let total_layers = get_lh_val("total-layers")
+            .or_else(|| get_long_val("total-layers"))
+            .and_then(|v| v.as_u64().and_then(|i| usize::try_from(i).ok()));
+        let mut ngl = crate::config::calculate_ngl(&ngl_val, "auto", total_layers);
         if ngl == "auto"
-            && let Some(total) = get_lh_val("total-layers").and_then(serde_json::Value::as_u64)
+            && let Some(total) = total_layers
         {
             ngl = total.to_string();
         }
@@ -654,21 +655,43 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                 let spec_draft_p_min = get_draft_long("spec-draft-p-min")
                     .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.0);
-                let d_ngl_val = get_draft_long("ngl")
-                    .or_else(|| {
-                        draft_config
-                            .get("llama-herd")
-                            .and_then(|lh| lh.get("total-layers"))
-                    })
-                    .or_else(|| get_draft_long("total-layers"));
-                let d_ngl = d_ngl_val
+                let get_draft_lh = |key: &str| -> Option<&serde_json::Value> {
+                    draft_config.get("llama-herd").and_then(|lh| lh.get(key))
+                };
+                let get_draft_long_val = |key: &str| -> Option<&serde_json::Value> {
+                    draft_config
+                        .get("llama-server-long")
+                        .and_then(|l| l.get(key))
+                        .or_else(|| draft_config.get(key))
+                };
+
+                let draft_ngl_val = get_draft_lh("gpu-layers-draft")
+                    .or_else(|| get_draft_long_val("gpu-layers-draft"))
+                    .or_else(|| get_draft_lh("ngld"))
+                    .or_else(|| get_draft_long_val("ngld"))
+                    .or_else(|| get_draft_lh("n-gpu-layers"))
+                    .or_else(|| get_draft_long_val("n-gpu-layers"))
+                    .or_else(|| get_draft_lh("ngl"))
+                    .or_else(|| get_draft_long_val("ngl"))
                     .and_then(|v| {
                         v.as_str()
                             .map(ToOwned::to_owned)
-                            .or_else(|| v.as_i64().map(|n| n.to_string()))
-                            .or_else(|| v.as_u64().map(|u| u.to_string()))
-                    })
-                    .unwrap_or_else(|| "auto".to_owned());
+                            .or_else(|| v.as_i64().map(|i| i.to_string()))
+                    });
+
+                let draft_total_layers = get_draft_lh("total-layers")
+                    .or_else(|| get_draft_long_val("total-layers"))
+                    .and_then(|v| v.as_u64().and_then(|i| usize::try_from(i).ok()));
+
+                let mut d_ngl = draft_ngl_val.as_ref().map_or_else(
+                    || draft_total_layers.map_or_else(|| "auto".to_owned(), |t| t.to_string()),
+                    |val_str| crate::config::calculate_ngl(val_str, "auto", draft_total_layers),
+                );
+                if d_ngl == "auto"
+                    && let Some(total) = draft_total_layers
+                {
+                    d_ngl = total.to_string();
+                }
 
                 current_preset.push(format!(
                     "model-draft = {}",

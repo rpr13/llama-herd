@@ -154,6 +154,17 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
             .or_else(|| global_config.get(key))
     };
 
+    let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
+        assets.config.get("llama-herd").and_then(|lh| lh.get(key))
+    };
+    let get_long_val = |key: &str| -> Option<&serde_json::Value> {
+        assets
+            .config
+            .get("llama-server-long")
+            .and_then(|l| l.get(key))
+            .or_else(|| assets.config.get(key))
+    };
+
     let host = get_global_long("host")
         .and_then(|v| v.as_str())
         .unwrap_or("127.0.0.1");
@@ -166,8 +177,12 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
     params.push("--log-colors".to_owned());
     params.push("on".to_owned());
 
+    let total_layers = get_lh_val("total-layers")
+        .or_else(|| get_long_val("total-layers"))
+        .and_then(|v| v.as_u64().and_then(|i| usize::try_from(i).ok()));
+    let resolved_ngl = crate::config::calculate_ngl(&settings.ngl, "auto", total_layers);
     params.push("-ngl".to_owned());
-    params.push(settings.ngl.clone());
+    params.push(resolved_ngl);
 
     params.push("--ctx-size".to_owned());
     params.push(settings.ctx.to_string());
@@ -230,17 +245,6 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
         params.push("--tools".to_owned());
         params.push(tools.to_owned());
     }
-
-    let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
-        assets.config.get("llama-herd").and_then(|lh| lh.get(key))
-    };
-    let get_long_val = |key: &str| -> Option<&serde_json::Value> {
-        assets
-            .config
-            .get("llama-server-long")
-            .and_then(|l| l.get(key))
-            .or_else(|| assets.config.get(key))
-    };
 
     let cache_type_k = get_global_long("cache-type-k")
         .or_else(|| get_lh_val("cache-type-k"))
@@ -397,12 +401,39 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
     if let Some(ref draft) = settings.draft_model {
         params.push("-md".to_owned());
         params.push(draft.to_string_lossy().into_owned());
+
+        let (resolved_draft_ngl, draft_assets_opt) = draft.parent().map_or_else(
+            || (settings.draft_ngl.clone(), None),
+            |parent| {
+                let draft_assets = crate::config::discover_assets(draft, parent);
+                let get_draft_lh = |key: &str| -> Option<&serde_json::Value> {
+                    draft_assets
+                        .config
+                        .get("llama-herd")
+                        .and_then(|lh| lh.get(key))
+                };
+                let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
+                    draft_assets
+                        .config
+                        .get("llama-server-long")
+                        .and_then(|l| l.get(key))
+                        .or_else(|| draft_assets.config.get(key))
+                };
+
+                let draft_total_layers = get_draft_lh("total-layers")
+                    .or_else(|| get_draft_long("total-layers"))
+                    .and_then(|v| v.as_u64().and_then(|i| usize::try_from(i).ok()));
+
+                let resolved =
+                    crate::config::calculate_ngl(&settings.draft_ngl, "auto", draft_total_layers);
+                (resolved, Some(draft_assets))
+            },
+        );
+
         params.push("-ngld".to_owned());
-        params.push(settings.draft_ngl.clone());
+        params.push(resolved_draft_ngl);
 
-        if let Some(parent) = draft.parent() {
-            let draft_assets = crate::config::discover_assets(draft, parent);
-
+        if let Some(draft_assets) = draft_assets_opt {
             let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
                 draft_assets
                     .config

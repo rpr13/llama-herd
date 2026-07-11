@@ -605,84 +605,196 @@ pub fn handle_key_event(
                 match state.screen {
                     AppScreen::EditingCtx => {
                         let val = state.input_buffer.trim().to_owned();
-                        if let Ok(parsed) = crate::config::parse_ctx_str(&val) {
-                            state.ctx_str = val;
-                            state.ctx = parsed;
-                            state.screen = AppScreen::Dashboard;
+                        match crate::config::parse_ctx_str(&val) {
+                            Ok(parsed) => {
+                                state.ctx_str = val;
+                                state.ctx = parsed;
+                                state.screen = AppScreen::Dashboard;
+                            }
+                            Err(_) => {
+                                state.validation_error =
+                                    Some("Invalid context size (e.g. 131072, 8k, 32k)".to_owned());
+                            }
                         }
                     }
                     AppScreen::EditingNgl => {
-                        state.ngl = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        let is_valid = val.is_empty()
+                            || val == "auto"
+                            || val.parse::<usize>().is_ok()
+                            || (val.starts_with("--") && val[2..].parse::<usize>().is_ok());
+                        if is_valid {
+                            state.ngl = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid layers count (e.g. auto, 32, --4)".to_owned());
+                        }
                     }
                     AppScreen::EditingDraftNgl => {
-                        state.draft_ngl = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        let is_valid = val.is_empty()
+                            || val == "auto"
+                            || val.parse::<usize>().is_ok()
+                            || (val.starts_with("--") && val[2..].parse::<usize>().is_ok());
+                        if is_valid {
+                            state.draft_ngl = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid layers count (e.g. auto, 8, --1)".to_owned());
+                        }
                     }
                     AppScreen::EditingTemp => {
-                        state.temp = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<f64>().is_ok() {
+                            state.temp = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid temperature (e.g. 0.8)".to_owned());
+                        }
                     }
                     AppScreen::EditingTopP => {
-                        state.top_p = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<f64>().is_ok() {
+                            state.top_p = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid Top P threshold (e.g. 0.95)".to_owned());
+                        }
                     }
                     AppScreen::EditingTopK => {
-                        state.top_k = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<i64>().is_ok() {
+                            state.top_k = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid Top K count (e.g. 40)".to_owned());
+                        }
                     }
                     AppScreen::EditingTotalLayers => {
                         let val = state.input_buffer.trim();
                         if val.is_empty() {
                             state.total_layers = None;
+                            state.screen = AppScreen::Dashboard;
                         } else if let Ok(num) = val.parse::<usize>() {
                             state.total_layers = Some(num);
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid total layers count (e.g. 33)".to_owned());
                         }
-                        state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingConfigFileName => {
                         state.config_file_name = state.input_buffer.trim().to_owned();
                         state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingSpecDraftNMax => {
-                        state.spec_draft_n_max = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<i64>().is_ok() {
+                            state.spec_draft_n_max = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error = Some(
+                                "Invalid speculative draft token predictions count (e.g. 4)"
+                                    .to_owned(),
+                            );
+                        }
                     }
                     AppScreen::EditingSpecDraftPMin => {
-                        state.spec_draft_p_min = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<f64>().is_ok() {
+                            state.spec_draft_p_min = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error = Some(
+                                "Invalid minimum probability threshold (e.g. 0.85)".to_owned(),
+                            );
+                        }
                     }
                     AppScreen::EditingMinP => {
-                        state.min_p = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<f64>().is_ok() {
+                            state.min_p = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid Min P threshold (e.g. 0.05)".to_owned());
+                        }
                     }
                     AppScreen::EditingRepeatPenalty => {
-                        state.repeat_penalty = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<f64>().is_ok() {
+                            state.repeat_penalty = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid repeat penalty (e.g. 1.1)".to_owned());
+                        }
                     }
                     AppScreen::EditingRepeatLastN => {
-                        state.repeat_last_n = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<i64>().is_ok() {
+                            state.repeat_last_n = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid repeat last N count (e.g. 64)".to_owned());
+                        }
                     }
                     AppScreen::EditingReasoningBudget => {
-                        state.reasoning_budget = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<i64>().is_ok() {
+                            state.reasoning_budget = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error = Some(
+                                "Invalid token budget for thinking (e.g. -1, 1024)".to_owned(),
+                            );
+                        }
                     }
                     AppScreen::EditingDryMultiplier => {
-                        state.dry_multiplier = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<f64>().is_ok() {
+                            state.dry_multiplier = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid DRY multiplier (e.g. 0.8)".to_owned());
+                        }
                     }
                     AppScreen::EditingDryBase => {
-                        state.dry_base = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<f64>().is_ok() {
+                            state.dry_base = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid DRY base (e.g. 1.75)".to_owned());
+                        }
                     }
                     AppScreen::EditingDryAllowedLength => {
-                        state.dry_allowed_length = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<i64>().is_ok() {
+                            state.dry_allowed_length = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid DRY allowed sequence length (e.g. 2)".to_owned());
+                        }
                     }
                     AppScreen::EditingDryPenaltyLastN => {
-                        state.dry_penalty_last_n = state.input_buffer.trim().to_owned();
-                        state.screen = AppScreen::Dashboard;
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<i64>().is_ok() {
+                            state.dry_penalty_last_n = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid DRY penalty last N count (e.g. -1)".to_owned());
+                        }
                     }
                     AppScreen::EditingDrySequenceBreaker => {
                         state.dry_sequence_breaker = state.input_buffer.trim().to_owned();
@@ -692,6 +804,33 @@ pub fn handle_key_event(
                         let val_str = state.input_buffer.trim().to_owned();
                         let selected_item = &ui::SETTINGS[state.settings_index];
                         let key_to_update = selected_item.key;
+
+                        let is_valid = match selected_item.key {
+                            "port" | "threads" => {
+                                val_str == "auto" || val_str.parse::<i64>().is_ok()
+                            }
+                            "np"
+                            | "batch-size"
+                            | "ubatch-size"
+                            | "models-max"
+                            | "ctx-checkpoints"
+                            | "checkpoint-min-step"
+                            | "log-verbosity"
+                            | "cache-ram"
+                            | "dry-allowed-length"
+                            | "dry-penalty-last-n"
+                            | "spec-draft-n-max" => val_str.parse::<i64>().is_ok(),
+                            "dry-multiplier" | "dry-base" | "spec-draft-p-min" => {
+                                val_str.parse::<f64>().is_ok()
+                            }
+                            _ => true,
+                        };
+
+                        if !is_valid {
+                            state.validation_error =
+                                Some(format!("Invalid value for {}", selected_item.label));
+                            return false;
+                        }
 
                         if val_str == selected_item.default_val {
                             crate::config::remove_global_config_value(
@@ -812,6 +951,7 @@ pub fn handle_key_event(
             }
             KeyCode::Backspace => {
                 state.input_buffer.pop();
+                state.validation_error = None;
                 if state.screen == AppScreen::EditingConfigFileName {
                     state.similar_config_index = state
                         .similar_config_files
@@ -821,6 +961,7 @@ pub fn handle_key_event(
             }
             KeyCode::Char(c) => {
                 state.input_buffer.push(c);
+                state.validation_error = None;
                 if state.screen == AppScreen::EditingConfigFileName {
                     state.similar_config_index = state
                         .similar_config_files

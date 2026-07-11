@@ -493,3 +493,44 @@ fn test_build_launch_parameters_checkpointing_and_mmap() -> TestResult {
 
     Ok(())
 }
+
+#[test]
+fn test_build_launch_parameters_subtraction_resolution() -> Result<(), Box<dyn std::error::Error>> {
+    let exe_path = PathBuf::from("llama-server");
+    let model_path = PathBuf::from("model.gguf");
+
+    let mut config_data = HashMap::new();
+    let mut herd_map = serde_json::Map::new();
+    herd_map.insert("total-layers".to_string(), serde_json::json!(40));
+    config_data.insert(
+        "llama-herd".to_string(),
+        serde_json::Value::Object(herd_map),
+    );
+
+    let assets = ModelAssets {
+        config: config_data,
+        jinja_template: None,
+    };
+
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "--5".to_string(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "".to_string(),
+    };
+
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &HashMap::new(),
+        8080,
+    );
+
+    let ngl_idx = params.iter().position(|r| r == "-ngl").unwrap();
+    assert_eq!(params[ngl_idx + 1], "35"); // 40 - 5 = 35
+
+    Ok(())
+}

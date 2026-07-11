@@ -87,10 +87,10 @@ fn test_find_matching_mmproj_heuristics() -> TestResult {
     let matched = find_matching_mmproj(&PathBuf::from("gemma-2-9b-it.gguf"), &mmproj_files);
     assert_eq!(matched, Some(mmproj_a));
 
-    // 2. Standalone fallback: when only 1 mmproj file is present in the directory
+    // 2. Standalone fallback: should not match a mismatched projector even if it is the only candidate
     let single_list = vec![mmproj_b.clone()];
     let matched_single = find_matching_mmproj(&PathBuf::from("gemma-2-9b-it.gguf"), &single_list);
-    assert_eq!(matched_single, Some(mmproj_b));
+    assert_eq!(matched_single, None);
 
     // 3. Empty list returns None
     let empty_list = vec![];
@@ -341,4 +341,35 @@ fn test_generate_presets_draft_hyphenated_keys() {
     assert!(content.contains("model-draft ="));
     assert!(content.contains("spec-type = draft-mtp"));
     assert!(content.contains("gpu-layers-draft = 4"));
+}
+
+#[test]
+fn test_generate_presets_custom_draft_ngl() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let models_dir = dir.path().join("models");
+    std::fs::create_dir(&models_dir)?;
+
+    let model_path = models_dir.join("main-model.gguf");
+    std::fs::write(&model_path, "dummy")?;
+
+    let draft_path = models_dir.join("draft-model.gguf");
+    std::fs::write(&draft_path, "dummy")?;
+
+    let draft_config_path = models_dir.join("draft-model.toml");
+    std::fs::write(
+        &draft_config_path,
+        "[llama-herd]\nis-draft = true\ntotal-layers = 10\n\n[llama-server-long]\ngpu-layers-draft = \"--2\"\n",
+    )?;
+
+    let global_config = std::collections::HashMap::new();
+    let output_path = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    )?;
+
+    let content = std::fs::read_to_string(output_path)?;
+    // Check that the calculated value (10 - 2 = 8) is generated
+    assert!(content.contains("gpu-layers-draft = 8"));
+    Ok(())
 }

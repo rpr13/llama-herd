@@ -266,10 +266,11 @@ fn test_tui_input_handling_bounds() {
     assert_eq!(state.screen, AppScreen::Dashboard);
     assert_eq!(state.total_layers, Some(32));
 
-    // Invalid integer: should not update total_layers (leaves old value) and goes to Dashboard
+    // Invalid integer: should fail validation, refuse to switch screen, and keep total_layers unchanged
     state.screen = AppScreen::EditingTotalLayers;
     state.input_buffer = "invalid_layers".to_string();
     handle_key_event(&mut state, enter_key, &tx);
-    assert_eq!(state.screen, AppScreen::Dashboard);
+    assert_eq!(state.screen, AppScreen::EditingTotalLayers);
+    assert!(state.validation_error.is_some());
     assert_eq!(state.total_layers, Some(32)); // Value unchanged
 }

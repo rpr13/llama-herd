@@ -336,6 +336,10 @@ pub struct AppState {
     pub models_dir_invalid: bool,
     /// Thread-safe shared models directory path for the background scanner.
     pub shared_models_dir: std::sync::Arc<std::sync::Mutex<PathBuf>>,
+    /// Current inline input validation error.
+    pub validation_error: Option<String>,
+    /// Total layers of the currently loaded draft model.
+    pub draft_total_layers: Option<usize>,
 }
 
 impl AppState {
@@ -475,6 +479,8 @@ impl AppState {
             models_dir_changed_dirty: false,
             models_dir_invalid,
             shared_models_dir,
+            validation_error: None,
+            draft_total_layers: None,
         };
 
         state.load_current_preset_settings(None);
@@ -710,6 +716,17 @@ impl AppState {
             let df_toml_path = crate::config::resolve_toml_path(&df_path, &self.models_dir);
             crate::config::load_toml_silent(&df_toml_path)
         });
+        let draft_total_layers = draft_config.as_ref().and_then(|dc| {
+            dc.get("llama-herd")
+                .and_then(|lh| lh.get("total-layers"))
+                .or_else(|| {
+                    dc.get("llama-server-long")
+                        .and_then(|l| l.get("total-layers"))
+                })
+                .or_else(|| dc.get("total-layers"))
+                .and_then(|v| v.as_u64().and_then(|i| usize::try_from(i).ok()))
+        });
+        self.draft_total_layers = draft_total_layers;
         let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
             draft_config.as_ref().and_then(|dc| {
                 dc.get("llama-server-long")
