@@ -74,6 +74,29 @@ fn main() {
         HashMap::new()
     };
 
+    if generate_ini {
+        let models_dir = config::resolve_models_dir(&global_config).unwrap_or_else(|| {
+            eprintln!(
+                "CRITICAL: Failed to resolve models directory. Please set 'models-dir' in config.toml or run the setup wizard."
+            );
+            std::process::exit(1);
+        });
+        let models_dir = std::path::absolute(&models_dir).unwrap_or(models_dir);
+        let preset_ini_path = models_dir.join("models-preset.ini");
+
+        if let Err(e) =
+            discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config)
+        {
+            eprintln!("CRITICAL: Failed to generate presets configuration: {e}.");
+            std::process::exit(1);
+        }
+        println!(
+            "Generated presets configuration at '{}'",
+            preset_ini_path.to_string_lossy()
+        );
+        std::process::exit(0);
+    }
+
     let (server_exe, models_dir, global_config) = if let (Some(exe), Some(dir)) = (
         config::resolve_server_executable(&global_config),
         config::resolve_models_dir(&global_config),
@@ -91,20 +114,6 @@ fn main() {
     let models_dir = std::path::absolute(&models_dir).unwrap_or(models_dir);
 
     let preset_ini_path = models_dir.join("models-preset.ini");
-
-    if generate_ini {
-        if let Err(e) =
-            discovery::generate_presets_ini(&models_dir, &preset_ini_path, &global_config)
-        {
-            eprintln!("CRITICAL: Failed to generate presets configuration: {e}.");
-            std::process::exit(1);
-        }
-        println!(
-            "Generated presets configuration at '{}'",
-            preset_ini_path.to_string_lossy()
-        );
-        std::process::exit(0);
-    }
 
     // Terminate any stray servers on startup
     launcher::kill_existing_servers();
