@@ -74,6 +74,33 @@ pub fn handle_key_event(
             state.screen = AppScreen::Logs;
             return false;
         }
+        KeyCode::F(4) => {
+            if let Some(ref server) = state.active_server {
+                let active_port = server.metrics.lock().ok().and_then(|m| m.active_port);
+                if let Some(port) = active_port {
+                    let host = state
+                        .global_config
+                        .get("host")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("127.0.0.1")
+                        .to_owned();
+
+                    std::thread::spawn(move || {
+                        let _ = crate::control::cancel_active_generation(&host, port);
+                    });
+
+                    let msg =
+                        "[CONTROL] F4 pressed: Interrupt signal sent to llama-server...".to_owned();
+                    if let Ok(mut hist) = server.raw_history.lock() {
+                        hist.push_back(msg.clone());
+                    }
+                    if let Ok(mut logs) = server.logs.lock() {
+                        logs.push_back(logs::parse_ansi_line(&msg));
+                    }
+                }
+            }
+            return false;
+        }
         _ => {}
     }
 

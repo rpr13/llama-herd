@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -9,6 +9,51 @@ use ratatui::style::{Color, Modifier, Style};
 
 /// The maximum number of log lines preserved in the memory buffer.
 pub const MAX_LOGS: usize = 5000;
+
+/// Process supervisor configuration holding original launch parameters and target endpoint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SupervisorConfig {
+    /// Original command line parameters used to spawn llama-server.
+    pub params: Vec<String>,
+    /// Working directory for the process.
+    pub cwd: PathBuf,
+    /// Optional model name associated with this process.
+    pub model_name: Option<String>,
+    /// Server endpoint host address.
+    pub host: String,
+    /// Server endpoint port.
+    pub port: u16,
+}
+
+impl SupervisorConfig {
+    /// Constructs a `SupervisorConfig` from parameters, working directory, and optional model name,
+    /// parsing `--host` and `--port` if present in `params`.
+    #[must_use]
+    pub fn new(params: Vec<String>, cwd: PathBuf, model_name: Option<String>) -> Self {
+        let mut host = "127.0.0.1".to_owned();
+        let mut port = 8080;
+
+        let mut idx = 0;
+        while idx < params.len() {
+            if params[idx] == "--host" && idx + 1 < params.len() {
+                host.clone_from(&params[idx + 1]);
+            } else if params[idx] == "--port" && idx + 1 < params.len() {
+                if let Ok(p) = params[idx + 1].parse::<u16>() {
+                    port = p;
+                }
+            }
+            idx += 1;
+        }
+
+        Self {
+            params,
+            cwd,
+            model_name,
+            host,
+            port,
+        }
+    }
+}
 
 /// A single styled fragment within a log line.
 #[derive(Clone, Debug)]
@@ -29,7 +74,7 @@ pub struct LogLine {
 /// Runtime indicators and resource utilization metrics of the active llama-server.
 #[derive(Clone, Debug, Default)]
 pub struct ServerMetrics {
-    /// Server status string (e.g., "LOADING", "RUNNING", "STOPPED", "ERROR").
+    /// Server status string (e.g., "LOADING", "RUNNING", "HEALTHY", "UNHEALTHY", "RECOVERING", "STOPPED", "ERROR").
     pub status: String,
     /// Subprocess PID if available.
     pub pid: Option<u32>,
@@ -59,7 +104,14 @@ pub struct ActiveServer {
     pub is_running: Arc<Mutex<bool>>,
     /// Shared metrics instance.
     pub metrics: Arc<Mutex<ServerMetrics>>,
+    /// Process supervisor configuration holding original launch parameters and target endpoint.
+    pub config: SupervisorConfig,
+    /// Flag indicating whether server stop was manually requested.
+    pub manual_stop: Arc<Mutex<bool>>,
 }
+
+/// Type alias for [`ActiveServer`].
+pub type LogStream = ActiveServer;
 
 impl std::fmt::Debug for ActiveServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -68,6 +120,8 @@ impl std::fmt::Debug for ActiveServer {
             .field("raw_history", &self.raw_history)
             .field("is_running", &self.is_running)
             .field("metrics", &self.metrics)
+            .field("config", &self.config)
+            .field("manual_stop", &self.manual_stop)
             .finish_non_exhaustive()
     }
 }
@@ -88,9 +142,26 @@ impl ActiveServer {
         model_name: Option<String>,
         event_tx: Option<std::sync::mpsc::Sender<crate::tui::TuiEvent>>,
     ) -> Result<Self, std::io::Error> {
-        let mut cmd = Command::new(&params[0]);
-        cmd.args(&params[1..])
-            .current_dir(cwd)
+        let config = SupervisorConfig::new(params.to_vec(), cwd.to_path_buf(), model_name);
+        Self::spawn_supervised(config, event_tx)
+    }
+
+    /// Spawns a new process managed by the process supervisor using the provided [`SupervisorConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `std::io::Error` if the subprocess fails to spawn or if IO pipes cannot be captured.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the internal mutexes are poisoned during log streaming or status monitoring.
+    pub fn spawn_supervised(
+        config: SupervisorConfig,
+        event_tx: Option<std::sync::mpsc::Sender<crate::tui::TuiEvent>>,
+    ) -> Result<Self, std::io::Error> {
+        let mut cmd = Command::new(&config.params[0]);
+        cmd.args(&config.params[1..])
+            .current_dir(&config.cwd)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -117,13 +188,14 @@ impl ActiveServer {
         let logs = Arc::new(Mutex::new(VecDeque::new()));
         let raw_history = Arc::new(Mutex::new(VecDeque::new()));
         let is_running = Arc::new(Mutex::new(true));
-        let is_router = params.iter().any(|arg| arg == "--models-preset");
+        let manual_stop = Arc::new(Mutex::new(false));
+        let is_router = config.params.iter().any(|arg| arg == "--models-preset");
 
         let mut max_models = None;
         let mut idx = 0;
-        while idx < params.len() {
-            if params[idx] == "--models-max" && idx + 1 < params.len() {
-                max_models = params[idx + 1].parse().ok();
+        while idx < config.params.len() {
+            if config.params[idx] == "--models-max" && idx + 1 < config.params.len() {
+                max_models = config.params[idx + 1].parse().ok();
             }
             idx += 1;
         }
@@ -133,8 +205,12 @@ impl ActiveServer {
             pid: Some(child.id()),
             is_router,
             max_models,
-            active_model: if is_router { None } else { model_name },
-            active_port: None,
+            active_model: if is_router {
+                None
+            } else {
+                config.model_name.clone()
+            },
+            active_port: Some(config.port),
             vram_usage: None,
             ram_usage: None,
         }));
@@ -146,8 +222,22 @@ impl ActiveServer {
             let is_running = Arc::clone(&is_running);
             let metrics = Arc::clone(&metrics);
             let child_ref = Arc::clone(&child);
+            let config_clone = config.clone();
+            let manual_stop_clone = Arc::clone(&manual_stop);
+            let logs_clone = Arc::clone(&logs);
+            let raw_history_clone = Arc::clone(&raw_history);
+            let event_tx_clone = event_tx.clone();
             thread::spawn(move || {
-                Self::monitor_status(&is_running, &metrics, &child_ref);
+                Self::monitor_status(
+                    &is_running,
+                    &metrics,
+                    &child_ref,
+                    &config_clone,
+                    &manual_stop_clone,
+                    &logs_clone,
+                    &raw_history_clone,
+                    event_tx_clone,
+                );
             });
         }
 
@@ -181,37 +271,193 @@ impl ActiveServer {
             raw_history,
             is_running,
             metrics,
+            config,
+            manual_stop,
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::needless_pass_by_value
+    )]
     fn monitor_status(
-        is_running: &Mutex<bool>,
-        metrics: &Mutex<ServerMetrics>,
-        child_ref: &Mutex<Child>,
+        is_running: &Arc<Mutex<bool>>,
+        metrics: &Arc<Mutex<ServerMetrics>>,
+        child_ref: &Arc<Mutex<Child>>,
+        config: &SupervisorConfig,
+        manual_stop: &Arc<Mutex<bool>>,
+        logs: &Arc<Mutex<VecDeque<LogLine>>>,
+        raw_history: &Arc<Mutex<VecDeque<String>>>,
+        event_tx: Option<std::sync::mpsc::Sender<crate::tui::TuiEvent>>,
     ) {
         let mut sys = sysinfo::System::new();
         let mut vram_counter = 0u64;
+
         while *is_running.lock().expect("is_running lock poisoned") {
             let exit_status = {
                 let mut child_lock = child_ref.lock().expect("child lock poisoned");
                 child_lock.try_wait()
             };
 
-            let exit_result = match exit_status {
-                Ok(Some(status)) => Some(if status.success() { "STOPPED" } else { "ERROR" }),
-                Err(_) => Some("ERROR"),
-                Ok(None) => None,
+            let exit_occurred = match exit_status {
+                Ok(Some(_status)) => true,
+                Err(_) => true,
+                Ok(None) => false,
             };
 
-            if let Some(status_str) = exit_result {
+            if exit_occurred {
+                let is_manual = *manual_stop.lock().expect("manual_stop lock poisoned");
+                if is_manual {
+                    let pid = child_ref.lock().expect("child lock poisoned").id();
+                    crate::launcher::remove_active_pid(pid);
+                    if let Ok(mut m_lock) = metrics.lock() {
+                        "STOPPED".clone_into(&mut m_lock.status);
+                    }
+                    *is_running.lock().expect("is_running lock poisoned") = false;
+                    break;
+                }
+
+                // Unexpected process exit & manual_stop == false => Auto-recovery!
                 {
                     let mut m_lock = metrics.lock().expect("metrics lock poisoned");
-                    status_str.clone_into(&mut m_lock.status);
+                    "RECOVERING".clone_into(&mut m_lock.status);
                 }
-                let pid = child_ref.lock().expect("child lock poisoned").id();
-                crate::launcher::remove_active_pid(pid);
-                *is_running.lock().expect("is_running lock poisoned") = false;
-                break;
+
+                let supervisor_msg =
+                    "[SUPERVISOR] Process crash detected. Auto-restarting with original parameters..."
+                        .to_owned();
+                let parsed = parse_ansi_line(&supervisor_msg);
+                {
+                    let mut hist_lock = raw_history.lock().expect("raw_history lock poisoned");
+                    hist_lock.push_back(supervisor_msg);
+                    if hist_lock.len() > MAX_LOGS {
+                        hist_lock.pop_front();
+                    }
+                }
+                {
+                    let mut logs_lock = logs.lock().expect("logs lock poisoned");
+                    logs_lock.push_back(parsed);
+                    if logs_lock.len() > MAX_LOGS {
+                        logs_lock.pop_front();
+                    }
+                }
+                if let Some(ref tx) = event_tx {
+                    let _ = tx.send(crate::tui::TuiEvent::LogReceived);
+                }
+
+                let old_pid = child_ref.lock().expect("child lock poisoned").id();
+                crate::launcher::remove_active_pid(old_pid);
+
+                // Re-spawn process using EXACT original parameters (`params` and `cwd`) stored in `SupervisorConfig`
+                let mut cmd = Command::new(&config.params[0]);
+                cmd.args(&config.params[1..])
+                    .current_dir(&config.cwd)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+
+                match cmd.spawn() {
+                    Ok(mut new_child) => {
+                        let new_pid = new_child.id();
+                        crate::launcher::add_active_pid(new_pid);
+
+                        if let Ok(mut m_lock) = metrics.lock() {
+                            m_lock.pid = Some(new_pid);
+                        }
+
+                        let stdout = new_child.stdout.take();
+                        let stderr = new_child.stderr.take();
+
+                        {
+                            let mut child_lock = child_ref.lock().expect("child lock poisoned");
+                            *child_lock = new_child;
+                        }
+
+                        // Re-attach stdout stream reader
+                        if let Some(out) = stdout {
+                            let logs_c = Arc::clone(logs);
+                            let raw_history_c = Arc::clone(raw_history);
+                            let event_tx_c = event_tx.clone();
+                            let metrics_c = Arc::clone(metrics);
+                            thread::spawn(move || {
+                                let reader = BufReader::new(out);
+                                Self::process_log_stream(
+                                    reader,
+                                    &metrics_c,
+                                    &logs_c,
+                                    &raw_history_c,
+                                    event_tx_c.as_ref(),
+                                );
+                            });
+                        }
+
+                        // Re-attach stderr stream reader
+                        if let Some(err) = stderr {
+                            let logs_c = Arc::clone(logs);
+                            let raw_history_c = Arc::clone(raw_history);
+                            let event_tx_c = event_tx.clone();
+                            let metrics_c = Arc::clone(metrics);
+                            thread::spawn(move || {
+                                let reader = BufReader::new(err);
+                                Self::process_log_stream(
+                                    reader,
+                                    &metrics_c,
+                                    &logs_c,
+                                    &raw_history_c,
+                                    event_tx_c.as_ref(),
+                                );
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        let err_msg = format!("[SUPERVISOR] Auto-restart failed: {e}");
+                        let parsed = parse_ansi_line(&err_msg);
+                        {
+                            let mut hist_lock =
+                                raw_history.lock().expect("raw_history lock poisoned");
+                            hist_lock.push_back(err_msg);
+                            if hist_lock.len() > MAX_LOGS {
+                                hist_lock.pop_front();
+                            }
+                        }
+                        {
+                            let mut logs_lock = logs.lock().expect("logs lock poisoned");
+                            logs_lock.push_back(parsed);
+                            if logs_lock.len() > MAX_LOGS {
+                                logs_lock.pop_front();
+                            }
+                        }
+                        if let Ok(mut m_lock) = metrics.lock() {
+                            "ERROR".clone_into(&mut m_lock.status);
+                        }
+                        *is_running.lock().expect("is_running lock poisoned") = false;
+                        break;
+                    }
+                }
+                // Sleep briefly before resuming monitoring loop
+                thread::sleep(std::time::Duration::from_millis(500));
+                continue;
+            }
+
+            // Child is alive and running: query health status via REST API polling
+            let health = crate::health::check_health(&config.host, config.port);
+            if let Ok(mut m_lock) = metrics.lock() {
+                match health {
+                    crate::health::HealthState::Healthy => {
+                        "HEALTHY".clone_into(&mut m_lock.status);
+                    }
+                    crate::health::HealthState::Loading => {
+                        "LOADING".clone_into(&mut m_lock.status);
+                    }
+                    crate::health::HealthState::Unhealthy => {
+                        if m_lock.status != "LOADING" && m_lock.status != "RECOVERING" {
+                            "UNHEALTHY".clone_into(&mut m_lock.status);
+                        }
+                    }
+                    crate::health::HealthState::Recovering => {
+                        "RECOVERING".clone_into(&mut m_lock.status);
+                    }
+                }
             }
 
             // Query RAM and VRAM usage every 2 seconds
@@ -227,9 +473,15 @@ impl ActiveServer {
             }
             vram_counter = vram_counter.wrapping_add(1);
 
-            thread::sleep(std::time::Duration::from_secs(1));
+            for _ in 0..10 {
+                if !*is_running.lock().expect("is_running lock poisoned") {
+                    break;
+                }
+                thread::sleep(std::time::Duration::from_millis(100));
+            }
         }
     }
+
     fn process_log_stream<R: BufRead>(
         reader: R,
         metrics: &Mutex<ServerMetrics>,
@@ -250,19 +502,21 @@ impl ActiveServer {
             if startup || instance.is_some() || proxy.is_some() || active.is_some() {
                 let mut m_lock = metrics.lock().expect("metrics lock poisoned");
                 if startup && m_lock.status == "LOADING" {
-                    "RUNNING".clone_into(&mut m_lock.status);
+                    "HEALTHY".clone_into(&mut m_lock.status);
                 }
                 if let Some((model, port)) = instance {
                     m_lock.active_model = Some(model);
                     m_lock.active_port = Some(port);
-                    "RUNNING".clone_into(&mut m_lock.status);
+                    "HEALTHY".clone_into(&mut m_lock.status);
                 } else if let Some((model, port)) = proxy {
                     m_lock.active_model = Some(model);
                     m_lock.active_port = Some(port);
-                    "RUNNING".clone_into(&mut m_lock.status);
+                    "HEALTHY".clone_into(&mut m_lock.status);
                 } else if let Some(model) = active {
                     m_lock.active_model = Some(model);
-                    "RUNNING".clone_into(&mut m_lock.status);
+                    if m_lock.status == "LOADING" {
+                        "HEALTHY".clone_into(&mut m_lock.status);
+                    }
                 }
             }
 
@@ -296,6 +550,12 @@ impl ActiveServer {
     ///
     /// Panics if the internal `is_running` lock is poisoned.
     pub fn kill(&mut self) {
+        if let Ok(mut stop) = self.manual_stop.lock() {
+            *stop = true;
+        }
+        if let Ok(mut m_lock) = self.metrics.lock() {
+            "STOPPED".clone_into(&mut m_lock.status);
+        }
         let mut was_running = self
             .is_running
             .lock()

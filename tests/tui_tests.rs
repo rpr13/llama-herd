@@ -1121,4 +1121,70 @@ gpu-layers-draft = 4
         let _ = handle_key_event(&mut state, type_key, &tx);
         assert!(state.validation_error.is_none());
     }
+
+    #[test]
+    fn test_f4_keybinding_dispatches_control_signal() {
+        use llama_herd::tui::logs::ActiveServer;
+        use std::path::Path;
+
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // Test 1: When active_server is None
+        let key = KeyEvent {
+            code: KeyCode::F(4),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let result = handle_key_event(&mut state, key, &tx);
+        assert!(!result, "handle_key_event for F4 should return false");
+
+        // Test 2: When active_server is Some
+        let params = if cfg!(target_os = "windows") {
+            vec![
+                "ping".to_string(),
+                "127.0.0.1".to_string(),
+                "-n".to_string(),
+                "10".to_string(),
+            ]
+        } else {
+            vec!["sleep".to_string(), "10".to_string()]
+        };
+
+        if let Ok(server) = ActiveServer::spawn(&params, Path::new("."), None, None) {
+            state.active_server = Some(server);
+            let result = handle_key_event(&mut state, key, &tx);
+            assert!(!result, "handle_key_event for F4 should return false");
+
+            {
+                let active_server = state.active_server.as_ref().unwrap();
+                let raw_hist = active_server.raw_history.lock().unwrap();
+                let has_msg = raw_hist
+                    .iter()
+                    .any(|line| line.contains("[CONTROL] F4 pressed"));
+                assert!(has_msg, "raw_history should contain F4 control log line");
+
+                let logs = active_server.logs.lock().unwrap();
+                let has_log = logs.iter().any(|l| {
+                    l.spans
+                        .iter()
+                        .any(|s| s.text.contains("[CONTROL] F4 pressed"))
+                });
+                assert!(has_log, "logs should contain F4 control log line");
+            }
+
+            if let Some(ref mut active_server) = state.active_server {
+                active_server.kill();
+            }
+        }
+    }
 }

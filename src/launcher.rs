@@ -1,4 +1,5 @@
 use crate::config::{ModelAssets, UserSettings};
+pub use crate::tui::logs::SupervisorConfig;
 use std::collections::HashMap;
 use std::path::Path;
 

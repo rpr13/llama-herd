@@ -2666,6 +2666,16 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
             .unwrap_or_else(|| "auto".to_owned())
     };
 
+    let current_status = if let Some(ref server) = state.active_server {
+        if let Ok(m) = server.metrics.lock() {
+            m.status.clone()
+        } else {
+            "RUNNING".to_owned()
+        }
+    } else {
+        "OFFLINE".to_owned()
+    };
+
     let status_span = if state.logs_paused {
         Span::styled(
             " PAUSED (LOGS BUFFERED) ",
@@ -2674,10 +2684,16 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )
     } else {
+        let status_color = match current_status.as_str() {
+            "HEALTHY" | "RUNNING" => theme.success,
+            "LOADING" => theme.accent,
+            "UNHEALTHY" | "RECOVERING" | "ERROR" => theme.error,
+            _ => theme.secondary,
+        };
         Span::styled(
-            " RUNNING ",
+            format!(" {current_status} "),
             Style::default()
-                .fg(theme.success)
+                .fg(status_color)
                 .add_modifier(Modifier::BOLD),
         )
     };
@@ -2821,9 +2837,9 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
 
     // Column 1: Process Status & PID
     let status_color = match server_metrics.status.as_str() {
-        "RUNNING" => theme.success,
+        "HEALTHY" | "RUNNING" => theme.success,
         "LOADING" => theme.accent,
-        "ERROR" => theme.error,
+        "UNHEALTHY" | "RECOVERING" | "ERROR" => theme.error,
         _ => theme.secondary,
     };
     let col1_text = vec![
