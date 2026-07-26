@@ -247,7 +247,7 @@ mod tests {
         state.spec_draft_p_min = "0.0".to_string();
 
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 8; // Spec Draft N Max
+        state.dashboard_param_index = 22; // Spec Draft N Max
 
         let key_enter = KeyEvent {
             code: KeyCode::Enter,
@@ -268,8 +268,8 @@ mod tests {
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.spec_draft_n_max, "8");
 
-        // Go to spec-draft-p-min edit screen (index 9)
-        state.dashboard_param_index = 9;
+        // Go to spec-draft-p-min edit screen (index 23)
+        state.dashboard_param_index = 23;
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::EditingSpecDraftPMin);
         assert_eq!(state.input_buffer, "0.0");
@@ -488,7 +488,7 @@ mod tests {
 
         // 1. Enter key -> enters Draft model selection popup
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 5; // Draft Model
+        state.dashboard_param_index = 19; // Draft Model
         let key_d = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),

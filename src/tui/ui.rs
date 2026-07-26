@@ -1626,28 +1626,29 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let (f_prompt, f_label) = make_param_cells(0, "Target Config File");
     let (l_prompt, l_label) = make_param_cells(1, "Total Layers");
     let (c_prompt, c_label) = make_param_cells(2, "Context Size");
-    let (n_prompt, n_label) = make_param_cells(3, "GPU Layers");
+    let (n_prompt, n_label) = make_param_cells(3, "N-GPU-Layers");
     let (v_prompt, v_label) = make_param_cells(4, "MMProj (Vision)");
-    let (d_prompt, d_label) = make_param_cells(5, "Draft Model");
-    let (g_prompt, g_label) = make_param_cells(6, "Draft GPU Layers");
-    let (y_prompt, y_label) = make_param_cells(7, "Speculative Type (spec-type)");
-    let (draft_max_tokens_prompt, draft_max_tokens_label) = make_param_cells(8, "Spec Draft N Max");
-    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(9, "Spec Draft P Min");
-    let (t_prompt, t_label) = make_param_cells(10, "Temperature");
-    let (p_prompt, p_label) = make_param_cells(11, "Top P");
-    let (k_prompt, k_label) = make_param_cells(12, "Top K");
-    let (m_prompt, m_label) = make_param_cells(13, "Min P");
-    let (e_prompt, e_label) = make_param_cells(14, "Repeat Penalty");
-    let (a_prompt, a_label) = make_param_cells(15, "Repeat Last N");
-    let (dry_mult_prompt, dry_mult_label) = make_param_cells(16, "DRY Multiplier");
-    let (dry_base_prompt, dry_base_label) = make_param_cells(17, "DRY Base");
+    let (t_prompt, t_label) = make_param_cells(5, "Temperature");
+    let (p_prompt, p_label) = make_param_cells(6, "Top P");
+    let (k_prompt, k_label) = make_param_cells(7, "Top K");
+    let (m_prompt, m_label) = make_param_cells(8, "Min P");
+    let (e_prompt, e_label) = make_param_cells(9, "Repeat Penalty");
+    let (a_prompt, a_label) = make_param_cells(10, "Repeat Last N");
+    let (dry_mult_prompt, dry_mult_label) = make_param_cells(11, "DRY Multiplier");
+    let (dry_base_prompt, dry_base_label) = make_param_cells(12, "DRY Base");
     let (dry_allowed_len_prompt, dry_allowed_len_label) =
-        make_param_cells(18, "DRY Allowed Length");
-    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(19, "DRY Penalty Last N");
-    let (dry_seq_prompt, dry_seq_label) = make_param_cells(20, "DRY Seq Breaker");
-    let (o_prompt, o_label) = make_param_cells(21, "Reasoning Format");
-    let (u_prompt, u_label) = make_param_cells(22, "Reasoning Mode");
-    let (b_prompt, b_label) = make_param_cells(23, "Reasoning Budget");
+        make_param_cells(13, "DRY Allowed Length");
+    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(14, "DRY Penalty Last N");
+    let (dry_seq_prompt, dry_seq_label) = make_param_cells(15, "DRY Seq Breaker");
+    let (o_prompt, o_label) = make_param_cells(16, "Reasoning Format");
+    let (u_prompt, u_label) = make_param_cells(17, "Reasoning Mode");
+    let (b_prompt, b_label) = make_param_cells(18, "Reasoning Budget");
+    let (d_prompt, d_label) = make_param_cells(19, "Draft Model");
+    let (g_prompt, g_label) = make_param_cells(20, "Draft GPU Layers");
+    let (y_prompt, y_label) = make_param_cells(21, "Speculative Type (spec-type)");
+    let (draft_max_tokens_prompt, draft_max_tokens_label) =
+        make_param_cells(22, "Spec Draft N Max");
+    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(23, "Spec Draft P Min");
 
     let rows = vec![
         // GROUP HEADER: llama herd
@@ -1995,30 +1996,30 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     )
     .block(right_block);
     let selected_row_idx = match state.dashboard_param_index {
-        0 => 3,
-        1 => 4,
-        2 => 6,
-        3 => 7,
-        4 => 8,
-        5 => 27,
-        6 => 28,
-        7 => 30,
-        8 => 31,
-        9 => 32,
-        10 => 10,
-        11 => 11,
-        12 => 12,
-        13 => 13,
-        14 => 14,
-        15 => 15,
-        16 => 16,
-        17 => 17,
-        18 => 18,
-        19 => 19,
-        20 => 20,
-        21 => 22,
-        22 => 23,
-        23 => 24,
+        0 => 3,   // Target Config File
+        1 => 4,   // Total Layers
+        2 => 6,   // Context Size
+        3 => 7,   // N-GPU-Layers
+        4 => 8,   // Vision Projector
+        5 => 10,  // Temperature
+        6 => 11,  // Top P
+        7 => 12,  // Top K
+        8 => 13,  // Min P
+        9 => 14,  // Repeat Penalty
+        10 => 15, // Repeat Last N
+        11 => 16, // DRY Multiplier
+        12 => 17, // DRY Base
+        13 => 18, // DRY Allowed Length
+        14 => 19, // DRY Penalty Last N
+        15 => 20, // DRY Seq Breaker
+        16 => 22, // Reasoning Format
+        17 => 23, // Reasoning Mode
+        18 => 24, // Reasoning Budget
+        19 => 27, // Speculative Draft Model
+        20 => 28, // Draft GPU Layers
+        21 => 30, // Speculative Decoding Type
+        22 => 31, // Max Speculative Predictions
+        23 => 32, // Min Speculative Probability
         _ => 0,
     };
     let mut table_state = TableState::default();

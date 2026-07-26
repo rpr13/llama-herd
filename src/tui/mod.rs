@@ -318,80 +318,80 @@ pub fn handle_key_event(
                         state.screen = AppScreen::SelectingMMProj;
                     }
                     5 => {
-                        state.draft_index_backup = state.draft_index;
-                        state.screen = AppScreen::SelectingDraftModel;
-                    }
-                    6 => {
-                        state.screen = AppScreen::EditingDraftNgl;
-                        state.input_buffer = state.draft_ngl.clone();
-                    }
-                    7 => {
-                        state.spec_type_backup = state.spec_type_index;
-                        state.screen = AppScreen::SelectingSpecType;
-                    }
-                    8 => {
-                        state.screen = AppScreen::EditingSpecDraftNMax;
-                        state.input_buffer = state.spec_draft_n_max.clone();
-                    }
-                    9 => {
-                        state.screen = AppScreen::EditingSpecDraftPMin;
-                        state.input_buffer = state.spec_draft_p_min.clone();
-                    }
-                    10 => {
                         state.screen = AppScreen::EditingTemp;
                         state.input_buffer = state.temp.clone();
                     }
-                    11 => {
+                    6 => {
                         state.screen = AppScreen::EditingTopP;
                         state.input_buffer = state.top_p.clone();
                     }
-                    12 => {
+                    7 => {
                         state.screen = AppScreen::EditingTopK;
                         state.input_buffer = state.top_k.clone();
                     }
-                    13 => {
+                    8 => {
                         state.screen = AppScreen::EditingMinP;
                         state.input_buffer = state.min_p.clone();
                     }
-                    14 => {
+                    9 => {
                         state.screen = AppScreen::EditingRepeatPenalty;
                         state.input_buffer = state.repeat_penalty.clone();
                     }
-                    15 => {
+                    10 => {
                         state.screen = AppScreen::EditingRepeatLastN;
                         state.input_buffer = state.repeat_last_n.clone();
                     }
-                    16 => {
+                    11 => {
                         state.screen = AppScreen::EditingDryMultiplier;
                         state.input_buffer = state.dry_multiplier.clone();
                     }
-                    17 => {
+                    12 => {
                         state.screen = AppScreen::EditingDryBase;
                         state.input_buffer = state.dry_base.clone();
                     }
-                    18 => {
+                    13 => {
                         state.screen = AppScreen::EditingDryAllowedLength;
                         state.input_buffer = state.dry_allowed_length.clone();
                     }
-                    19 => {
+                    14 => {
                         state.screen = AppScreen::EditingDryPenaltyLastN;
                         state.input_buffer = state.dry_penalty_last_n.clone();
                     }
-                    20 => {
+                    15 => {
                         state.screen = AppScreen::EditingDrySequenceBreaker;
                         state.input_buffer = state.dry_sequence_breaker.clone();
                     }
-                    21 => {
+                    16 => {
                         state.reasoning_format_index_backup = state.reasoning_format_index;
                         state.screen = AppScreen::SelectingReasoningFormat;
                     }
-                    22 => {
+                    17 => {
                         state.reasoning_index_backup = state.reasoning_index;
                         state.screen = AppScreen::SelectingReasoning;
                     }
-                    23 => {
+                    18 => {
                         state.screen = AppScreen::EditingReasoningBudget;
                         state.input_buffer = state.reasoning_budget.clone();
+                    }
+                    19 => {
+                        state.draft_index_backup = state.draft_index;
+                        state.screen = AppScreen::SelectingDraftModel;
+                    }
+                    20 => {
+                        state.screen = AppScreen::EditingDraftNgl;
+                        state.input_buffer = state.draft_ngl.clone();
+                    }
+                    21 => {
+                        state.spec_type_backup = state.spec_type_index;
+                        state.screen = AppScreen::SelectingSpecType;
+                    }
+                    22 => {
+                        state.screen = AppScreen::EditingSpecDraftNMax;
+                        state.input_buffer = state.spec_draft_n_max.clone();
+                    }
+                    23 => {
+                        state.screen = AppScreen::EditingSpecDraftPMin;
+                        state.input_buffer = state.spec_draft_p_min.clone();
                     }
                     _ => {}
                 }
