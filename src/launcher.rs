@@ -834,6 +834,81 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
         params.push(rb.to_string());
     }
 
+    let config_ts = get_lh_val("tensor-split")
+        .or_else(|| get_long_val("tensor-split"))
+        .or_else(|| get_global_long("tensor-split"))
+        .and_then(|v| v.as_str().map(ToOwned::to_owned));
+
+    let tensor_split = config_ts.or_else(|| {
+        let gpus = crate::discovery::scan_gpu_topology();
+        crate::discovery::calculate_tensor_split(&gpus, 0.12)
+    });
+
+    if let Some(ref ts) = tensor_split {
+        if !ts.is_empty() && ts != "none" {
+            params.push("--tensor-split".to_owned());
+            params.push(ts.clone());
+
+            let fit_val = get_lh_val("fit")
+                .or_else(|| get_long_val("fit"))
+                .or_else(|| get_global_long("fit"))
+                .and_then(|v| {
+                    v.as_str().map_or_else(
+                        || {
+                            v.as_bool()
+                                .map(|b| if b { "on".to_owned() } else { "off".to_owned() })
+                        },
+                        |s| Some(s.to_owned()),
+                    )
+                })
+                .unwrap_or_else(|| "on".to_owned());
+
+            let fitt_target = get_lh_val("fitt")
+                .or_else(|| get_long_val("fitt"))
+                .or_else(|| get_global_long("fitt"))
+                .and_then(|v| {
+                    v.as_str()
+                        .map_or_else(|| v.as_i64().map(|i| i.to_string()), |s| Some(s.to_owned()))
+                })
+                .unwrap_or_else(|| "1024".to_owned());
+
+            params.push("-fit".to_owned());
+            params.push(fit_val);
+
+            params.push("-fitt".to_owned());
+            params.push(fitt_target);
+        }
+    } else if let Some(v) = get_lh_val("fit")
+        .or_else(|| get_long_val("fit"))
+        .or_else(|| get_global_long("fit"))
+    {
+        let fit_val = v
+            .as_str()
+            .map_or_else(
+                || {
+                    v.as_bool()
+                        .map(|b| if b { "on".to_owned() } else { "off".to_owned() })
+                },
+                |s| Some(s.to_owned()),
+            )
+            .unwrap_or_else(|| "on".to_owned());
+
+        params.push("-fit".to_owned());
+        params.push(fit_val);
+
+        let fitt_target = get_lh_val("fitt")
+            .or_else(|| get_long_val("fitt"))
+            .or_else(|| get_global_long("fitt"))
+            .and_then(|v| {
+                v.as_str()
+                    .map_or_else(|| v.as_i64().map(|i| i.to_string()), |s| Some(s.to_owned()))
+            })
+            .unwrap_or_else(|| "1024".to_owned());
+
+        params.push("-fitt".to_owned());
+        params.push(fitt_target);
+    }
+
     params
 }
 
@@ -1104,6 +1179,74 @@ pub fn build_router_launch_parameters<S: std::hash::BuildHasher>(
     if let Some(dsb) = dry_sequence_breaker {
         params.push("--dry-sequence-breaker".to_owned());
         params.push(dsb);
+    }
+
+    let config_ts = get_global_lh("tensor-split")
+        .or_else(|| get_global_long("tensor-split"))
+        .and_then(|v| v.as_str().map(ToOwned::to_owned));
+
+    let tensor_split = config_ts.or_else(|| {
+        let gpus = crate::discovery::scan_gpu_topology();
+        crate::discovery::calculate_tensor_split(&gpus, 0.12)
+    });
+
+    if let Some(ref ts) = tensor_split {
+        if !ts.is_empty() && ts != "none" {
+            params.push("--tensor-split".to_owned());
+            params.push(ts.clone());
+
+            let fit_val = get_global_lh("fit")
+                .or_else(|| get_global_long("fit"))
+                .and_then(|v| {
+                    v.as_str().map_or_else(
+                        || {
+                            v.as_bool()
+                                .map(|b| if b { "on".to_owned() } else { "off".to_owned() })
+                        },
+                        |s| Some(s.to_owned()),
+                    )
+                })
+                .unwrap_or_else(|| "on".to_owned());
+
+            let fitt_target = get_global_lh("fitt")
+                .or_else(|| get_global_long("fitt"))
+                .and_then(|v| {
+                    v.as_str()
+                        .map_or_else(|| v.as_i64().map(|i| i.to_string()), |s| Some(s.to_owned()))
+                })
+                .unwrap_or_else(|| "1024".to_owned());
+
+            params.push("-fit".to_owned());
+            params.push(fit_val);
+
+            params.push("-fitt".to_owned());
+            params.push(fitt_target);
+        }
+    } else if let Some(v) = get_global_lh("fit").or_else(|| get_global_long("fit")) {
+        let fit_val = v
+            .as_str()
+            .map_or_else(
+                || {
+                    v.as_bool()
+                        .map(|b| if b { "on".to_owned() } else { "off".to_owned() })
+                },
+                |s| Some(s.to_owned()),
+            )
+            .unwrap_or_else(|| "on".to_owned());
+
+        params.push("-fit".to_owned());
+        params.push(fit_val);
+
+        let fitt_target = get_global_lh("fitt")
+            .or_else(|| get_global_long("fitt"))
+            .and_then(|v| {
+                v.as_str()
+                    .map_or_else(|| v.as_i64().map(|i| i.to_string()), |s| Some(s.to_owned()))
+            })
+            .unwrap_or_else(|| "1024".to_owned());
+
+        params.push("-fitt".to_owned());
+        params.push(fitt_target);
     }
 
     params

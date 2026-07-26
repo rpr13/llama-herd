@@ -214,6 +214,9 @@ const RESTRICTED_LONG: &[&str] = &[
     "api-key-file",
     "ssl-key-file",
     "ssl-cert-file",
+    "tensor-split",
+    "fit",
+    "fitt",
 ];
 
 const RESTRICTED_SHORT: &[&str] = &[

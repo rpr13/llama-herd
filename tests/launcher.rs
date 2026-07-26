@@ -534,3 +534,76 @@ fn test_build_launch_parameters_subtraction_resolution() -> Result<(), Box<dyn s
 
     Ok(())
 }
+
+#[test]
+fn test_build_launch_parameters_tensor_split_and_fit() -> TestResult {
+    let exe_path = PathBuf::from("/bin/llama-server");
+    let model_path = PathBuf::from("/models/gemma-2b.gguf");
+
+    let mut config_data = HashMap::new();
+    let mut long_map = serde_json::Map::new();
+    long_map.insert("tensor-split".to_string(), serde_json::json!("1,2"));
+    long_map.insert("fit".to_string(), serde_json::json!("on"));
+    long_map.insert("fitt".to_string(), serde_json::json!(2048));
+    config_data.insert(
+        "llama-server-long".to_string(),
+        serde_json::Value::Object(long_map),
+    );
+
+    let assets = ModelAssets {
+        config: config_data,
+        jinja_template: None,
+    };
+
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "32".to_string(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "".to_string(),
+    };
+
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &HashMap::new(),
+        8080,
+    );
+
+    let ts_idx = params.iter().position(|r| r == "--tensor-split").unwrap();
+    assert_eq!(params[ts_idx + 1], "1,2");
+
+    let fit_idx = params.iter().position(|r| r == "-fit").unwrap();
+    assert_eq!(params[fit_idx + 1], "on");
+
+    let fitt_idx = params.iter().position(|r| r == "-fitt").unwrap();
+    assert_eq!(params[fitt_idx + 1], "2048");
+
+    Ok(())
+}
+
+#[test]
+fn test_build_router_launch_parameters_tensor_split() -> TestResult {
+    let exe_path = PathBuf::from("/bin/llama-server");
+    let preset_path = PathBuf::from("/base/models-preset.ini");
+
+    let mut global_config = HashMap::new();
+    global_config.insert("tensor-split".to_string(), serde_json::json!("1,1"));
+    global_config.insert("fit".to_string(), serde_json::json!("on"));
+    global_config.insert("fitt".to_string(), serde_json::json!(1024));
+
+    let params = build_router_launch_parameters(&exe_path, &preset_path, &global_config, 8000);
+
+    let ts_idx = params.iter().position(|r| r == "--tensor-split").unwrap();
+    assert_eq!(params[ts_idx + 1], "1,1");
+
+    let fit_idx = params.iter().position(|r| r == "-fit").unwrap();
+    assert_eq!(params[fit_idx + 1], "on");
+
+    let fitt_idx = params.iter().position(|r| r == "-fitt").unwrap();
+    assert_eq!(params[fitt_idx + 1], "1024");
+
+    Ok(())
+}

@@ -373,3 +373,32 @@ fn test_generate_presets_custom_draft_ngl() -> Result<(), Box<dyn std::error::Er
     assert!(content.contains("gpu-layers-draft = 8"));
     Ok(())
 }
+
+#[test]
+fn test_generate_presets_tensor_split_and_fit() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let models_dir = dir.path().join("models");
+    std::fs::create_dir(&models_dir)?;
+
+    let model_path = models_dir.join("ts-model.gguf");
+    std::fs::write(&model_path, "dummy")?;
+
+    let config_path = models_dir.join("ts-model.toml");
+    std::fs::write(
+        &config_path,
+        "[llama-herd]\nis-default = true\n\n[llama-server-long]\ntensor-split = \"1,2\"\nfit = \"on\"\nfitt = 2048\n",
+    )?;
+
+    let global_config = std::collections::HashMap::new();
+    let output_path = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    )?;
+
+    let content = std::fs::read_to_string(output_path)?;
+    assert!(content.contains("tensor-split = 1,2"));
+    assert!(content.contains("fit = on"));
+    assert!(content.contains("fitt = 2048"));
+    Ok(())
+}
