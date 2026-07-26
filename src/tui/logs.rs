@@ -441,21 +441,25 @@ impl ActiveServer {
 
             // Child is alive and running: query health status via REST API polling
             let health = crate::health::check_health(&config.host, config.port);
-            if let Ok(mut m_lock) = metrics.lock() {
-                match health {
-                    crate::health::HealthState::Healthy => {
-                        "HEALTHY".clone_into(&mut m_lock.status);
-                    }
-                    crate::health::HealthState::Loading => {
-                        "LOADING".clone_into(&mut m_lock.status);
-                    }
-                    crate::health::HealthState::Unhealthy => {
-                        if m_lock.status != "LOADING" && m_lock.status != "RECOVERING" {
-                            "UNHEALTHY".clone_into(&mut m_lock.status);
+            // Guard against race: kill() may have set is_running=false and status="STOPPED"
+            // while check_health() was blocking. Do not overwrite "STOPPED" in that case.
+            if *is_running.lock().expect("is_running lock poisoned") {
+                if let Ok(mut m_lock) = metrics.lock() {
+                    match health {
+                        crate::health::HealthState::Healthy => {
+                            "HEALTHY".clone_into(&mut m_lock.status);
                         }
-                    }
-                    crate::health::HealthState::Recovering => {
-                        "RECOVERING".clone_into(&mut m_lock.status);
+                        crate::health::HealthState::Loading => {
+                            "LOADING".clone_into(&mut m_lock.status);
+                        }
+                        crate::health::HealthState::Unhealthy => {
+                            if m_lock.status != "LOADING" && m_lock.status != "RECOVERING" {
+                                "UNHEALTHY".clone_into(&mut m_lock.status);
+                            }
+                        }
+                        crate::health::HealthState::Recovering => {
+                            "RECOVERING".clone_into(&mut m_lock.status);
+                        }
                     }
                 }
             }

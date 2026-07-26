@@ -16,20 +16,20 @@ use std::time::Duration;
 #[test]
 fn test_supervisor_config_parameter_immutability() {
     let original_params = vec![
-        "llama-server".to_string(),
-        "-m".to_string(),
-        "/models/llama-3.gguf".to_string(),
-        "--host".to_string(),
-        "127.0.0.1".to_string(),
-        "--port".to_string(),
-        "8085".to_string(),
-        "-ngl".to_string(),
-        "99".to_string(),
-        "--ctx-size".to_string(),
-        "4096".to_string(),
+        "llama-server".to_owned(),
+        "-m".to_owned(),
+        "/models/llama-3.gguf".to_owned(),
+        "--host".to_owned(),
+        "127.0.0.1".to_owned(),
+        "--port".to_owned(),
+        "8085".to_owned(),
+        "-ngl".to_owned(),
+        "99".to_owned(),
+        "--ctx-size".to_owned(),
+        "4096".to_owned(),
     ];
     let cwd = PathBuf::from("/test/cwd");
-    let model_name = Some("llama-3".to_string());
+    let model_name = Some("llama-3".to_owned());
 
     let config = SupervisorConfig::new(original_params.clone(), cwd.clone(), model_name.clone());
 
@@ -45,13 +45,13 @@ fn test_supervisor_config_parameter_immutability() {
 fn test_auto_recovery_on_unexpected_termination() {
     let params = if cfg!(target_os = "windows") {
         vec![
-            "ping".to_string(),
-            "127.0.0.1".to_string(),
-            "-n".to_string(),
-            "30".to_string(),
+            "ping".to_owned(),
+            "127.0.0.1".to_owned(),
+            "-n".to_owned(),
+            "30".to_owned(),
         ]
     } else {
-        vec!["sleep".to_string(), "30".to_string()]
+        vec!["sleep".to_owned(), "30".to_owned()]
     };
 
     let config = SupervisorConfig::new(params.clone(), PathBuf::from("."), None);
@@ -104,13 +104,13 @@ fn test_auto_recovery_on_unexpected_termination() {
 fn test_manual_kill_prevents_auto_restart() {
     let params = if cfg!(target_os = "windows") {
         vec![
-            "ping".to_string(),
-            "127.0.0.1".to_string(),
-            "-n".to_string(),
-            "30".to_string(),
+            "ping".to_owned(),
+            "127.0.0.1".to_owned(),
+            "-n".to_owned(),
+            "30".to_owned(),
         ]
     } else {
-        vec!["sleep".to_string(), "30".to_string()]
+        vec!["sleep".to_owned(), "30".to_owned()]
     };
 
     let mut server =

@@ -90,7 +90,7 @@ fn test_resolve_server_executable() -> TestResult {
     std::fs::File::create(&dummy_exe)?;
 
     config.insert(
-        "llama-server".to_string(),
+        "llama-server".to_owned(),
         serde_json::Value::String(dummy_exe.to_string_lossy().to_string()),
     );
     assert_eq!(
@@ -113,7 +113,7 @@ fn test_resolve_models_dir() -> TestResult {
 
     // Test from config
     config.insert(
-        "models-dir".to_string(),
+        "models-dir".to_owned(),
         serde_json::Value::String(models_path.to_string_lossy().to_string()),
     );
     assert_eq!(

@@ -31,10 +31,10 @@ fn test_build_launch_parameters_defaults() -> TestResult {
 
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "32".to_string(),
+        ngl: "32".to_owned(),
         mmproj: None,
         draft_model: None,
-        draft_ngl: "".to_string(),
+        draft_ngl: "".to_owned(),
     };
 
     let global_config = HashMap::new();
@@ -68,7 +68,7 @@ fn test_build_launch_parameters_defaults() -> TestResult {
     assert_eq!(params[ctx_idx + 1], "2048");
 
     // Unified KV cache is enabled
-    assert!(params.contains(&"--kv-unified".to_string()));
+    assert!(params.contains(&"--kv-unified".to_owned()));
 
     // Log verbosity default
     let lv_idx = params.iter().position(|r| r == "--log-verbosity").unwrap();
@@ -79,7 +79,7 @@ fn test_build_launch_parameters_defaults() -> TestResult {
     assert_eq!(params[ctk_idx + 1], "f16");
 
     // UI is enabled by default, so --no-ui should not be present
-    assert!(!params.contains(&"--no-ui".to_string()));
+    assert!(!params.contains(&"--no-ui".to_owned()));
 
     Ok(())
 }
@@ -97,25 +97,22 @@ fn test_build_launch_parameters_overrides() -> TestResult {
     let mut config_data = HashMap::new();
     let mut short_map = serde_json::Map::new();
     short_map.insert(
-        "sps".to_string(),
+        "sps".to_owned(),
         serde_json::Value::Number(serde_json::Number::from_f64(0.8).unwrap()),
     );
     config_data.insert(
-        "llama-server-short".to_string(),
+        "llama-server-short".to_owned(),
         serde_json::Value::Object(short_map),
     );
 
     config_data.insert(
-        "slot-prompt-similarity".to_string(),
+        "slot-prompt-similarity".to_owned(),
         serde_json::Value::Number(serde_json::Number::from_f64(0.95).unwrap()),
     );
 
     let mut herd_map = serde_json::Map::new();
-    herd_map.insert("custom-ignored".to_string(), serde_json::json!(true));
-    config_data.insert(
-        "llama-herd".to_string(),
-        serde_json::Value::Object(herd_map),
-    );
+    herd_map.insert("custom-ignored".to_owned(), serde_json::json!(true));
+    config_data.insert("llama-herd".to_owned(), serde_json::Value::Object(herd_map));
 
     let assets = ModelAssets {
         config: config_data,
@@ -125,21 +122,21 @@ fn test_build_launch_parameters_overrides() -> TestResult {
     // 2. Setup user settings including draft model, mmproj
     let settings = UserSettings {
         ctx: 8192,
-        ngl: "auto".to_string(),
+        ngl: "auto".to_owned(),
         mmproj: Some(PathBuf::from("/models/mmproj.gguf")),
         draft_model: Some(PathBuf::from("/models/gemma-draft.gguf")),
-        draft_ngl: "16".to_string(),
+        draft_ngl: "16".to_owned(),
     };
 
     // 3. Setup global overrides
     let mut global_config = HashMap::new();
-    global_config.insert("ui".to_string(), serde_json::json!(false));
-    global_config.insert("host".to_string(), serde_json::json!("127.0.0.1"));
-    global_config.insert("port".to_string(), serde_json::json!(9000));
-    global_config.insert("kv-quant".to_string(), serde_json::json!("q4_0"));
-    global_config.insert("batch-size".to_string(), serde_json::json!(512));
-    global_config.insert("ubatch-size".to_string(), serde_json::json!(256));
-    global_config.insert("tools".to_string(), serde_json::json!("web-search"));
+    global_config.insert("ui".to_owned(), serde_json::json!(false));
+    global_config.insert("host".to_owned(), serde_json::json!("127.0.0.1"));
+    global_config.insert("port".to_owned(), serde_json::json!(9000));
+    global_config.insert("kv-quant".to_owned(), serde_json::json!("q4_0"));
+    global_config.insert("batch-size".to_owned(), serde_json::json!(512));
+    global_config.insert("ubatch-size".to_owned(), serde_json::json!(256));
+    global_config.insert("tools".to_owned(), serde_json::json!("web-search"));
 
     let params = build_launch_parameters(
         &exe_path,
@@ -157,7 +154,7 @@ fn test_build_launch_parameters_overrides() -> TestResult {
     assert_eq!(params[port_idx + 1], "9000");
 
     // UI disabled
-    assert!(params.contains(&"--no-ui".to_string()));
+    assert!(params.contains(&"--no-ui".to_owned()));
 
     // Cache quantization override
     let ctk_idx = params.iter().position(|r| r == "-ctk").unwrap();
@@ -181,7 +178,7 @@ fn test_build_launch_parameters_overrides() -> TestResult {
     assert_eq!(params[l_sps_idx + 1], "0.95");
 
     // Verify custom "llama-herd" keys are NOT passed directly to llama-server
-    assert!(!params.contains(&"--custom-ignored".to_string()));
+    assert!(!params.contains(&"--custom-ignored".to_owned()));
 
     // Draft model arguments (-md and -ngld)
     let md_idx = params.iter().position(|r| r == "-md").unwrap();
@@ -194,7 +191,7 @@ fn test_build_launch_parameters_overrides() -> TestResult {
     assert_eq!(params[mmproj_idx + 1], "/models/mmproj.gguf");
 
     // Jinja template arguments
-    assert!(params.contains(&"--jinja".to_string()));
+    assert!(params.contains(&"--jinja".to_owned()));
     let templ_idx = params
         .iter()
         .position(|r| r == "--chat-template-file")
@@ -211,9 +208,9 @@ fn test_build_launch_parameters_speculative_types() -> TestResult {
 
     let mut config_data = HashMap::new();
     let mut long_map = serde_json::Map::new();
-    long_map.insert("spec-type".to_string(), serde_json::json!("draft-eagle3"));
+    long_map.insert("spec-type".to_owned(), serde_json::json!("draft-eagle3"));
     config_data.insert(
-        "llama-server-long".to_string(),
+        "llama-server-long".to_owned(),
         serde_json::Value::Object(long_map),
     );
 
@@ -223,10 +220,10 @@ fn test_build_launch_parameters_speculative_types() -> TestResult {
     };
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "0".to_string(),
+        ngl: "0".to_owned(),
         mmproj: None,
         draft_model: Some(PathBuf::from("draft.gguf")),
-        draft_ngl: "0".to_string(),
+        draft_ngl: "0".to_owned(),
     };
 
     let params = build_launch_parameters(
@@ -254,10 +251,10 @@ fn test_build_router_launch_parameters_logic() -> TestResult {
     let preset_path = PathBuf::from("/base/models-preset.ini");
 
     let mut global_config = HashMap::new();
-    global_config.insert("host".to_string(), serde_json::json!("0.0.0.0"));
-    global_config.insert("port".to_string(), serde_json::json!(8000));
-    global_config.insert("models-max".to_string(), serde_json::json!(3));
-    global_config.insert("ui".to_string(), serde_json::json!(false));
+    global_config.insert("host".to_owned(), serde_json::json!("0.0.0.0"));
+    global_config.insert("port".to_owned(), serde_json::json!(8000));
+    global_config.insert("models-max".to_owned(), serde_json::json!(3));
+    global_config.insert("ui".to_owned(), serde_json::json!(false));
 
     let params = build_router_launch_parameters(&exe_path, &preset_path, &global_config, 8000);
 
@@ -279,7 +276,7 @@ fn test_build_router_launch_parameters_logic() -> TestResult {
     assert_eq!(params[port_idx + 1], "8000");
 
     // UI disable toggle mapped correctly
-    assert!(params.contains(&"--no-ui".to_string()));
+    assert!(params.contains(&"--no-ui".to_owned()));
 
     Ok(())
 }
@@ -315,10 +312,10 @@ spec-draft-p-min = 0.85
 
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "0".to_string(),
+        ngl: "0".to_owned(),
         mmproj: None,
         draft_model: Some(draft_path),
-        draft_ngl: "0".to_string(),
+        draft_ngl: "0".to_owned(),
     };
 
     let params = build_launch_parameters(
@@ -360,19 +357,19 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
 
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "32".to_string(),
+        ngl: "32".to_owned(),
         mmproj: None,
         draft_model: None,
-        draft_ngl: "".to_string(),
+        draft_ngl: "".to_owned(),
     };
 
     let mut global_config = HashMap::new();
-    global_config.insert("cache-type-k".to_string(), serde_json::json!("q4_0"));
-    global_config.insert("cache-type-v".to_string(), serde_json::json!("q4_1"));
-    global_config.insert("kv-unified".to_string(), serde_json::json!(false));
-    global_config.insert("api-key".to_string(), serde_json::json!("secret-token-123"));
-    global_config.insert("metrics".to_string(), serde_json::json!(true));
-    global_config.insert("log-verbosity".to_string(), serde_json::json!(5));
+    global_config.insert("cache-type-k".to_owned(), serde_json::json!("q4_0"));
+    global_config.insert("cache-type-v".to_owned(), serde_json::json!("q4_1"));
+    global_config.insert("kv-unified".to_owned(), serde_json::json!(false));
+    global_config.insert("api-key".to_owned(), serde_json::json!("secret-token-123"));
+    global_config.insert("metrics".to_owned(), serde_json::json!(true));
+    global_config.insert("log-verbosity".to_owned(), serde_json::json!(5));
 
     let params = build_launch_parameters(
         &exe_path,
@@ -391,13 +388,13 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
     assert_eq!(params[ctv_idx + 1], "q4_1");
 
     // Unified KV cache is disabled (since we passed false)
-    assert!(!params.contains(&"--kv-unified".to_string()));
+    assert!(!params.contains(&"--kv-unified".to_owned()));
 
     // API key and metrics are present
     let api_idx = params.iter().position(|r| r == "--api-key").unwrap();
     assert_eq!(params[api_idx + 1], "secret-token-123");
 
-    assert!(params.contains(&"--metrics".to_string()));
+    assert!(params.contains(&"--metrics".to_owned()));
 
     let lv_idx = params.iter().position(|r| r == "--log-verbosity").unwrap();
     assert_eq!(params[lv_idx + 1], "5");
@@ -410,12 +407,12 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
         8080,
     );
 
-    assert!(!router_params.contains(&"--kv-unified".to_string()));
+    assert!(!router_params.contains(&"--kv-unified".to_owned()));
 
     let r_api_idx = router_params.iter().position(|r| r == "--api-key").unwrap();
     assert_eq!(router_params[r_api_idx + 1], "secret-token-123");
 
-    assert!(router_params.contains(&"--metrics".to_string()));
+    assert!(router_params.contains(&"--metrics".to_owned()));
 
     let r_lv_idx = router_params
         .iter()
@@ -433,11 +430,11 @@ fn test_build_launch_parameters_checkpointing_and_mmap() -> TestResult {
 
     let mut config_data = HashMap::new();
     let mut long_map = serde_json::Map::new();
-    long_map.insert("temp".to_string(), serde_json::json!(1.0));
-    long_map.insert("top-p".to_string(), serde_json::json!(0.95));
-    long_map.insert("top-k".to_string(), serde_json::json!(64));
+    long_map.insert("temp".to_owned(), serde_json::json!(1.0));
+    long_map.insert("top-p".to_owned(), serde_json::json!(0.95));
+    long_map.insert("top-k".to_owned(), serde_json::json!(64));
     config_data.insert(
-        "llama-server-long".to_string(),
+        "llama-server-long".to_owned(),
         serde_json::Value::Object(long_map),
     );
 
@@ -448,16 +445,16 @@ fn test_build_launch_parameters_checkpointing_and_mmap() -> TestResult {
 
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "32".to_string(),
+        ngl: "32".to_owned(),
         mmproj: None,
         draft_model: None,
-        draft_ngl: "".to_string(),
+        draft_ngl: "".to_owned(),
     };
 
     let mut global_config = HashMap::new();
-    global_config.insert("ctx-checkpoints".to_string(), serde_json::json!(128));
-    global_config.insert("checkpoint-min-step".to_string(), serde_json::json!(2048));
-    global_config.insert("no-mmap".to_string(), serde_json::json!(true));
+    global_config.insert("ctx-checkpoints".to_owned(), serde_json::json!(128));
+    global_config.insert("checkpoint-min-step".to_owned(), serde_json::json!(2048));
+    global_config.insert("no-mmap".to_owned(), serde_json::json!(true));
 
     let params = build_launch_parameters(
         &exe_path,
@@ -489,7 +486,7 @@ fn test_build_launch_parameters_checkpointing_and_mmap() -> TestResult {
         .unwrap();
     assert_eq!(params[step_idx + 1], "2048");
 
-    assert!(params.contains(&"--no-mmap".to_string()));
+    assert!(params.contains(&"--no-mmap".to_owned()));
 
     Ok(())
 }
@@ -501,11 +498,8 @@ fn test_build_launch_parameters_subtraction_resolution() -> Result<(), Box<dyn s
 
     let mut config_data = HashMap::new();
     let mut herd_map = serde_json::Map::new();
-    herd_map.insert("total-layers".to_string(), serde_json::json!(40));
-    config_data.insert(
-        "llama-herd".to_string(),
-        serde_json::Value::Object(herd_map),
-    );
+    herd_map.insert("total-layers".to_owned(), serde_json::json!(40));
+    config_data.insert("llama-herd".to_owned(), serde_json::Value::Object(herd_map));
 
     let assets = ModelAssets {
         config: config_data,
@@ -514,10 +508,10 @@ fn test_build_launch_parameters_subtraction_resolution() -> Result<(), Box<dyn s
 
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "--5".to_string(),
+        ngl: "--5".to_owned(),
         mmproj: None,
         draft_model: None,
-        draft_ngl: "".to_string(),
+        draft_ngl: "".to_owned(),
     };
 
     let params = build_launch_parameters(
@@ -542,11 +536,11 @@ fn test_build_launch_parameters_tensor_split_and_fit() -> TestResult {
 
     let mut config_data = HashMap::new();
     let mut long_map = serde_json::Map::new();
-    long_map.insert("tensor-split".to_string(), serde_json::json!("1,2"));
-    long_map.insert("fit".to_string(), serde_json::json!("on"));
-    long_map.insert("fitt".to_string(), serde_json::json!(2048));
+    long_map.insert("tensor-split".to_owned(), serde_json::json!("1,2"));
+    long_map.insert("fit".to_owned(), serde_json::json!("on"));
+    long_map.insert("fitt".to_owned(), serde_json::json!(2048));
     config_data.insert(
-        "llama-server-long".to_string(),
+        "llama-server-long".to_owned(),
         serde_json::Value::Object(long_map),
     );
 
@@ -557,10 +551,10 @@ fn test_build_launch_parameters_tensor_split_and_fit() -> TestResult {
 
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "32".to_string(),
+        ngl: "32".to_owned(),
         mmproj: None,
         draft_model: None,
-        draft_ngl: "".to_string(),
+        draft_ngl: "".to_owned(),
     };
 
     let params = build_launch_parameters(
@@ -590,9 +584,9 @@ fn test_build_router_launch_parameters_tensor_split() -> TestResult {
     let preset_path = PathBuf::from("/base/models-preset.ini");
 
     let mut global_config = HashMap::new();
-    global_config.insert("tensor-split".to_string(), serde_json::json!("1,1"));
-    global_config.insert("fit".to_string(), serde_json::json!("on"));
-    global_config.insert("fitt".to_string(), serde_json::json!(1024));
+    global_config.insert("tensor-split".to_owned(), serde_json::json!("1,1"));
+    global_config.insert("fit".to_owned(), serde_json::json!("on"));
+    global_config.insert("fitt".to_owned(), serde_json::json!(1024));
 
     let params = build_router_launch_parameters(&exe_path, &preset_path, &global_config, 8000);
 

@@ -112,7 +112,7 @@ mod tests {
     fn test_ui_dashboard_responsive_layout() {
         use ratatui::{Terminal, backend::TestBackend};
         let mut state = AppState::new(
-            vec![("test".to_string(), PathBuf::from("test.gguf"))],
+            vec![("test".to_owned(), PathBuf::from("test.gguf"))],
             PathBuf::from("."),
             PathBuf::from("."),
             HashMap::new(),
@@ -197,7 +197,7 @@ mod tests {
             Theme::default(),
         );
         state.screen = AppScreen::EditingNgl;
-        state.input_buffer = "auto".to_string();
+        state.input_buffer = "auto".to_owned();
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
 
@@ -243,8 +243,8 @@ mod tests {
             PathBuf::from("."),
             Theme::default(),
         );
-        state.spec_draft_n_max = "4".to_string();
-        state.spec_draft_p_min = "0.0".to_string();
+        state.spec_draft_n_max = "4".to_owned();
+        state.spec_draft_p_min = "0.0".to_owned();
 
         state.dashboard_focus = DashboardFocus::Right;
         state.dashboard_param_index = 22; // Spec Draft N Max
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(state.input_buffer, "4");
 
         // Save new val
-        state.input_buffer = "8".to_string();
+        state.input_buffer = "8".to_owned();
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.spec_draft_n_max, "8");
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(state.input_buffer, "0.0");
 
         // Save new val
-        state.input_buffer = "0.85".to_string();
+        state.input_buffer = "0.85".to_owned();
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.spec_draft_p_min, "0.85");
@@ -374,7 +374,7 @@ mod tests {
             .position(|item| item.key == "dry-multiplier")
             .unwrap();
         state.settings_index = dry_mult_idx;
-        state.input_buffer = "1.5".to_string();
+        state.input_buffer = "1.5".to_owned();
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
         let key_enter = KeyEvent {
@@ -481,7 +481,7 @@ mod tests {
         );
         state.draft_list = vec![None, Some(PathBuf::from("draft-1.gguf"))];
         state.draft_index = 0;
-        state.draft_ngl = "".to_string();
+        state.draft_ngl = "".to_owned();
         state.screen = AppScreen::Dashboard;
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
@@ -589,10 +589,10 @@ temp = 0.7
         assert_eq!(state.total_layers, Some(32));
 
         // 2. Modify values in State (simulating the inline editing inputs)
-        state.temp = "0.9".to_string();
-        state.ctx_str = "8192".to_string();
-        state.top_p = "0.99".to_string();
-        state.config_file_name = "shared-prefix-config.toml".to_string();
+        state.temp = "0.9".to_owned();
+        state.ctx_str = "8192".to_owned();
+        state.top_p = "0.99".to_owned();
+        state.config_file_name = "shared-prefix-config.toml".to_owned();
 
         // 3. Save config (simulating Enter on ConfirmSaveConfig screen with backup disabled)
         state.save_current_preset_config(false).unwrap();
@@ -613,7 +613,7 @@ temp = 0.7
         assert_eq!(long_opts.get("top-p").unwrap().as_f64().unwrap(), 0.99);
 
         // 4. Modify temp again and save with backup enabled to test backup generation
-        state.temp = "0.95".to_string();
+        state.temp = "0.95".to_owned();
         state.save_current_preset_config(true).unwrap();
 
         // Verify that a backup file with suffix .bak.<timestamp> was created
@@ -762,12 +762,12 @@ temp = 0.7
         assert!(
             state
                 .similar_config_files
-                .contains(&"my-model-7b.toml".to_string())
+                .contains(&"my-model-7b.toml".to_owned())
         );
         assert!(
             state
                 .similar_config_files
-                .contains(&"my-model-7b-q4_0.toml".to_string())
+                .contains(&"my-model-7b-q4_0.toml".to_owned())
         );
 
         // Press Down to cycle selection
@@ -787,8 +787,8 @@ temp = 0.7
     fn test_unsaved_changes_preset_change_warning() {
         let mut state = AppState::new(
             vec![
-                ("model-1".to_string(), PathBuf::from("model-1.gguf")),
-                ("model-2".to_string(), PathBuf::from("model-2.gguf")),
+                ("model-1".to_owned(), PathBuf::from("model-1.gguf")),
+                ("model-2".to_owned(), PathBuf::from("model-2.gguf")),
             ],
             PathBuf::from("."),
             PathBuf::from("."),
@@ -801,7 +801,7 @@ temp = 0.7
         assert_eq!(state.dashboard_focus, DashboardFocus::Left);
 
         // Make parameter change (dirty state)
-        state.temp = "0.95".to_string();
+        state.temp = "0.95".to_owned();
         assert!(state.has_unsaved_changes());
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
@@ -910,7 +910,7 @@ temp = 0.7
         );
 
         // Make state dirty
-        state.temp = "0.95".to_string();
+        state.temp = "0.95".to_owned();
         assert!(state.has_unsaved_changes());
 
         // Introduce a new file and simulate ticks to settle
@@ -926,7 +926,7 @@ temp = 0.7
         assert!(state.models_dir_changed_dirty);
 
         // Revert dirty state manually
-        state.temp = "".to_string();
+        state.temp = "".to_owned();
         state.check_models_dir_changes();
         assert!(!state.models_dir_changed_dirty);
     }
@@ -998,9 +998,9 @@ temp = 0.7
 
         // 1. Without sensitive args
         let args = vec![
-            "llama-server".to_string(),
-            "--model".to_string(),
-            "model.gguf".to_string(),
+            "llama-server".to_owned(),
+            "--model".to_owned(),
+            "model.gguf".to_owned(),
         ];
         assert_eq!(
             mask_sensitive_args(&args),
@@ -1009,11 +1009,11 @@ temp = 0.7
 
         // 2. With api-key arg
         let args_with_key = vec![
-            "llama-server".to_string(),
-            "--api-key".to_string(),
-            "secret-12345".to_string(),
-            "--model".to_string(),
-            "model.gguf".to_string(),
+            "llama-server".to_owned(),
+            "--api-key".to_owned(),
+            "secret-12345".to_owned(),
+            "--model".to_owned(),
+            "model.gguf".to_owned(),
         ];
         assert_eq!(
             mask_sensitive_args(&args_with_key),
@@ -1021,7 +1021,7 @@ temp = 0.7
         );
 
         // 3. Edgecase: api-key at the end of the argument list without a value
-        let args_edge = vec!["llama-server".to_string(), "--api-key".to_string()];
+        let args_edge = vec!["llama-server".to_owned(), "--api-key".to_owned()];
         assert_eq!(mask_sensitive_args(&args_edge), "llama-server --api-key");
     }
 
@@ -1088,7 +1088,7 @@ gpu-layers-draft = 4
     #[test]
     fn test_tui_input_validation_temp() {
         let mut state = AppState::new(
-            vec![("test".to_string(), PathBuf::from("test.gguf"))],
+            vec![("test".to_owned(), PathBuf::from("test.gguf"))],
             PathBuf::from("."),
             PathBuf::from("."),
             HashMap::new(),
@@ -1096,7 +1096,7 @@ gpu-layers-draft = 4
             Theme::default(),
         );
         state.screen = AppScreen::EditingTemp;
-        state.input_buffer = "invalid_temp".to_string();
+        state.input_buffer = "invalid_temp".to_owned();
 
         let key = KeyEvent {
             code: KeyCode::Enter,
@@ -1151,13 +1151,13 @@ gpu-layers-draft = 4
         // Test 2: When active_server is Some
         let params = if cfg!(target_os = "windows") {
             vec![
-                "ping".to_string(),
-                "127.0.0.1".to_string(),
-                "-n".to_string(),
-                "10".to_string(),
+                "ping".to_owned(),
+                "127.0.0.1".to_owned(),
+                "-n".to_owned(),
+                "10".to_owned(),
             ]
         } else {
-            vec!["sleep".to_string(), "10".to_string()]
+            vec!["sleep".to_owned(), "10".to_owned()]
         };
 
         if let Ok(server) = ActiveServer::spawn(&params, Path::new("."), None, None) {
@@ -1238,7 +1238,7 @@ gpu-layers-draft = 4
         use std::path::Path;
 
         let mut state = AppState::new(
-            vec![("preset1".to_string(), PathBuf::from("preset1.gguf"))],
+            vec![("preset1".to_owned(), PathBuf::from("preset1.gguf"))],
             PathBuf::from("."),
             PathBuf::from("."),
             HashMap::new(),
@@ -1254,20 +1254,20 @@ gpu-layers-draft = 4
 
             let params = if cfg!(target_os = "windows") {
                 vec![
-                    "ping".to_string(),
-                    "127.0.0.1".to_string(),
-                    "-n".to_string(),
-                    "10".to_string(),
+                    "ping".to_owned(),
+                    "127.0.0.1".to_owned(),
+                    "-n".to_owned(),
+                    "10".to_owned(),
                 ]
             } else {
-                vec!["sleep".to_string(), "10".to_string()]
+                vec!["sleep".to_owned(), "10".to_owned()]
             };
 
             if let Ok(server) = ActiveServer::spawn(&params, Path::new("."), None, None) {
                 if let Ok(mut m) = server.metrics.lock() {
-                    m.status = "HEALTHY".to_string();
+                    m.status = "HEALTHY".to_owned();
                     m.pid = Some(9999);
-                    m.active_model = Some("Qwen-7B.gguf".to_string());
+                    m.active_model = Some("Qwen-7B.gguf".to_owned());
                     m.active_port = Some(8080);
                     m.ram_usage = Some((4096, 16384));
                     m.vram_usage = Some((8192, 12288));
@@ -1338,20 +1338,20 @@ gpu-layers-draft = 4
 
             let params = if cfg!(target_os = "windows") {
                 vec![
-                    "ping".to_string(),
-                    "127.0.0.1".to_string(),
-                    "-n".to_string(),
-                    "10".to_string(),
+                    "ping".to_owned(),
+                    "127.0.0.1".to_owned(),
+                    "-n".to_owned(),
+                    "10".to_owned(),
                 ]
             } else {
-                vec!["sleep".to_string(), "10".to_string()]
+                vec!["sleep".to_owned(), "10".to_owned()]
             };
 
             if let Ok(server) = ActiveServer::spawn(&params, Path::new("."), None, None) {
                 if let Ok(mut m) = server.metrics.lock() {
-                    m.status = "RECOVERING".to_string();
+                    m.status = "RECOVERING".to_owned();
                     m.pid = Some(8888);
-                    m.active_model = Some("Llama3-8B.gguf".to_string());
+                    m.active_model = Some("Llama3-8B.gguf".to_owned());
                     m.active_port = Some(8081);
                 }
                 state.active_server = Some(server);

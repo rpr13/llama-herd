@@ -137,9 +137,9 @@ fn test_format_arg_name_mapping() -> TestResult {
     // Then it formats to double dashes
     assert_eq!(
         format_arg_name("slot-prompt-similarity"),
-        Some("--slot-prompt-similarity".to_string())
+        Some("--slot-prompt-similarity".to_owned())
     );
-    assert_eq!(format_arg_name("sps"), Some("--sps".to_string()));
+    assert_eq!(format_arg_name("sps"), Some("--sps".to_owned()));
 
     Ok(())
 }
@@ -151,9 +151,9 @@ fn test_format_ini_key_mapping() -> TestResult {
     // Then it returns the key unchanged
     assert_eq!(
         format_ini_key("slot-prompt-similarity"),
-        Some("slot-prompt-similarity".to_string())
+        Some("slot-prompt-similarity".to_owned())
     );
-    assert_eq!(format_ini_key("sps"), Some("sps".to_string()));
+    assert_eq!(format_ini_key("sps"), Some("sps".to_owned()));
 
     Ok(())
 }
@@ -339,7 +339,7 @@ fn test_is_restricted_key_internal() {
 fn test_format_arg_name_internal() {
     assert_eq!(
         format_arg_name("slot-prompt-similarity"),
-        Some("--slot-prompt-similarity".to_string())
+        Some("--slot-prompt-similarity".to_owned())
     );
 }
 
@@ -347,7 +347,7 @@ fn test_format_arg_name_internal() {
 fn test_format_ini_key_internal() {
     assert_eq!(
         format_ini_key("slot-prompt-similarity"),
-        Some("slot-prompt-similarity".to_string())
+        Some("slot-prompt-similarity".to_owned())
     );
 }
 
@@ -356,9 +356,9 @@ fn test_get_global_config_string() -> TestResult {
     use std::collections::HashMap;
 
     let mut config = HashMap::new();
-    config.insert("host".to_string(), serde_json::json!("127.0.0.1"));
-    config.insert("port".to_string(), serde_json::json!(8080));
-    config.insert("ui".to_string(), serde_json::json!(true));
+    config.insert("host".to_owned(), serde_json::json!("127.0.0.1"));
+    config.insert("port".to_owned(), serde_json::json!(8080));
+    config.insert("ui".to_owned(), serde_json::json!(true));
 
     // Test direct root lookup
     assert_eq!(
@@ -376,9 +376,9 @@ fn test_get_global_config_string() -> TestResult {
 
     // Test nesting llama-herd
     let mut herd_table = serde_json::Map::new();
-    herd_table.insert("ui".to_string(), serde_json::json!(false));
+    herd_table.insert("ui".to_owned(), serde_json::json!(false));
     config.insert(
-        "llama-herd".to_string(),
+        "llama-herd".to_owned(),
         serde_json::Value::Object(herd_table),
     );
 
@@ -387,9 +387,9 @@ fn test_get_global_config_string() -> TestResult {
 
     // Test nesting llama-server-long
     let mut long_table = serde_json::Map::new();
-    long_table.insert("host".to_string(), serde_json::json!("192.168.1.1"));
+    long_table.insert("host".to_owned(), serde_json::json!("192.168.1.1"));
     config.insert(
-        "llama-server-long".to_string(),
+        "llama-server-long".to_owned(),
         serde_json::Value::Object(long_table),
     );
 
@@ -415,7 +415,7 @@ fn test_update_global_config_value() -> TestResult {
     // 2. Insert with llama-herd present but key not in llama-herd (should still go to root)
     let herd_table = serde_json::Map::new();
     config.insert(
-        "llama-herd".to_string(),
+        "llama-herd".to_owned(),
         serde_json::Value::Object(herd_table),
     );
     update_global_config_value(&mut config, "port", serde_json::json!(8080));
@@ -423,9 +423,9 @@ fn test_update_global_config_value() -> TestResult {
 
     // 3. Update key that is already inside llama-herd
     let mut herd_table = serde_json::Map::new();
-    herd_table.insert("ui".to_string(), serde_json::json!(true));
+    herd_table.insert("ui".to_owned(), serde_json::json!(true));
     config.insert(
-        "llama-herd".to_string(),
+        "llama-herd".to_owned(),
         serde_json::Value::Object(herd_table),
     );
 
@@ -436,9 +436,9 @@ fn test_update_global_config_value() -> TestResult {
 
     // 4. Update key that is already inside llama-server-long
     let mut long_table = serde_json::Map::new();
-    long_table.insert("host".to_string(), serde_json::json!("127.0.0.1"));
+    long_table.insert("host".to_owned(), serde_json::json!("127.0.0.1"));
     config.insert(
-        "llama-server-long".to_string(),
+        "llama-server-long".to_owned(),
         serde_json::Value::Object(long_table),
     );
 
@@ -463,7 +463,7 @@ fn test_remove_global_config_value() -> TestResult {
     use std::collections::HashMap;
 
     let mut config = HashMap::new();
-    config.insert("host".to_string(), serde_json::json!("127.0.0.1"));
+    config.insert("host".to_owned(), serde_json::json!("127.0.0.1"));
 
     // 1. Remove root value
     remove_global_config_value(&mut config, "host");
@@ -471,10 +471,10 @@ fn test_remove_global_config_value() -> TestResult {
 
     // 2. Remove nested value, verifying table cleanup
     let mut herd_table = serde_json::Map::new();
-    herd_table.insert("ui".to_string(), serde_json::json!(false));
-    herd_table.insert("models-max".to_string(), serde_json::json!(2));
+    herd_table.insert("ui".to_owned(), serde_json::json!(false));
+    herd_table.insert("models-max".to_owned(), serde_json::json!(2));
     config.insert(
-        "llama-herd".to_string(),
+        "llama-herd".to_owned(),
         serde_json::Value::Object(herd_table),
     );
 

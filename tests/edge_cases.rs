@@ -72,13 +72,13 @@ fn test_option_injection_prevention() -> Result<(), Box<dyn std::error::Error>> 
 
     let mut config_data = HashMap::new();
     let mut long_map = serde_json::Map::new();
-    long_map.insert("port".to_string(), serde_json::json!("-1"));
-    long_map.insert("host".to_string(), serde_json::json!("--hacked"));
-    long_map.insert("custom-arg".to_string(), serde_json::json!("--evil"));
-    long_map.insert("threads".to_string(), serde_json::json!("-1"));
+    long_map.insert("port".to_owned(), serde_json::json!("-1"));
+    long_map.insert("host".to_owned(), serde_json::json!("--hacked"));
+    long_map.insert("custom-arg".to_owned(), serde_json::json!("--evil"));
+    long_map.insert("threads".to_owned(), serde_json::json!("-1"));
 
     config_data.insert(
-        "llama-server-long".to_string(),
+        "llama-server-long".to_owned(),
         serde_json::Value::Object(long_map),
     );
 
@@ -88,10 +88,10 @@ fn test_option_injection_prevention() -> Result<(), Box<dyn std::error::Error>> 
     };
     let settings = UserSettings {
         ctx: 2048,
-        ngl: "0".to_string(),
+        ngl: "0".to_owned(),
         mmproj: None,
         draft_model: None,
-        draft_ngl: "".to_string(),
+        draft_ngl: "".to_owned(),
     };
 
     let params = build_launch_parameters(
@@ -109,8 +109,8 @@ fn test_option_injection_prevention() -> Result<(), Box<dyn std::error::Error>> 
     let host_idx = params.iter().position(|r| r == "--host").unwrap();
     assert_eq!(params[host_idx + 1], "127.0.0.1");
 
-    assert!(!params.contains(&"--custom-arg".to_string()));
-    assert!(!params.contains(&"--evil".to_string()));
+    assert!(!params.contains(&"--custom-arg".to_owned()));
+    assert!(!params.contains(&"--evil".to_owned()));
 
     let threads_idx = params.iter().position(|r| r == "-t").unwrap();
     assert_eq!(params[threads_idx + 1], "-1");

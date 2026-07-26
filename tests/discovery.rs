@@ -229,7 +229,7 @@ fn test_generate_presets_ini_generation() -> TestResult {
 
     // 4. Generate the preset
     let mut global_config = HashMap::new();
-    global_config.insert("kv_quant".to_string(), serde_json::json!("q4_k"));
+    global_config.insert("kv_quant".to_owned(), serde_json::json!("q4_k"));
 
     let output_ini = generate_presets_ini(
         &models_dir,

@@ -86,7 +86,7 @@ is-draft = true
     assert_eq!(long_opts.get("top-p"), Some(&serde_json::Value::Null));
     assert_eq!(
         long_opts.get("reasoning"),
-        Some(&serde_json::Value::String("deepseek".to_string()))
+        Some(&serde_json::Value::String("deepseek".to_owned()))
     );
 
     // Verify invalid keys are skipped
@@ -200,8 +200,8 @@ invalid-value = 1
     )?;
     let settings =
         load_settings_from_ini("target-preset", &path).ok_or("Failed to load settings option")?;
-    assert_eq!(settings.get("ctx-size"), Some(&"8192".to_string()));
-    assert_eq!(settings.get("n-gpu-layers"), Some(&"24".to_string()));
+    assert_eq!(settings.get("ctx-size"), Some(&"8192".to_owned()));
+    assert_eq!(settings.get("n-gpu-layers"), Some(&"24".to_owned()));
 
     Ok(())
 }
@@ -242,7 +242,7 @@ fn test_tui_input_handling_bounds() {
 
     // 3. Test Enter key bounds validation in EditingCtx screen
     // Input is invalid: screen should remain EditingCtx
-    state.input_buffer = "invalid_ctx".to_string();
+    state.input_buffer = "invalid_ctx".to_owned();
     let enter_key = KeyEvent {
         code: KeyCode::Enter,
         modifiers: KeyModifiers::empty(),
@@ -253,7 +253,7 @@ fn test_tui_input_handling_bounds() {
     assert_eq!(state.screen, AppScreen::EditingCtx);
 
     // Input is valid: screen should change to Dashboard
-    state.input_buffer = "8192".to_string();
+    state.input_buffer = "8192".to_owned();
     handle_key_event(&mut state, enter_key, &tx);
     assert_eq!(state.screen, AppScreen::Dashboard);
     assert_eq!(state.ctx, 8192);
@@ -261,14 +261,14 @@ fn test_tui_input_handling_bounds() {
     // 4. Test Enter key bounds validation in EditingTotalLayers screen
     // Valid integer: should update total_layers and return to Dashboard
     state.screen = AppScreen::EditingTotalLayers;
-    state.input_buffer = "32".to_string();
+    state.input_buffer = "32".to_owned();
     handle_key_event(&mut state, enter_key, &tx);
     assert_eq!(state.screen, AppScreen::Dashboard);
     assert_eq!(state.total_layers, Some(32));
 
     // Invalid integer: should fail validation, refuse to switch screen, and keep total_layers unchanged
     state.screen = AppScreen::EditingTotalLayers;
-    state.input_buffer = "invalid_layers".to_string();
+    state.input_buffer = "invalid_layers".to_owned();
     handle_key_event(&mut state, enter_key, &tx);
     assert_eq!(state.screen, AppScreen::EditingTotalLayers);
     assert!(state.validation_error.is_some());
