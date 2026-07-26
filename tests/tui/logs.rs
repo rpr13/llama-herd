@@ -175,17 +175,6 @@ fn test_parse_spawning_instance() {
 }
 
 #[test]
-fn test_parse_proxy_request() {
-    use llama_herd::tui::logs::parse_proxy_request;
-    let line = "0.25.851.203 I srv  proxy_reques: proxying request to model Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K on port 54364";
-    let (model, port) = parse_proxy_request(line).unwrap();
-    assert_eq!(model, "Huihui-gemma-4-E-2B-it-abliterated-v2-i1-Q6_K");
-    assert_eq!(port, 54364);
-
-    assert!(parse_proxy_request("some other logs").is_none());
-}
-
-#[test]
 fn test_parse_active_model() {
     use llama_herd::tui::logs::parse_active_model;
 

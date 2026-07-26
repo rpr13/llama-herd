@@ -1275,6 +1275,9 @@ pub fn handle_key_event(
             KeyCode::Char('w') => {
                 state.logs_wrap = !state.logs_wrap;
             }
+            KeyCode::Char('a' | 'A' | ' ') => {
+                state.auto_scroll = !state.auto_scroll;
+            }
             KeyCode::Up => {
                 state.auto_scroll = false;
                 if state.log_scroll_offset > 0 {

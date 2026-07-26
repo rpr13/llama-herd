@@ -1187,4 +1187,206 @@ gpu-layers-draft = 4
             }
         }
     }
+
+    #[test]
+    fn test_autoscroll_toggle_keybinding() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.screen = AppScreen::Logs;
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        state.auto_scroll = true;
+
+        let key_a = KeyEvent {
+            code: KeyCode::Char('a'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_a, &tx);
+        assert!(!state.auto_scroll);
+
+        let key_cap_a = KeyEvent {
+            code: KeyCode::Char('A'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_cap_a, &tx);
+        assert!(state.auto_scroll);
+
+        let key_space = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_space, &tx);
+        assert!(!state.auto_scroll);
+    }
+
+    #[test]
+    fn test_draw_logs_screen_footer_and_metrics() {
+        use llama_herd::tui::logs::ActiveServer;
+        use ratatui::{Terminal, backend::TestBackend};
+        use std::path::Path;
+
+        let mut state = AppState::new(
+            vec![("preset1".to_string(), PathBuf::from("preset1.gguf"))],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.screen = AppScreen::Logs;
+
+        // 1. Verify wide screen footer text and metrics
+        {
+            let backend = TestBackend::new(120, 30);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            let params = if cfg!(target_os = "windows") {
+                vec![
+                    "ping".to_string(),
+                    "127.0.0.1".to_string(),
+                    "-n".to_string(),
+                    "10".to_string(),
+                ]
+            } else {
+                vec!["sleep".to_string(), "10".to_string()]
+            };
+
+            if let Ok(server) = ActiveServer::spawn(&params, Path::new("."), None, None) {
+                if let Ok(mut m) = server.metrics.lock() {
+                    m.status = "HEALTHY".to_string();
+                    m.pid = Some(9999);
+                    m.active_model = Some("Qwen-7B.gguf".to_string());
+                    m.active_port = Some(8080);
+                    m.ram_usage = Some((4096, 16384));
+                    m.vram_usage = Some((8192, 12288));
+                }
+                state.active_server = Some(server);
+            }
+
+            terminal
+                .draw(|f| {
+                    llama_herd::tui::ui::draw(f, &mut state);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+
+            // Check footer line 1 for updated keybindings
+            let mut footer_str = String::new();
+            for x in 0..120 {
+                footer_str.push(buffer[(x, 28)].symbol().chars().next().unwrap_or(' '));
+            }
+            assert!(
+                footer_str.contains("[A/Space] Auto-scroll"),
+                "Footer line 1 should contain '[A/Space] Auto-scroll', got: '{}'",
+                footer_str
+            );
+            assert!(
+                footer_str.contains("[P] Pause"),
+                "Footer line 1 should contain '[P] Pause', got: '{}'",
+                footer_str
+            );
+            assert!(
+                footer_str.contains("[W]"),
+                "Footer line 1 should contain '[W]', got: '{}'",
+                footer_str
+            );
+            assert!(
+                footer_str.contains("[C] Copy"),
+                "Footer line 1 should contain '[C] Copy', got: '{}'",
+                footer_str
+            );
+            assert!(
+                footer_str.contains("[F4] Cancel"),
+                "Footer line 1 should contain '[F4] Cancel', got: '{}'",
+                footer_str
+            );
+
+            // Verify status panel metrics output in buffer
+            let mut buf_text = String::new();
+            for y in 0..30 {
+                for x in 0..120 {
+                    buf_text.push(buffer[(x, y)].symbol().chars().next().unwrap_or(' '));
+                }
+                buf_text.push('\n');
+            }
+            assert!(buf_text.contains("HEALTHY"));
+            assert!(buf_text.contains("9999"));
+            assert!(buf_text.contains("Qwen-7B.gguf"));
+            assert!(buf_text.contains("8080"));
+
+            if let Some(ref mut server) = state.active_server {
+                server.kill();
+            }
+        }
+
+        // 2. Verify narrow screen footer text and metrics
+        {
+            let backend = TestBackend::new(90, 30);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            let params = if cfg!(target_os = "windows") {
+                vec![
+                    "ping".to_string(),
+                    "127.0.0.1".to_string(),
+                    "-n".to_string(),
+                    "10".to_string(),
+                ]
+            } else {
+                vec!["sleep".to_string(), "10".to_string()]
+            };
+
+            if let Ok(server) = ActiveServer::spawn(&params, Path::new("."), None, None) {
+                if let Ok(mut m) = server.metrics.lock() {
+                    m.status = "RECOVERING".to_string();
+                    m.pid = Some(8888);
+                    m.active_model = Some("Llama3-8B.gguf".to_string());
+                    m.active_port = Some(8081);
+                }
+                state.active_server = Some(server);
+            }
+
+            terminal
+                .draw(|f| {
+                    llama_herd::tui::ui::draw(f, &mut state);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+
+            let mut footer_str = String::new();
+            for x in 0..90 {
+                footer_str.push(buffer[(x, 28)].symbol().chars().next().unwrap_or(' '));
+            }
+            assert!(footer_str.contains("[A/Space] Auto-scroll"));
+            assert!(footer_str.contains("[P] Pause"));
+            assert!(footer_str.contains("[W] Wrap"));
+            assert!(footer_str.contains("[C] Copy"));
+            assert!(footer_str.contains("[F4] Cancel"));
+
+            let mut buf_text = String::new();
+            for y in 0..30 {
+                for x in 0..90 {
+                    buf_text.push(buffer[(x, y)].symbol().chars().next().unwrap_or(' '));
+                }
+                buf_text.push('\n');
+            }
+            assert!(buf_text.contains("RECOVERING"));
+            assert!(buf_text.contains("8888"));
+
+            if let Some(ref mut server) = state.active_server {
+                server.kill();
+            }
+        }
+    }
 }

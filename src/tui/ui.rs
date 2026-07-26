@@ -696,33 +696,40 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
                 vec![
                     Line::from(vec![
                         Span::styled(
-                            " [r]",
+                            " [A/Space]",
                             Style::default()
                                 .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Restart  ", Style::default().fg(theme.fg)),
+                        Span::styled(" Auto-scroll  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [p]",
+                            " [P]",
                             Style::default()
                                 .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(" Pause  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [c]",
+                            " [W]",
+                            Style::default()
+                                .fg(theme.primary)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" Wrap  ", Style::default().fg(theme.fg)),
+                        Span::styled(
+                            " [C]",
                             Style::default()
                                 .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(" Copy  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [w]",
+                            " [F4]",
                             Style::default()
-                                .fg(theme.primary)
+                                .fg(theme.error)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Wrap  ", Style::default().fg(theme.fg)),
+                        Span::styled(" Cancel", Style::default().fg(theme.fg)),
                     ]),
                     Line::from(vec![
                         Span::styled(
@@ -759,33 +766,40 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
                 vec![
                     Line::from(vec![
                         Span::styled(
-                            " [r]",
+                            " [A/Space]",
                             Style::default()
                                 .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Restart Server  ", Style::default().fg(theme.fg)),
+                        Span::styled(" Auto-scroll  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [p]",
+                            " [P]",
                             Style::default()
                                 .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(" Pause Logs  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [c]",
+                            " [W]",
+                            Style::default()
+                                .fg(theme.primary)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" Toggle Wrap  ", Style::default().fg(theme.fg)),
+                        Span::styled(
+                            " [C]",
                             Style::default()
                                 .fg(theme.primary)
                                 .add_modifier(Modifier::BOLD),
                         ),
                         Span::styled(" Copy Logs  ", Style::default().fg(theme.fg)),
                         Span::styled(
-                            " [w]",
+                            " [F4]",
                             Style::default()
-                                .fg(theme.primary)
+                                .fg(theme.error)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" Toggle Wrap  ", Style::default().fg(theme.fg)),
+                        Span::styled(" Cancel", Style::default().fg(theme.fg)),
                     ]),
                     Line::from(vec![
                         Span::styled(
@@ -2877,9 +2891,14 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
     } else {
         "N/A".to_owned()
     };
+    let (col2_label_mode, col2_label_max) = if size.width < 100 {
+        (" Mode: ", " Max:  ")
+    } else {
+        (" Mode:       ", " Max Active: ")
+    };
     let col2_text = vec![
         Line::from(vec![
-            Span::styled(" Mode:       ", Style::default().fg(theme.secondary)),
+            Span::styled(col2_label_mode, Style::default().fg(theme.secondary)),
             Span::styled(
                 mode_str,
                 Style::default()
@@ -2888,7 +2907,7 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            Span::styled(" Max Active: ", Style::default().fg(theme.secondary)),
+            Span::styled(col2_label_max, Style::default().fg(theme.secondary)),
             Span::styled(max_models_str, Style::default().fg(theme.fg)),
         ]),
     ];
@@ -2899,13 +2918,18 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
     let active_port_str = server_metrics
         .active_port
         .map_or_else(|| "N/A".to_owned(), |p| p.to_string());
+    let (col3_label_model, col3_label_port, label_len) = if size.width < 100 {
+        (" Model: ", " Port:  ", 8)
+    } else {
+        (" Active Model: ", " Active Port:  ", 16)
+    };
     let active_model_truncated = truncate_middle(
         active_model_str,
-        metrics_cols[2].width.saturating_sub(16) as usize,
+        metrics_cols[2].width.saturating_sub(label_len) as usize,
     );
     let col3_text = vec![
         Line::from(vec![
-            Span::styled(" Active Model: ", Style::default().fg(theme.secondary)),
+            Span::styled(col3_label_model, Style::default().fg(theme.secondary)),
             Span::styled(
                 active_model_truncated,
                 Style::default()
@@ -2914,7 +2938,7 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            Span::styled(" Active Port:  ", Style::default().fg(theme.secondary)),
+            Span::styled(col3_label_port, Style::default().fg(theme.secondary)),
             Span::styled(active_port_str, Style::default().fg(theme.fg)),
         ]),
     ];

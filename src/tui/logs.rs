@@ -496,19 +496,14 @@ impl ActiveServer {
 
             let startup = parse_startup_status(&line);
             let instance = parse_spawning_instance(&line);
-            let proxy = parse_proxy_request(&line);
             let active = parse_active_model(&line);
 
-            if startup || instance.is_some() || proxy.is_some() || active.is_some() {
+            if startup || instance.is_some() || active.is_some() {
                 let mut m_lock = metrics.lock().expect("metrics lock poisoned");
                 if startup && m_lock.status == "LOADING" {
                     "HEALTHY".clone_into(&mut m_lock.status);
                 }
                 if let Some((model, port)) = instance {
-                    m_lock.active_model = Some(model);
-                    m_lock.active_port = Some(port);
-                    "HEALTHY".clone_into(&mut m_lock.status);
-                } else if let Some((model, port)) = proxy {
                     m_lock.active_model = Some(model);
                     m_lock.active_port = Some(port);
                     "HEALTHY".clone_into(&mut m_lock.status);
@@ -744,25 +739,6 @@ pub fn parse_startup_status(line: &str) -> bool {
 pub fn parse_spawning_instance(line: &str) -> Option<(String, u16)> {
     if let Some(pos) = line.find("spawning server instance with name=") {
         let rest = &line[pos + 35..];
-        let parts: Vec<&str> = rest.split_whitespace().collect();
-        if let Some(&model) = parts.first() {
-            let mut port = None;
-            for i in 0..parts.len() {
-                if parts[i] == "port" && i + 1 < parts.len() {
-                    port = parts[i + 1].parse::<u16>().ok();
-                }
-            }
-            return Some((model.to_owned(), port.unwrap_or(0)));
-        }
-    }
-    None
-}
-
-/// Parses proxy logs to check which model and port a request is routed to.
-#[must_use]
-pub fn parse_proxy_request(line: &str) -> Option<(String, u16)> {
-    if let Some(pos) = line.find("proxy_reques: proxying request to model ") {
-        let rest = &line[pos + 40..];
         let parts: Vec<&str> = rest.split_whitespace().collect();
         if let Some(&model) = parts.first() {
             let mut port = None;
