@@ -88,13 +88,38 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 
 #### Llama-Herd Orchestration Settings (`[llama-herd]`)
 
-| Key                          | Default | Type    | Description                                                                          |
-| :--------------------------- | :------ | :------ | :----------------------------------------------------------------------------------- |
-| `is-draft` / `is-draft-only` | `false` | Boolean | Designates the GGUF file as a speculative draft (hides it from the primary lists).   |
-| `is-default`                 | `false` | Boolean | Declares this model the default startup preset.                                      |
-| `draft` / `draft-model`      | `none`  | String  | Specific draft model file to pair with (use `"none"` or `"false"` to block pairing). |
-| `mmproj`                     | `none`  | String  | Explicit vision projector filename to couple with this model.                        |
-| `total-layers`               | `none`  | Integer | Total structural layers of the neural network (used to resolve `"auto"` offloading). |
+| Key                          | Default | Type         | Description                                                                          |
+| :--------------------------- | :------ | :----------- | :----------------------------------------------------------------------------------- |
+| `is-draft` / `is-draft-only` | `false` | Boolean      | Designates the GGUF file as a speculative draft (hides it from the primary lists).   |
+| `is-default`                 | `false` | Boolean      | Declares this model the default startup preset.                                      |
+| `draft` / `draft-model`      | `none`  | String       | Specific draft model file to pair with (use `"none"` or `"false"` to block pairing). |
+| `mmproj`                     | `none`  | String       | Explicit vision projector filename to couple with this model.                        |
+| `total-layers`               | `none`  | Integer      | Total structural layers of the neural network (used to resolve `"auto"` offloading). |
+| `variants`                   | `"all"` | String/Array | Controls which preset variants are generated (`"base"`, `"draft"`, `"vision"`, `"draft-vision"`, or `"all"`). Accepts a single string or array of strings. |
+
+##### Preset Variant Filtering (`variants`)
+
+The `variants` option (under `[llama-herd]` or at the root level) controls which preset variants are generated during model discovery when speculative draft models or multimodal vision projectors are found:
+
+- `"base"`: Generates the standalone base model preset (without draft or vision pairing).
+- `"draft"`: Generates the speculative draft paired preset.
+- `"vision"`: Generates the multimodal vision projector paired preset (`mmproj`).
+- `"draft-vision"`: Generates the combined speculative draft and vision projector preset.
+- `"all"` (default when omitted): Automatically generates all applicable paired variants based on discovered files.
+
+Example configuration:
+
+```toml
+[llama-herd]
+variants = "draft-vision"
+# or: variants = ["base", "draft-vision"]
+```
+
+If a configured variant is unavailable (for example, `"draft-vision"` is requested but no draft model or vision projector exists), LlamaHerd automatically falls back to generating the `"base"` model preset.
+
+> [!NOTE]
+> **Draft & Multimodal Projector Discovery Heuristics**:
+> When scanning for matching vision projectors (`mmproj`) or draft models, LlamaHerd cleans filenames by ignoring size tokens (`12b`, `26b`), quantization tags (`q8_0`, `q4_k_m`), and precision markers (`f32`, `fp32`, `bf16`, `f16`). This ensures projectors like `gemma-4-12b-it-mmproj-F32.gguf` cleanly match complex model names like `gemma-4-12B-it-heretic.Q8_0.gguf`. Furthermore, when saving variants configuration or switching models, your selected variant (`[B]`, `[D]`, `[V]`, `[DV]`) is preserved.
 
 #### Llama-Server Option Overrides (`[llama-server-long]` or `[llama-server-short]`)
 
@@ -123,6 +148,9 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 | `spec-type`        | `none`       | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                               |
 | `spec-draft-n-max` | `4`          | Integer    | Max speculative draft token predictions per slots.                                                           |
 | `spec-draft-p-min` | `0.0`        | Float      | Minimum probability threshold for speculative tokens.                                                        |
+| `tensor-split`     | `none`       | String     | Proportion of model to offload to each GPU (e.g., `"3,1"` or `"1,1"`). Auto-calculated when multi-GPU is detected. |
+| `fit` / `fit-on`   | `on`         | String     | Fit model layers into available VRAM automatically across detected GPUs.                                     |
+| `fitt`             | `1024`       | Integer    | Target context tokens reserved when fitting layers into available VRAM.                                      |
 
 ### Visual Parameters Grouping (Dashboard Tab)
 
@@ -132,6 +160,17 @@ Model preset parameters are visually grouped in the Preset Details & Parameters 
 - **Draft params**: Speculative decoding parameters (Draft Model, Draft NGL Layers, Speculative Type, Max Speculative Predictions, and Min Probability Threshold).
 - **Sampling params**: Sampling hyper-parameters (Temperature, Top P, Top K, Min P, Repeat Penalty, and Repeat Last N).
 - **Server-specific params**: Reasoning format extraction, Reasoning Mode, and Reasoning Budget settings.
+
+### Model Grouping & Variant Badges (Dashboard Left Panel)
+
+In the Dashboard (Tab 1) left panel, models are grouped by their base model name. Each model entry displays badges indicating its available paired variants:
+
+- `[B]`: Base model (standalone).
+- `[D]`: Speculative draft paired variant.
+- `[V]`: Multimodal vision projector paired variant.
+- `[DV]`: Combined speculative draft and vision projector variant.
+
+Use `↑` / `↓` to navigate between base models in the list, and `←` / `→` to cycle between available variants for the selected model. The right panel dynamically updates to show the selected variant's parameters and configuration.
 
 ---
 
@@ -173,6 +212,7 @@ This configuration enables speculative decoding with a matching draft model, ove
 is-default = true
 total-layers = 28
 draft = "Qwen2.5-1.5B-Instruct.gguf"
+variants = ["base", "draft"]
 
 # llama-server Long Options Override
 [llama-server-long]
@@ -282,3 +322,54 @@ Pairing a smaller draft model with a larger primary model (using `draft` under `
 
 - **`spec-draft-n-max`** (under `[llama-server-long]`): Standard value of `4` to `8`. Higher values check more tokens but can cause performance penalties if acceptance rates are low.
 - **`spec-draft-p-min`** (under `[llama-server-long]`): Set to `0.80 - 0.90` to restrict predictions only to highly probable tokens, increasing acceptance rates.
+
+### Multi-GPU Allocation & Hardware Topology Scanner
+
+Llama-Herd automatically scans host GPU hardware across NVIDIA CUDA (`nvidia-smi`), AMD ROCm (`rocm-smi` / Linux sysfs), and Windows WDDM:
+
+- **Ratio Calculation**: When 2 or more GPUs are detected, Llama-Herd computes an optimal `--tensor-split` ratio (e.g. `"3,1"` for 24GB + 8GB, `"1,1"` for identical cards, or `"3,2,1"` for 3 GPUs).
+- **Safety Headroom Buffer**: Deducts a dynamic 10–15% (default 12%) safety headroom buffer from each GPU's VRAM to account for OS desktop composition, driver allocations, and CUDA context overhead.
+- **Safety Flags**: Injects `--fit-on` (or `-fit on`) and `--fit-target-token 1024` (or `-fitt 1024`) into presets and launch parameters to automatically fit layers into available VRAM safely.
+
+---
+
+## Subprocess Supervisor & Auto-Recovery Engine
+
+Llama-Herd acts as a fault-tolerant process supervisor for `llama-server`:
+
+- **Immutable Configuration Holding**: Launch parameters are captured in `SupervisorConfig` upon launch.
+- **Autonomous Crash Recovery**: If `llama-server` terminates unexpectedly (such as a CUDA out-of-memory error or unexpected OS termination) and the user did NOT manually issue a stop/kill request:
+  1. The server status transitions to `RECOVERING`.
+  2. The supervisor logs an alert: `[SUPERVISOR] Process crash detected. Initiating auto-recovery with original launch parameters...`.
+  3. The crashed instance's PID is pruned from `active_pids.txt`.
+  4. `llama-server` is respawned using the exact original launch arguments without parameter drift.
+  5. Log readers and `/health` REST polling resume automatically.
+- **Health State Machine**: Polls `GET /health` every 1 second, maintaining real-time states: `HEALTHY`, `LOADING`, `UNHEALTHY`, and `RECOVERING`.
+- **Generation Cancellation (`F4`)**: Sends a REST cancellation signal to `POST /v1/chat/completions/control` to immediately halt running generations without terminating or restarting the server.
+
+---
+
+## Keyboard Shortcuts Reference
+
+| Shortcut | Context | Action |
+| :--- | :--- | :--- |
+| `F1` | Global | Switch to Tab 1 (Dashboard: Preset Details & Parameters) |
+| `F2` | Global | Switch to Tab 2 (Global Settings) |
+| `F3` | Global | Switch to Tab 3 (Logs Viewer) |
+| `F4` | Global | Cancel active generation via REST control signal |
+| `F5` | Global | Start selected preset model |
+| `F6` | Global | Start Router Mode server |
+| `F7` | Global | Restart currently running server |
+| `F8` | Global | Stop / terminate running server |
+| `A` / `Space` | Logs Tab | Toggle log autoscroll (scrolls to bottom when enabled) |
+| `P` | Logs Tab | Pause / resume real-time log ingestion |
+| `W` | Logs Tab | Toggle line wrapping |
+| `C` | Logs Tab | Copy full raw log buffer to system clipboard |
+| `Up` / `Down` | Dashboard / All Screens | Navigate between base models (Left panel), list items, fields, or scroll logs |
+| `Left` / `Right` | Dashboard (Left panel) | Cycle between available variants for selected model (`[B]`, `[D]`, `[V]`, `[DV]`) |
+| `Tab` | Dashboard | Toggle focus between Models (Left) and Preset Details & Parameters (Right) |
+| `PageUp` / `PageDown` | Logs Tab | Fast scroll logs up / down |
+| `Home` / `End` | Logs Tab | Jump to top / bottom of log stream |
+| `Esc` | Dashboard / Modals | Return to Models list (Right panel) or close modal dialog |
+| `Enter` | Dashboard / Modals / Inputs | Focus parameters (Left panel) / edit selected parameter (Right panel) / confirm selection |
+| `Ctrl+C` | Global | Clean shutdown and exit Llama-Herd |

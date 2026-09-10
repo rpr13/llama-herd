@@ -94,6 +94,99 @@ pub fn kill_existing_servers() {
     let _ = std::fs::remove_file(pids_file);
 }
 
+/// Parses the raw output from `llama-server --version` or `llama-cli --version` to extract the version and build number.
+///
+/// If both semver and build number are present (e.g. `"version: 0.4.0-dev (build 10894, commit d344123fe)"`),
+/// formats as `"0.4.0-dev b10894"`. If only build number is present (e.g. `"version: 4567"`), formats as `"b4567"`.
+///
+/// # Panics
+///
+/// Panics if the internal regex pattern fails to compile.
+#[must_use]
+pub fn parse_server_version(raw: &str) -> String {
+    static BUILD_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let build_re = BUILD_RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)(?:\bbuild[:=\s]+b?|\(b)(\d+)\b").expect("invalid build regex")
+    });
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let is_version_line = line.starts_with("version:")
+            || line.starts_with("llama version")
+            || line.contains("build =");
+
+        if is_version_line {
+            let build_num = build_re
+                .captures(line)
+                .and_then(|caps| caps.get(1))
+                .map(|m| format!("b{}", m.as_str()));
+
+            // Extract the first token after "version:" or "llama version"
+            let rest = line
+                .strip_prefix("version:")
+                .or_else(|| line.strip_prefix("llama version"))
+                .unwrap_or("")
+                .trim();
+
+            let token = rest
+                .split_whitespace()
+                .next()
+                .map(|t| t.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '-'))
+                .filter(|t| !t.is_empty());
+
+            match (token, build_num) {
+                (Some(ver), Some(build)) => {
+                    // If the first token is already just the build number (e.g. "4567" or "b10894"),
+                    // don't duplicate it.
+                    if ver.chars().all(|c| c.is_ascii_digit())
+                        || (ver.starts_with(['b', 'B'])
+                            && ver.len() > 1
+                            && ver[1..].chars().all(|c| c.is_ascii_digit()))
+                    {
+                        return build;
+                    }
+                    let clean_ver = ver.strip_prefix(['v', 'V']).unwrap_or(ver);
+                    return format!("{clean_ver} {build}");
+                }
+                (Some(ver), None) => {
+                    if ver.chars().all(|c| c.is_ascii_digit()) {
+                        return format!("b{ver}");
+                    }
+                    if ver.starts_with(['b', 'B'])
+                        && ver.len() > 1
+                        && ver[1..].chars().all(|c| c.is_ascii_digit())
+                    {
+                        return ver.to_lowercase();
+                    }
+                    let clean_ver = ver.strip_prefix(['v', 'V']).unwrap_or(ver);
+                    return clean_ver.to_owned();
+                }
+                (None, Some(build)) => return build,
+                (None, None) => {}
+            }
+        }
+    }
+
+    // Global scan for build number across any line if not found in a specific version line
+    if let Some(caps) = build_re.captures(raw)
+        && let Some(m) = caps.get(1)
+    {
+        return format!("b{}", m.as_str());
+    }
+
+    // Fallback: take the first 20 chars of the first non-empty line
+    if let Some(first_line) = raw.lines().find(|l| !l.trim().is_empty()) {
+        let truncated: String = first_line.trim().chars().take(20).collect();
+        return truncated;
+    }
+
+    "Unknown".to_owned()
+}
+
 /// Checks the server version by running the executable with the `--version` flag.
 #[must_use]
 pub fn get_server_version(executable_path: &Path) -> String {
@@ -102,31 +195,7 @@ pub fn get_server_version(executable_path: &Path) -> String {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         let combined = format!("{stdout}\n{stderr}");
-
-        for line in combined.lines() {
-            let line = line.trim();
-            if !line.is_empty() {
-                if let Some(stripped) = line.strip_prefix("version: ") {
-                    return stripped
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or(stripped)
-                        .to_owned();
-                } else if let Some(stripped) = line.strip_prefix("llama version ") {
-                    return stripped
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or(stripped)
-                        .to_owned();
-                }
-            }
-        }
-
-        // Fallback: take the first 20 chars of the first non-empty line
-        if let Some(first_line) = combined.lines().find(|l| !l.trim().is_empty()) {
-            let truncated: String = first_line.trim().chars().take(20).collect();
-            return truncated;
-        }
+        return parse_server_version(&combined);
     }
     "Unknown".to_owned()
 }

@@ -9,15 +9,22 @@ LlamaHerd is a high-performance, native Rust TUI designed as a self-contained mu
 ### Key Architecture Components
 
 - **Entry Point (`src/main.rs`)**: Handles command-line argument parsing (supporting flags like `--ini`), global configuration loading from platform-specific directories, and switches between TUI and early-exit modes.
-- **Launcher Core (`src/launcher.rs`)**: Orchestrates the `llama-server` subprocess. Builds complex command-line arguments for both Single Model and Router modes.
+- **Launcher Core & Supervisor (`src/launcher.rs`, `src/tui/logs.rs`)**: Orchestrates the `llama-server` subprocess for both Single Model and Router modes. Implements the Subprocess Supervisor & Auto-Recovery Engine: detects process crashes or OOM exits, maintains immutable launch parameters (`SupervisorConfig`), and automatically restarts `llama-server` without parameter drift.
 - **Configuration & Discovery (`src/config.rs`, `src/discovery.rs`)**:
   - Automatically scans the configured `models_dir` for GGUF files and corresponding TOML configurations.
   - Generates a `models-preset.ini` dynamically if it does not exist.
-  - Implements heuristics for auto-pairing main models with compatible draft models or `mmproj` files.
+  - Implements heuristics for auto-pairing main models with compatible draft models or `mmproj` vision projectors (robustly token-cleaning size, quantization, and precision tags like `F32`, `FP32`, `BF16`, `F16`).
+  - Supports model variant filtering (`variants = "base"` / `"draft"` / `"vision"` / `"draft-vision"` / `"all"`) with graceful fallback and preserves active variant selection across hot-reloads and config saves.
+  - **Hardware Topology Scanner & Multi-GPU Allocator**: Scans system GPUs across CUDA (`nvidia-smi`), ROCm (`rocm-smi` / sysfs), and WDDM. Calculates ratio-based `--tensor-split` with a 10-15% (default 12%) safety headroom buffer and injects `--fit-on` / `-fitt 1024` flags.
+- **Health Monitoring Engine (`src/health.rs`)**:
+  - Polls `GET /health` on `llama-server` every 1s, tracking `HealthState` (`Healthy`, `Loading`, `Unhealthy`, `Recovering`).
+  - Guards against false `UNHEALTHY` downgrades when server startup has already been confirmed via stdout log streams.
+- **Direct Control Dispatcher (`src/control.rs`)**:
+  - Dispatches `POST /v1/chat/completions/control` REST requests to cancel active reasoning/generation blocks upon pressing `F4`.
 - **Setup Wizard (`src/setup.rs`)**:
   - Provides an interactive TUI-based setup flow for first-time initialization or missing path resolution.
 - **Log Management (`src/tui/logs.rs`)**: Streams `stdout` and `stderr` concurrently into background threads. Features a native ANSI parser to convert escape sequences (like SGR color/style codes) into `ratatui::style::Style` spans, preserving native colored logs.
-- **TUI Dashboard (`src/tui/`)**: Implemented with `ratatui` (0.30) and `crossterm` (0.29). Renders panels, lists, parameter override inputs, and a custom log viewer.
+- **TUI Dashboard (`src/tui/`)**: Implemented with `ratatui` (0.30) and `crossterm` (0.29). Renders panels, lists, parameter override inputs, operational status indicators (PID, port, model, RAM/VRAM, health status badge), interactive modals (`picker.rs`), and a custom log viewer with auto-scroll toggling (`A` / `Space`).
 
 ---
 
@@ -83,6 +90,7 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
   - `draft` / `draft-model`: Specify a draft model filename (or `"none"` / `"false"` to disable draft pairing).
   - `mmproj`: Explicitly define the vision projector model filename to pair with this model.
   - `total-layers`: Total number of layers for layers-based computations.
+  - `variants`: Filter preset variants to generate (`"base"`, `"draft"`, `"vision"`, `"draft-vision"`, or `"all"`, accepting a single string or array of strings).
 
 ### 3. Dynamic Configuration Scanning & Active Writes Settling
 
@@ -139,8 +147,8 @@ Every UI component in LlamaHerd **must** use the theme system.
 
 To prevent conflicts with managed options, any key (long, short, prefixed with `s-`, or unprefixed) matching a managed parameter is **restricted** and ignored during the passthrough stage.
 
-- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `spec-type`, `spec-draft-n-max`, `spec-draft-p-min`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `ctx-checkpoints`, `checkpoint-min-step`, `no-mmap`, `log-verbosity`, `verbosity`, `lv`, `min-p`, `repeat-penalty`, `repeat-last-n`, `reasoning-budget`, `cache-prompt`, `no-cache-prompt`, `context-shift`, `no-context-shift`, `mlock`, `numa`, `split-mode`, `device`, `api-key-file`, `ssl-key-file`, `ssl-cert-file`.
-- **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`, `lv`.
+- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `spec-type`, `spec-draft-n-max`, `spec-draft-p-min`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `ctx-checkpoints`, `checkpoint-min-step`, `no-mmap`, `log-verbosity`, `verbosity`, `lv`, `min-p`, `repeat-penalty`, `repeat-last-n`, `reasoning-budget`, `cache-prompt`, `no-cache-prompt`, `context-shift`, `no-context-shift`, `mlock`, `numa`, `split-mode`, `device`, `api-key-file`, `ssl-key-file`, `ssl-cert-file`, `tensor-split`, `fit`, `fitt`, `variants`.
+- **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`, `lv`, `fit`, `fitt`.
 
 ### 3. Automated Quality Gates
 
@@ -157,7 +165,7 @@ The project enforces code quality via Git pre-commit hooks managed by `cargo-hus
 
 ### 5. Documentation Maintenance
 
-- **AI Agents**: When implementing code changes, the AI agent must always check `README.md` and all files in the `docs/` directory to identify and perform any necessary updates, ensuring that documentation never goes out of sync with code modifications.
+- **AI Agents**: When implementing code changes, the AI agent must always check `README.md`, `AGENTS.md`, and all files in the `docs/` directory to identify and perform any necessary updates, ensuring that documentation never goes out of sync with code modifications.
 - **Upstream Synchronization**: Periodically check the official `llama-server` README.md on GitHub (https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md or the raw version https://raw.githubusercontent.com/ggml-org/llama.cpp/refs/heads/master/tools/server/README.md) to detect any new upstream parameters, renames, or deprecations, and keep LlamaHerd synchronized.
 
 ### 6. Local Process Metrics & Orchestrator Status
@@ -167,17 +175,28 @@ The TUI must not use network-scraping or HTTP requests to poll performance metri
 - Subprocess `stdout`/`stderr` output streams are parsed dynamically to extract runtime info (e.g. startup completion, sub-instance routing details, port mapping).
 - Subprocess state and PID are monitored directly via local OS child processes check (e.g. `try_wait`).
 - Lingering or zombie instances are cleaned up by tracking subprocess PIDs in `active_pids.txt` within the global configuration directory and terminating them using the `sysinfo` library upon startup or exit.
+- Health status is monitored via non-blocking `/health` REST polling with `HealthState` transitions (`Healthy`, `Loading`, `Unhealthy`, `Recovering`). Windows socket handling preserves `HEALTHY` state once process startup is confirmed by stdout log streams.
 
 ### 7. TUI Keyboard Navigation & Launch Shortcuts
 
 To ensure wide terminal compatibility and eliminate modifier capture conflicts:
 
 - **Tab switching** must be mapped to **`F1`** (Dashboard), **`F2`** (Settings), and **`F3`** (Logs). Plain numbers `1`, `2`, `3` must not trigger tab switching when the user is editing a field or picking a file.
-- **Server launching** must be mapped to **`F5`** (Start selected preset model) and **`F6`** (Start router mode server). Traditional shortcuts like `Ctrl+Enter` or `Ctrl+R` must be avoided to prevent terminal capture and formatting issues.
+- **Model selection & variant cycling (Dashboard Left Panel)**:
+  - **`↑` / `↓`**: Navigate between base models.
+  - **`←` / `→`**: Cycle between available variants for selected model (`[B]`, `[D]`, `[V]`, `[DV]`).
+  - **`Tab` / `Enter`**: Switch focus to Preset Details & Parameters editing (`Esc` to return to Models).
+- **Server operations**:
+  - **`F4`**: Cancel active generation signal (`POST /v1/chat/completions/control`).
+  - **`F5`**: Start selected preset model.
+  - **`F6`**: Start router mode server.
+  - **`F7`**: Restart active server process.
+  - **`F8`**: Stop active server.
+- **Log viewer controls**: `A` / `Space` (auto-scroll toggle), `P` (pause/resume), `W` (line wrapping), `C` (copy logs).
 
 ### 8. CLI Presets Generation & Tagging Conventions
 
 - **Optional Server Path**: When running `llama-herd --ini`, a configured `llama-server` executable path is NOT required. Only the models directory (`models-dir`) must be resolved/available.
 - **GitHub Release Naming**: GitHub Release names generated by actions should always match the tag name directly (e.g., `v1.0.x`) without prefixing them with `"Release "`.
-- **Git Version Bump Commit**: Git version bump commits should format the version in the commit message using a `v` prefix (e.g., `chore: bump version to v1.0.18`).
-- **Release Tags**: Release tags should be lightweight tags (e.g., `git tag v1.0.18`) instead of annotated tags to prevent tag/release formatting issues on GitHub.
+- **Git Version Bump Commit**: Git version bump commits should format the version in the commit message using a `v` prefix (e.g., `chore: bump version to v1.0.20`).
+- **Release Tags**: Release tags should be lightweight tags (e.g., `git tag v1.0.20`) instead of annotated tags to prevent tag/release formatting issues on GitHub.

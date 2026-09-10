@@ -87,12 +87,22 @@ fn test_find_matching_mmproj_heuristics() -> TestResult {
     let matched = find_matching_mmproj(&PathBuf::from("gemma-2-9b-it.gguf"), &mmproj_files);
     assert_eq!(matched, Some(mmproj_a));
 
-    // 2. Standalone fallback: should not match a mismatched projector even if it is the only candidate
+    // 2. Projectors with F32, BF16, and quants matching complex model names
+    let mmproj_c = PathBuf::from("gemma-4-12b-it-mmproj-F32.gguf");
+    let mmproj_d = PathBuf::from("gemma-4-26B-A4B-it-mmproj-BF16.gguf");
+    let rich_list = vec![mmproj_c.clone(), mmproj_d.clone()];
+    let matched_c = find_matching_mmproj(
+        &PathBuf::from("gemma-4-12B-it-heretic.Q8_0.gguf"),
+        &rich_list,
+    );
+    assert_eq!(matched_c, Some(mmproj_c));
+
+    // 3. Standalone fallback: should not match a mismatched projector even if it is the only candidate
     let single_list = vec![mmproj_b.clone()];
     let matched_single = find_matching_mmproj(&PathBuf::from("gemma-2-9b-it.gguf"), &single_list);
     assert_eq!(matched_single, None);
 
-    // 3. Empty list returns None
+    // 4. Empty list returns None
     let empty_list = vec![];
     let matched_none = find_matching_mmproj(&PathBuf::from("gemma-2-9b-it.gguf"), &empty_list);
     assert_eq!(matched_none, None);
@@ -145,6 +155,9 @@ fn test_discover_presets_from_ini_filtering() -> TestResult {
         [*]
         flash-attn = auto
 
+        [default]
+        model = models/gemma-2-9b.gguf
+
         [gemma-2-9b]
         model = models/gemma-2-9b.gguf
 
@@ -159,13 +172,15 @@ fn test_discover_presets_from_ini_filtering() -> TestResult {
     File::create(&path)?.write_all(content.as_bytes())?;
 
     let presets = discover_presets_from_ini(&path);
-    assert_eq!(presets.len(), 2);
+    assert_eq!(presets.len(), 3);
 
-    // Verify ordering is alphabetical and excludes draft and *
-    assert_eq!(presets[0].0, "gemma-2-9b");
+    // Verify ordering places default first, then alphabetical, excluding draft and *
+    assert_eq!(presets[0].0, "default");
     assert_eq!(presets[0].1, PathBuf::from("models/gemma-2-9b.gguf"));
-    assert_eq!(presets[1].0, "llama-3-8b");
-    assert_eq!(presets[1].1, PathBuf::from("models/llama-3-8b.gguf"));
+    assert_eq!(presets[1].0, "gemma-2-9b");
+    assert_eq!(presets[1].1, PathBuf::from("models/gemma-2-9b.gguf"));
+    assert_eq!(presets[2].0, "llama-3-8b");
+    assert_eq!(presets[2].1, PathBuf::from("models/llama-3-8b.gguf"));
 
     // File missing check
     let missing_path = dir.path().join("missing-presets.ini");
@@ -400,5 +415,107 @@ fn test_generate_presets_tensor_split_and_fit() -> Result<(), Box<dyn std::error
     assert!(content.contains("tensor-split = 1,2"));
     assert!(content.contains("fit = on"));
     assert!(content.contains("fitt = 2048"));
+    Ok(())
+}
+
+#[test]
+fn test_generate_presets_with_variants_single_string() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let models_dir = dir.path().join("models");
+    fs::create_dir(&models_dir)?;
+
+    let main_model = models_dir.join("gemma-2-9b-it.gguf");
+    fs::write(&main_model, "main")?;
+
+    let main_toml = models_dir.join("gemma-2-9b-it.toml");
+    fs::write(&main_toml, "[llama-herd]\nvariants = \"draft-vision\"\n")?;
+
+    let draft_model = models_dir.join("gemma-draft.gguf");
+    fs::write(&draft_model, "draft")?;
+    let draft_toml = models_dir.join("gemma-draft.toml");
+    fs::write(&draft_toml, "[llama-herd]\nis-draft = true\n")?;
+
+    let mmproj_model = models_dir.join("gemma-mmproj.gguf");
+    fs::write(&mmproj_model, "vision")?;
+
+    let global_config = HashMap::new();
+    let output_path = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    )?;
+
+    let content = fs::read_to_string(output_path)?;
+    assert!(content.contains("[gemma-2-9b-draft-vision-it]"));
+    assert!(!content.contains("[gemma-2-9b-it]"));
+    assert!(!content.contains("[gemma-2-9b-draft-it]"));
+    assert!(!content.contains("[gemma-2-9b-vision-it]"));
+    Ok(())
+}
+
+#[test]
+fn test_generate_presets_with_variants_array() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let models_dir = dir.path().join("models");
+    fs::create_dir(&models_dir)?;
+
+    let main_model = models_dir.join("gemma-2-9b-it.gguf");
+    fs::write(&main_model, "main")?;
+
+    let main_toml = models_dir.join("gemma-2-9b-it.toml");
+    fs::write(
+        &main_toml,
+        "[llama-herd]\nvariants = [\"base\", \"draft-vision\"]\n",
+    )?;
+
+    let draft_model = models_dir.join("gemma-draft.gguf");
+    fs::write(&draft_model, "draft")?;
+    let draft_toml = models_dir.join("gemma-draft.toml");
+    fs::write(&draft_toml, "[llama-herd]\nis-draft = true\n")?;
+
+    let mmproj_model = models_dir.join("gemma-mmproj.gguf");
+    fs::write(&mmproj_model, "vision")?;
+
+    let global_config = HashMap::new();
+    let output_path = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    )?;
+
+    let content = fs::read_to_string(output_path)?;
+    assert!(content.contains("[gemma-2-9b-it]"));
+    assert!(content.contains("[gemma-2-9b-draft-vision-it]"));
+    assert!(!content.contains("[gemma-2-9b-draft-it]"));
+    assert!(!content.contains("[gemma-2-9b-vision-it]"));
+    Ok(())
+}
+
+#[test]
+fn test_generate_presets_with_variants_fallback_base() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let models_dir = dir.path().join("models");
+    fs::create_dir(&models_dir)?;
+
+    let main_model = models_dir.join("gemma-2-9b-it.gguf");
+    fs::write(&main_model, "main")?;
+
+    let main_toml = models_dir.join("gemma-2-9b-it.toml");
+    fs::write(&main_toml, "[llama-herd]\nvariants = \"draft-vision\"\n")?;
+
+    // Neither draft nor mmproj files exist
+
+    let global_config = HashMap::new();
+    let output_path = generate_presets_ini(
+        &models_dir,
+        &dir.path().join("models-preset.ini"),
+        &global_config,
+    )?;
+
+    let content = fs::read_to_string(output_path)?;
+    assert!(content.contains("[gemma-2-9b-it]"));
+    assert!(!content.contains("[gemma-2-9b-draft-vision-it]"));
+    assert!(!content.contains("[gemma-2-9b-draft-it]"));
+    assert!(!content.contains("[gemma-2-9b-vision-it]"));
     Ok(())
 }

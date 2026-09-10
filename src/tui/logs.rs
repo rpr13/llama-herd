@@ -453,7 +453,10 @@ impl ActiveServer {
                             "LOADING".clone_into(&mut m_lock.status);
                         }
                         crate::health::HealthState::Unhealthy => {
-                            if m_lock.status != "LOADING" && m_lock.status != "RECOVERING" {
+                            if m_lock.status != "LOADING"
+                                && m_lock.status != "RECOVERING"
+                                && m_lock.status != "HEALTHY"
+                            {
                                 "UNHEALTHY".clone_into(&mut m_lock.status);
                             }
                         }

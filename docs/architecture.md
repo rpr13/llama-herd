@@ -4,53 +4,72 @@ This document details the high-level architecture, module flow, and component or
 
 ## System Architecture
 
-Llama-Herd is structured around isolated Rust modules separating configurations, launcher subprocesses, heuristics, and terminal render engines.
+Llama-Herd is structured around isolated Rust modules separating configurations, launcher subprocesses, heuristics, health monitoring, and terminal render engines.
 
 ```mermaid
 graph TD
-    User([User / API Request]) -->|TUI / CLI Overrides| Main[main.rs / cli.rs]
-    Main -->|Resolve config.toml| Config[config.rs]
-    Main -->|Scan GGUF & pair drafts/projectors| Discovery[discovery.rs]
+    User([User / TUI Operator]) -->|TUI Shortcuts & Overrides| TUI[src/tui/]
+    User -->|CLI Flags --ini| Main[src/main.rs]
+    Main -->|Resolve config.toml| Config[src/config.rs]
+    Main -->|Scan GGUFs & GPU Topology| Discovery[src/discovery.rs]
     Discovery -->|Generate preset ini| PresetFile[(models-preset.ini)]
-    Main -->|Initiate Subprocess| Launcher[launcher.rs]
-    Launcher -->|Spawn Command| LlamaServer[llama-server]
-    LlamaServer -->|stdout / stderr logs with --log-colors on| LogStream[logs.rs Thread]
+    TUI -->|F5 / F6 Launch| Launcher[src/launcher.rs]
+    Launcher -->|Spawn Child Process| LlamaServer[llama-server]
+    LlamaServer -->|stdout / stderr logs with --log-colors on| LogStream[src/tui/logs.rs]
     LogStream -->|ANSI Escape Sequence Parsing| Parser[ANSI Parser]
-    Parser -->|Ratatui Spans| UI[tui/ui.rs]
+    Parser -->|Styled Spans Ring Buffer| UI[src/tui/ui.rs]
+    HealthPoller[src/health.rs] -->|GET /health polling| LlamaServer
+    HealthPoller -->|HealthState update| TUI
+    TUI -->|F4 Key: Cancel Generation| Control[src/control.rs]
+    Control -->|POST /v1/chat/completions/control| LlamaServer
+    Supervisor[Supervisor Thread] -->|Crash / OOM Detection| Launcher
+    Launcher -.->|Auto-recovery with immutable params| LlamaServer
     UI -->|Render Terminal| Screen[Terminal Screen]
 ```
 
 ## Component Breakdown
 
-1. **Entry Point & Command Router ([src/main.rs](file:///home/rpr/dev/llama-herd/src/main.rs), [src/cli.rs](file:///home/rpr/dev/llama-herd/src/cli.rs))**: Resolves configuration paths (loading from platform-specific directories), handles command-line arguments (like `--ini` mode), loads the global `config.toml`, and manages the early-exit or terminal transitions between TUI and CLI.
-2. **Subprocess Orchestrator ([src/launcher.rs](file:///home/rpr/dev/llama-herd/src/launcher.rs))**: Responsible for constructing the precise command line arguments required by `llama-server` for both Single Preset and Router Modes. It tracks active subprocess PIDs in a file called `active_pids.txt` located in the platform-specific global configuration directory. On startup and exit, it uses `sysinfo` to terminate any orphaned or zombie `llama-server` instances matching these tracked PIDs to prevent background port collisions without affecting unrelated system processes.
-3. **Asset Discovery & Heuristics ([src/discovery.rs](file:///home/rpr/dev/llama-herd/src/discovery.rs))**: Scans files, cleans file stems to normalized names, matches compatible draft models (by scanning for `draft`/`assistant` tokens), and finds vision projectors (`mmproj`). It is also responsible for compiling the configuration mappings into `models-preset.ini` for on-demand loading.
-4. **Configuration Safety Layer ([src/config.rs](file:///home/rpr/dev/llama-herd/src/config.rs))**: Implements strict TOML rule enforcement. It prevents common user-defined key errors (e.g., keys containing underscores or starting with dashes are skipped with warning logs), parses context size keywords (such as `"8k"` to `8192`), and parses local presets.
-5. **Interactive UI Engine ([src/tui/mod.rs](file:///home/rpr/dev/llama-herd/src/tui/mod.rs), [src/tui/app.rs](file:///home/rpr/dev/llama-herd/src/tui/app.rs), [src/tui/ui.rs](file:///home/rpr/dev/llama-herd/src/tui/ui.rs))**: An event-driven interface written on top of `ratatui` and `crossterm` handling keyboard events, overlay screens, parameter overrides, rendering state transitions, and a background directory scanning loop that coordinates hot-reloads and warning bars.
-6. **Concurrent Log Manager ([src/tui/logs.rs](file:///home/rpr/dev/llama-herd/src/tui/logs.rs))**: Asynchronously consumes stdout and stderr streams of the spawned `llama-server` process. It feeds lines through a regex-based SGR (Select Graphic Rendition) parser to convert raw ANSI coloring escape codes to Ratatui style attributes, keeping background buffers paused or active on demand.
-7. **Interactive Setup Wizard ([src/setup.rs](file:///home/rpr/dev/llama-herd/src/setup.rs))**: An interactive TUI-based initialization flow that prompts users for missing environment paths (like the `llama-server` executable or models directory) and saves them to the global configuration file.
+1. **Entry Point & Command Router ([src/main.rs](../src/main.rs))**: Resolves configuration paths (loading from platform-specific directories), handles command-line arguments (like `--ini` preset generation mode), loads global `config.toml`, and manages early-exit or terminal transitions.
+2. **Subprocess Orchestrator & Supervisor ([src/launcher.rs](../src/launcher.rs), [src/tui/logs.rs](../src/tui/logs.rs))**: Constructs precise command line arguments required by `llama-server` for Single Preset and Router Modes. Tracks active subprocess PIDs in `active_pids.txt` to terminate stray or orphaned instances cleanly via `sysinfo`. Implements the **Subprocess Supervisor & Auto-Recovery Engine**, monitoring child process exit codes and automatically respawning crashed instances using immutable launch parameters (`SupervisorConfig`) without parameter drift.
+3. **Asset Discovery & Hardware Topology Scanner ([src/discovery.rs](../src/discovery.rs))**: 
+   - Scans model directories, normalizes model names, and runs pairing heuristics to match compatible speculative drafts (`draft`/`assistant` tokens) and multimodal vision projectors (`mmproj`), stripping size tags, quants, and precision markers (`F32`, `FP32`, `BF16`, `F16`).
+   - Supports preset variant filtering (`variants`) and compiles configuration mappings into `models-preset.ini` for on-demand loading, ensuring accurate variant selection persistence.
+   - Scans system GPU hardware topology across CUDA (`nvidia-smi`), ROCm (`rocm-smi` / sysfs), and WDDM. Calculates ratio-based `--tensor-split` with a 10–15% (default 12%) safety headroom buffer and injects `--fit-on` / `-fitt 1024` flags for multi-GPU setups.
+4. **Configuration Safety Layer ([src/config.rs](../src/config.rs))**: Implements strict TOML rule enforcement. Prevents key errors (keys with underscores or leading dashes are rejected), checks values against command/option injection, strictly validates context size suffixes (`'k'`/`'K'`), and maintains lists of restricted parameters.
+5. **Health Monitoring Engine ([src/health.rs](../src/health.rs))**: Periodically polls `GET /health` on the active `llama-server` instance. Classifies statuses into `HealthState` (`Healthy`, `Loading`, `Unhealthy`, `Recovering`) and implements startup confirmation guards to prevent transient Windows socket timeouts from downgrading verified healthy servers.
+6. **Direct Control Dispatcher ([src/control.rs](../src/control.rs))**: Issues REST cancellation signals to `POST /v1/chat/completions/control` upon pressing `F4`, immediately interrupting in-flight inference generations without killing the server.
+7. **Interactive UI Engine ([src/tui/mod.rs](../src/tui/mod.rs), [src/tui/app.rs](../src/tui/app.rs), [src/tui/ui.rs](../src/tui/ui.rs), [src/tui/theme.rs](../src/tui/theme.rs), [src/tui/picker.rs](../src/tui/picker.rs))**: An event-driven interface built with `ratatui` (0.30) and `crossterm` (0.29). Manages state transitions, keyboard shortcuts (`F1`–`F8`), parameter overrides, active-writes stability checks for hot reloading, themed components, and interactive modal pickers.
+8. **Concurrent Log Manager ([src/tui/logs.rs](../src/tui/logs.rs))**: Asynchronously consumes stdout and stderr streams of the spawned `llama-server`. Parses ANSI SGR color sequences into Ratatui styles, maintains a 2000-line ring buffer, and supports autoscroll toggling (`A` / `Space`), pausing (`P`), line wrapping (`W`), and clipboard copying (`C`).
+9. **Interactive Setup Wizard ([src/setup.rs](../src/setup.rs))**: Interactive TUI initialization flow that prompts users for missing environment paths (like `llama-server` executable or models directory) and persists them to the global configuration.
 
 ## Directory Structure
 
 ```text
 llama-herd/
 ├── Cargo.toml            # Project dependencies & configurations
+├── AGENTS.md             # Developer guidelines & AI agent mandates
 ├── GEMINI.md             # Architecture guidelines & project mandates
 ├── README.md             # Developer handbook & user manual
 ├── docs/                 # Documentation folder
+│   ├── architecture.md   # System design & architecture breakdown
+│   ├── configuration.md  # Configuration reference & performance guide
+│   ├── theming.md        # Hybrid theme system guide
 │   └── superpowers/      # Feature-specific designs & plans
 │       ├── plans/
 │       └── specs/
 └── src/                  # Rust source code
-    ├── main.rs           # Entry point & setup
-    ├── cli.rs            # CLI interface & option parser
+    ├── main.rs           # Entry point & CLI handler
     ├── config.rs         # Safe config parser & rules validator
-    ├── discovery.rs      # Heuristics & model auto-pairing
-    ├── launcher.rs       # Subprocess orchestrator
+    ├── control.rs        # Generation cancellation control dispatcher
+    ├── discovery.rs      # Heuristics, topology scanner & preset generator
+    ├── health.rs         # REST health checking & state classifier
+    ├── launcher.rs       # Subprocess orchestrator & supervisor config
     ├── setup.rs          # Interactive setup wizard
     └── tui/              # Terminal User Interface modules
         ├── mod.rs        # TUI entry point & event loop
         ├── app.rs        # Application state machine
-        ├── ui.rs         # Ratatui rendering layout
-        └── logs.rs       # Stream logger & ANSI parser
+        ├── ui.rs         # Ratatui rendering layout & status panel
+        ├── logs.rs       # Stream logger, ANSI parser & supervisor thread
+        ├── picker.rs     # Interactive file & directory picker
+        └── theme.rs      # Hybrid theme system & palette parser
 ```

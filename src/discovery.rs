@@ -14,7 +14,7 @@ static SIZE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"\b\d+(?:\.\d+)?(?:x\d+)?[bm]\b").expect("Static regex is valid")
 });
 static QUANT_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\b(?:q\d+(?:_?[k\d](?:_[sml])?)?|f16|fp16|bf16)\b")
+    regex::Regex::new(r"\b(?:q\d+(?:_?[k\d](?:_[sml])?)?|f16|fp16|bf16|f32|fp32)\b")
         .expect("Static regex is valid")
 });
 static SPLIT_RE: LazyLock<regex::Regex> =
@@ -48,17 +48,34 @@ pub fn find_matching_mmproj(model_path: &Path, mmproj_files: &[PathBuf]) -> Opti
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_lowercase();
+
+    let clean_tokens = |name: &str| -> Vec<String> {
+        let cleaned_size = SIZE_RE.replace_all(name, " ");
+        let cleaned_quant = QUANT_RE.replace_all(&cleaned_size, " ");
+
+        let ignore_tokens = [
+            "mmproj", "gguf", "f32", "fp32", "f16", "fp16", "bf16", "it", "chat", "instruct",
+            "vision",
+        ];
+
+        SPLIT_RE
+            .split(&cleaned_quant)
+            .filter(|&t| !t.is_empty() && !ignore_tokens.contains(&t))
+            .map(str::to_owned)
+            .collect()
+    };
+
+    let model_tokens = clean_tokens(&model_name_lower);
+
     for mf in mmproj_files {
         let stem = mf
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
-        let tokens: Vec<&str> = stem
-            .split('-')
-            .filter(|&t| t != "mmproj" && t != "q8_0" && t != "f16" && t != "q4_k_m")
-            .collect();
-        if !tokens.is_empty() && tokens.iter().all(|&t| model_name_lower.contains(t)) {
+        let mm_tokens = clean_tokens(&stem);
+
+        if !mm_tokens.is_empty() && mm_tokens.iter().all(|t| model_tokens.contains(t)) {
             return Some(mf.clone());
         }
     }
@@ -123,10 +140,19 @@ pub fn discover_presets_from_ini(preset_path: &Path) -> Vec<(String, PathBuf)> {
         let sections = crate::config::parse_settings_ini(&content);
         let mut presets = Vec::new();
 
-        let mut sorted_keys: Vec<&String> = sections.keys().filter(|&k| k != "*").collect();
+        let mut sorted_keys: Vec<&String> = sections
+            .keys()
+            .filter(|&k| k != "*" && k != "default")
+            .collect();
         sorted_keys.sort();
 
-        for section in sorted_keys {
+        let mut ordered_keys: Vec<&String> = Vec::new();
+        if let Some(def_key) = sections.keys().find(|&k| k == "default") {
+            ordered_keys.push(def_key);
+        }
+        ordered_keys.extend(sorted_keys);
+
+        for section in ordered_keys {
             if let Some(map) = sections.get(section) {
                 if map.get("is-draft").map(String::as_str) == Some("true") {
                     continue;
@@ -475,20 +501,70 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
             draft_file = find_matching_draft(model_path, &draft_files);
         }
 
-        let mut presets_to_generate = vec![(clean_name.clone(), false, false)];
+        let variants_cfg: Option<Vec<String>> = get_lh_val("variants")
+            .or_else(|| get_long_val("variants"))
+            .and_then(|v| {
+                const VALID_VARIANTS: &[&str] = &["base", "draft", "vision", "draft-vision", "all"];
+                let raw_items: Vec<String> = if let Some(s) = v.as_str() {
+                    vec![s.trim().to_lowercase()]
+                } else {
+                    let arr = v.as_array()?;
+                    arr.iter()
+                        .filter_map(|item| item.as_str())
+                        .map(|s| s.trim().to_lowercase())
+                        .collect()
+                };
+                let valid_items: Vec<String> = raw_items
+                    .into_iter()
+                    .filter(|s| VALID_VARIANTS.contains(&s.as_str()))
+                    .collect();
+                Some(valid_items)
+            });
+
+        let mut candidates = vec![("base", clean_name.clone(), false, false)];
+        if mmproj_file.is_some() {
+            candidates.push((
+                "vision",
+                insert_variant_suffix(&clean_name, "vision"),
+                false,
+                true,
+            ));
+        }
+        if draft_file.is_some() {
+            candidates.push((
+                "draft",
+                insert_variant_suffix(&clean_name, "draft"),
+                true,
+                false,
+            ));
+        }
         if draft_file.is_some() && mmproj_file.is_some() {
-            presets_to_generate.push((insert_variant_suffix(&clean_name, "vision"), false, true));
-            presets_to_generate.push((insert_variant_suffix(&clean_name, "draft"), true, false));
-            presets_to_generate.push((
+            candidates.push((
+                "draft-vision",
                 insert_variant_suffix(&clean_name, "draft-vision"),
                 true,
                 true,
             ));
-        } else if draft_file.is_some() {
-            presets_to_generate.push((insert_variant_suffix(&clean_name, "draft"), true, false));
-        } else if mmproj_file.is_some() {
-            presets_to_generate.push((insert_variant_suffix(&clean_name, "vision"), false, true));
         }
+
+        let presets_to_generate: Vec<(String, bool, bool)> = match variants_cfg {
+            Some(ref enabled) if !enabled.iter().any(|v| v == "all") => {
+                let filtered: Vec<(String, bool, bool)> = candidates
+                    .into_iter()
+                    .filter(|(id, _, _, _)| enabled.iter().any(|v| v == id))
+                    .map(|(_, name, ud, uv)| (name, ud, uv))
+                    .collect();
+                if filtered.is_empty() {
+                    vec![(clean_name.clone(), false, false)]
+                } else {
+                    filtered
+                }
+            }
+            _ => candidates
+                .into_iter()
+                .map(|(_, name, ud, uv)| (name, ud, uv))
+                .collect(),
+        };
 
         for (preset_name, use_draft, use_vision) in presets_to_generate {
             let preset_name = preset_name.replace(['\n', '\r'], " ");
@@ -747,10 +823,10 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
 
             current_preset.push(String::new());
 
-            if is_default && preset_name == clean_name {
+            if is_default && (preset_name == clean_name || default_preset_lines.is_empty()) {
                 default_preset_lines = current_preset
                     .iter()
-                    .map(|line| line.replace(&format!("[{clean_name}]"), "[default]"))
+                    .map(|line| line.replace(&format!("[{preset_name}]"), "[default]"))
                     .collect();
             }
 

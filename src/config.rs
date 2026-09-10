@@ -142,7 +142,8 @@ pub fn calculate_ngl(input_str: &str, default_val: &str, total_layers: Option<us
 
 // --- TOML LOADERS ---
 
-const RESTRICTED_LONG: &[&str] = &[
+/// Restricted long CLI option keys that cannot be passed through to llama-server.
+pub const RESTRICTED_LONG: &[&str] = &[
     "ctx-size",
     "total-layers",
     "n-gpu-layers",
@@ -217,6 +218,7 @@ const RESTRICTED_LONG: &[&str] = &[
     "tensor-split",
     "fit",
     "fitt",
+    "variants",
 ];
 
 const RESTRICTED_SHORT: &[&str] = &[

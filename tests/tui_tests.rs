@@ -173,7 +173,7 @@ mod tests {
         );
         state.ctx = 123;
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 2; // Context Size
+        state.dashboard_param_index = 3; // Context Size
         let key = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -247,7 +247,7 @@ mod tests {
         state.spec_draft_p_min = "0.0".to_owned();
 
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 22; // Spec Draft N Max
+        state.dashboard_param_index = 23; // Spec Draft N Max
 
         let key_enter = KeyEvent {
             code: KeyCode::Enter,
@@ -268,8 +268,8 @@ mod tests {
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.spec_draft_n_max, "8");
 
-        // Go to spec-draft-p-min edit screen (index 23)
-        state.dashboard_param_index = 23;
+        // Go to spec-draft-p-min edit screen (index 24)
+        state.dashboard_param_index = 24;
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::EditingSpecDraftPMin);
         assert_eq!(state.input_buffer, "0.0");
@@ -417,7 +417,7 @@ mod tests {
 
         // 1. Enter key -> enters MMProj selection popup
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 4; // MMProj
+        state.dashboard_param_index = 5; // MMProj
         let key_v = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -488,7 +488,7 @@ mod tests {
 
         // 1. Enter key -> enters Draft model selection popup
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 19; // Draft Model
+        state.dashboard_param_index = 20; // Draft Model
         let key_d = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -1388,5 +1388,521 @@ gpu-layers-draft = 4
                 server.kill();
             }
         }
+    }
+
+    #[test]
+    fn test_handle_key_event_left_right_variant_cycling() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+        let model_path = models_dir.join("model1.gguf");
+
+        std::fs::write(
+            &preset_path,
+            r#"
+[model1]
+model = model1.gguf
+
+[model1-draft]
+model = model1.gguf
+model-draft = draft.gguf
+"#,
+        )
+        .unwrap();
+
+        let presets = vec![
+            ("model1".to_string(), model_path.clone()),
+            ("model1-draft".to_string(), model_path.clone()),
+        ];
+
+        let mut state = AppState::new(
+            presets,
+            models_dir,
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("llama-server"),
+            Theme::default(),
+        );
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        assert_eq!(state.grouped_models.len(), 1);
+        assert_eq!(state.grouped_models[0].variants.len(), 2);
+        assert_eq!(state.grouped_models[0].selected_variant_index, 0);
+        assert_eq!(state.preset_index, 0);
+        assert_eq!(state.dashboard_focus, DashboardFocus::Left);
+
+        // KeyCode::Right -> cycles to variant 1 (Draft)
+        let key_right = KeyEvent {
+            code: KeyCode::Right,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_right, &tx);
+        assert_eq!(state.grouped_models[0].selected_variant_index, 1);
+        assert_eq!(state.preset_index, 1);
+        assert_eq!(state.presets[state.preset_index].0, "model1-draft");
+
+        // KeyCode::Left -> cycles back to variant 0 (Base)
+        let key_left = KeyEvent {
+            code: KeyCode::Left,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_left, &tx);
+        assert_eq!(state.grouped_models[0].selected_variant_index, 0);
+        assert_eq!(state.preset_index, 0);
+        assert_eq!(state.presets[state.preset_index].0, "model1");
+
+        // With unsaved changes, Right triggers WarnDiscardChanges
+        state.temp = "0.99".to_string();
+        assert!(state.has_unsaved_changes());
+        handle_key_event(&mut state, key_right, &tx);
+        assert_eq!(state.screen, AppScreen::WarnDiscardChanges);
+        assert_eq!(state.pending_preset_index, Some(1));
+        assert_eq!(state.preset_index, 0);
+
+        // Discard changes with Enter
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.preset_index, 1);
+        assert_eq!(state.grouped_models[0].selected_variant_index, 1);
+        assert_eq!(state.selected_model_index, 0);
+    }
+
+    #[test]
+    fn test_handle_key_event_up_down_model_navigation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+        let model1_path = models_dir.join("model1.gguf");
+        let model2_path = models_dir.join("model2.gguf");
+
+        std::fs::write(
+            &preset_path,
+            r#"
+[model1]
+model = model1.gguf
+
+[model2]
+model = model2.gguf
+"#,
+        )
+        .unwrap();
+
+        let presets = vec![
+            ("model1".to_string(), model1_path.clone()),
+            ("model2".to_string(), model2_path.clone()),
+        ];
+
+        let mut state = AppState::new(
+            presets,
+            models_dir,
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("llama-server"),
+            Theme::default(),
+        );
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        assert_eq!(state.grouped_models.len(), 2);
+        assert_eq!(state.selected_model_index, 0);
+        assert_eq!(state.preset_index, 0);
+
+        // KeyCode::Down -> moves to model 1
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.selected_model_index, 1);
+        assert_eq!(state.preset_index, 1);
+        assert_eq!(state.presets[state.preset_index].0, "model2");
+
+        // KeyCode::Up -> moves back to model 0
+        let key_up = KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_up, &tx);
+        assert_eq!(state.selected_model_index, 0);
+        assert_eq!(state.preset_index, 0);
+        assert_eq!(state.presets[state.preset_index].0, "model1");
+    }
+
+    #[test]
+    fn test_ui_dashboard_renders_left_panel_with_badges() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+        let model1_path = models_dir.join("model1.gguf");
+        let model2_path = models_dir.join("model2.gguf");
+
+        std::fs::write(
+            &preset_path,
+            r#"
+[model1]
+model = model1.gguf
+
+[model1-draft]
+model = model1.gguf
+model-draft = draft.gguf
+
+[model2]
+model = model2.gguf
+"#,
+        )
+        .unwrap();
+
+        let presets = vec![
+            ("model1".to_string(), model1_path.clone()),
+            ("model1-draft".to_string(), model1_path.clone()),
+            ("model2".to_string(), model2_path.clone()),
+        ];
+
+        let mut state = AppState::new(
+            presets,
+            models_dir,
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("llama-server"),
+            Theme::default(),
+        );
+
+        terminal
+            .draw(|f| {
+                llama_herd::tui::ui::draw(f, &mut state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut buffer_text = String::new();
+        for y in 0..40 {
+            for x in 0..120 {
+                buffer_text.push(buffer[(x, y)].symbol().chars().next().unwrap_or(' '));
+            }
+            buffer_text.push('\n');
+        }
+
+        assert!(buffer_text.contains("model1"));
+        assert!(buffer_text.contains("[B]"));
+        assert!(buffer_text.contains("[D]"));
+        assert!(buffer_text.contains("model2"));
+    }
+
+    #[test]
+    fn test_picking_models_dir_rebuilds_grouped_models() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir_1 = temp_dir.path().join("models1");
+        let models_dir_2 = temp_dir.path().join("models2");
+        std::fs::create_dir_all(&models_dir_1).unwrap();
+        std::fs::create_dir_all(&models_dir_2).unwrap();
+
+        let model1_path = models_dir_1.join("model1.gguf");
+        let model2_path = models_dir_2.join("model2.gguf");
+        std::fs::write(&model1_path, b"dummy1").unwrap();
+        std::fs::write(&model2_path, b"dummy2").unwrap();
+
+        let preset_path = temp_dir.path().join("models-preset.ini");
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Generate initial presets for models_dir_1
+        let mut global_config = HashMap::new();
+        global_config.insert(
+            "models-dir".to_string(),
+            serde_json::Value::String(models_dir_1.to_string_lossy().to_string()),
+        );
+
+        let _ = llama_herd::discovery::generate_presets_ini(
+            &models_dir_1,
+            &preset_path,
+            &global_config,
+        );
+        let initial_presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+
+        let mut state = AppState::new(
+            initial_presets,
+            models_dir_1.clone(),
+            preset_path,
+            global_config,
+            PathBuf::from("llama-server"),
+            Theme::default(),
+        );
+        state.config_path = config_path;
+
+        // Verify initial state has default and model1 in grouped_models
+        assert_eq!(state.grouped_models.len(), 2);
+        assert_eq!(state.grouped_models[0].base_name, "default");
+        assert_eq!(state.grouped_models[1].base_name, "model1");
+        assert_eq!(state.grouped_models[1].model_path, model1_path);
+        assert!(
+            state.grouped_models[1]
+                .variants
+                .iter()
+                .any(|v| v.preset_name == "model1")
+        );
+
+        // Simulate opening the directory picker for models_dir_2
+        state.screen = AppScreen::PickingModelsDir;
+        state.picker = Some(llama_herd::tui::picker::FilePicker::new(
+            models_dir_2.clone(),
+            llama_herd::tui::picker::PickerMode::Directory,
+        ));
+
+        // Press Enter on ".[Select current directory]"
+        let key = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        let quit = handle_key_event(&mut state, key, &tx);
+
+        assert!(!quit);
+        assert_eq!(state.screen, AppScreen::Settings);
+        assert_eq!(state.models_dir, models_dir_2);
+
+        // Verify grouped_models has been rebuilt to reflect default and model2
+        assert_eq!(state.grouped_models.len(), 2);
+        assert_eq!(state.grouped_models[0].base_name, "default");
+        assert_eq!(state.grouped_models[1].base_name, "model2");
+        assert_eq!(state.grouped_models[1].model_path, model2_path);
+        assert!(
+            state.grouped_models[1]
+                .variants
+                .iter()
+                .any(|v| v.preset_name == "model2")
+        );
+    }
+
+    #[test]
+    fn test_dashboard_enter_and_esc_focus_switching() {
+        let mut state = AppState::new(
+            vec![("model1".to_string(), PathBuf::from("model1.gguf"))],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("llama-server"),
+            Theme::default(),
+        );
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // Initially Left is focused
+        assert_eq!(state.dashboard_focus, DashboardFocus::Left);
+
+        // Pressing Enter on Left panel switches focus to Right panel (Parameters)
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.dashboard_focus, DashboardFocus::Right);
+
+        // Pressing Esc on Right panel switches focus back to Left panel (Models)
+        let key_esc = KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_esc, &tx);
+        assert_eq!(state.dashboard_focus, DashboardFocus::Left);
+    }
+
+    #[test]
+    fn test_handle_key_event_editing_variants() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.variants = "all".to_owned();
+        state.original_variants = "all".to_owned();
+        assert!(!state.has_unsaved_changes());
+
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 2; // Variants
+
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Enter key -> opens EditingVariants screen
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingVariants);
+        assert_eq!(state.input_buffer, "all");
+
+        // 2. Type new variants and submit
+        state.input_buffer = "base, draft-vision".to_owned();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.variants, "base, draft-vision");
+        assert!(state.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_save_variants_config_updates_presets_and_badges() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        // Create base model and draft model
+        let model_gguf = models_dir.join("my-model.gguf");
+        std::fs::write(&model_gguf, b"").unwrap();
+        let draft_gguf = models_dir.join("my-model-draft.gguf");
+        std::fs::write(&draft_gguf, b"").unwrap();
+
+        // Initial config with draft model
+        let model_toml = models_dir.join("my-model.toml");
+        let toml_content = r#"
+[llama-herd]
+draft = "my-model-draft.gguf"
+"#;
+        std::fs::write(&model_toml, toml_content.as_bytes()).unwrap();
+
+        let draft_toml = models_dir.join("my-model-draft.toml");
+        std::fs::write(&draft_toml, b"[llama-herd]\nis-draft = true\n").unwrap();
+
+        let _ =
+            llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+        // Generates default + my-model + my-model-draft = 3 presets
+        assert_eq!(presets.len(), 3);
+
+        let mut state = AppState::new(
+            presets,
+            models_dir.clone(),
+            preset_path.clone(),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        // 2 grouped models: "default" and "my-model"
+        assert_eq!(state.grouped_models.len(), 2);
+        assert_eq!(state.grouped_models[0].base_name, "default");
+        assert_eq!(state.grouped_models[1].base_name, "my-model");
+        assert_eq!(state.grouped_models[1].variants.len(), 2);
+        assert_eq!(state.variants, "all");
+
+        // Switch selection to my-model (index 1)
+        state.select_model(1);
+
+        // Restrict variants to only "base"
+        state.variants = "base".to_owned();
+        assert!(state.has_unsaved_changes());
+
+        // Save config
+        state.save_current_preset_config(false).unwrap();
+        assert!(!state.has_unsaved_changes());
+
+        // Verify TOML file updated with variants = "base" in [llama-herd]
+        let saved_config = llama_herd::config::load_toml_silent(&model_toml);
+        let herd = saved_config.get("llama-herd").unwrap().as_object().unwrap();
+        assert_eq!(herd.get("variants").unwrap().as_str().unwrap(), "base");
+
+        // Verify presets and grouped models reloaded with only 1 variant for my-model (+ default preset)
+        assert_eq!(state.presets.len(), 2);
+        assert_eq!(state.grouped_models.len(), 2);
+        assert_eq!(state.grouped_models[1].variants.len(), 1);
+        assert_eq!(
+            state.grouped_models[1].variants[0].variant,
+            llama_herd::tui::app::ModelVariant::Base
+        );
+    }
+
+    #[test]
+    fn test_save_variants_config_draft_vision_preserves_selection() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        let model_file = models_dir.join("gemma-4-12B-it-heretic.Q8_0.gguf");
+        std::fs::write(&model_file, b"gemma content").unwrap();
+
+        let model_toml = models_dir.join("gemma-4-12B-it-heretic.Q8_0.toml");
+        std::fs::write(
+            &model_toml,
+            b"[llama-herd]\ndraft = \"mtp-gemma-4-12b-it-Q8_0.gguf\"\nvariants = \"all\"\n",
+        )
+        .unwrap();
+
+        let draft_file = models_dir.join("mtp-gemma-4-12b-it-Q8_0.gguf");
+        std::fs::write(&draft_file, b"draft content").unwrap();
+        let draft_toml = models_dir.join("mtp-gemma-4-12b-it-Q8_0.toml");
+        std::fs::write(&draft_toml, b"[llama-herd]\nis-draft = true\n").unwrap();
+
+        let mmproj_file = models_dir.join("gemma-4-12b-it-mmproj-F32.gguf");
+        std::fs::write(&mmproj_file, b"mmproj content").unwrap();
+
+        let _ =
+            llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+        // default + base + vision + draft + draft-vision = 5 presets
+        assert_eq!(presets.len(), 5);
+
+        let mut state = AppState::new(
+            presets,
+            models_dir.clone(),
+            preset_path.clone(),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        // Select model 1 (gemma), and cycle to draft-vision variant
+        state.select_model(1);
+        while {
+            let m = &state.grouped_models[1];
+            m.variants[m.selected_variant_index].variant
+                != llama_herd::tui::app::ModelVariant::DraftVision
+        } {
+            state.cycle_variant_next();
+        }
+
+        // Set variants = "draft-vision" and save
+        state.variants = "draft-vision".to_owned();
+        state.save_current_preset_config(false).unwrap();
+
+        // After save, the selected variant should be DraftVision, NOT reset to Base or default
+        assert_eq!(state.selected_model_index, 1);
+        let current_model = &state.grouped_models[1];
+        assert_eq!(
+            current_model.variants[current_model.selected_variant_index].variant,
+            llama_herd::tui::app::ModelVariant::DraftVision
+        );
+        let current_preset_name = &state.presets[state.preset_index].0;
+        assert!(
+            current_preset_name.contains("draft-vision"),
+            "Expected current preset to contain draft-vision, got: {current_preset_name}"
+        );
     }
 }

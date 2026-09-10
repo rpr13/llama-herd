@@ -124,9 +124,29 @@ pub fn handle_key_event(
             KeyCode::Up => {
                 if state.dashboard_focus == DashboardFocus::Right {
                     if state.dashboard_param_index == 0 {
-                        state.dashboard_param_index = 23;
+                        state.dashboard_param_index = 24;
                     } else {
                         state.dashboard_param_index -= 1;
+                    }
+                } else if !state.grouped_models.is_empty() {
+                    let target_model_idx = if state.selected_model_index == 0 {
+                        state.grouped_models.len() - 1
+                    } else {
+                        state.selected_model_index - 1
+                    };
+                    let target_model = &state.grouped_models[target_model_idx];
+                    let var_idx = target_model
+                        .selected_variant_index
+                        .min(target_model.variants.len().saturating_sub(1));
+                    let target_preset_idx = target_model
+                        .variants
+                        .get(var_idx)
+                        .map_or(0, |v| v.preset_index);
+                    if state.has_unsaved_changes() {
+                        state.pending_preset_index = Some(target_preset_idx);
+                        state.screen = AppScreen::WarnDiscardChanges;
+                    } else {
+                        state.select_model(target_model_idx);
                     }
                 } else if !state.presets.is_empty() {
                     let target_index = if state.preset_index == 0 {
@@ -145,7 +165,24 @@ pub fn handle_key_event(
             }
             KeyCode::Down => {
                 if state.dashboard_focus == DashboardFocus::Right {
-                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 24;
+                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 25;
+                } else if !state.grouped_models.is_empty() {
+                    let target_model_idx =
+                        (state.selected_model_index + 1) % state.grouped_models.len();
+                    let target_model = &state.grouped_models[target_model_idx];
+                    let var_idx = target_model
+                        .selected_variant_index
+                        .min(target_model.variants.len().saturating_sub(1));
+                    let target_preset_idx = target_model
+                        .variants
+                        .get(var_idx)
+                        .map_or(0, |v| v.preset_index);
+                    if state.has_unsaved_changes() {
+                        state.pending_preset_index = Some(target_preset_idx);
+                        state.screen = AppScreen::WarnDiscardChanges;
+                    } else {
+                        state.select_model(target_model_idx);
+                    }
                 } else if !state.presets.is_empty() {
                     let target_index = (state.preset_index + 1) % state.presets.len();
                     if state.has_unsaved_changes() {
@@ -156,6 +193,53 @@ pub fn handle_key_event(
                         state.load_current_preset_settings(None);
                     }
                 }
+            }
+            KeyCode::Left if state.dashboard_focus == DashboardFocus::Left => {
+                if !state.grouped_models.is_empty() {
+                    let model_idx = state
+                        .selected_model_index
+                        .min(state.grouped_models.len() - 1);
+                    let model = &state.grouped_models[model_idx];
+                    if model.variants.len() > 1 {
+                        let target_var_idx = if model.selected_variant_index == 0 {
+                            model.variants.len() - 1
+                        } else {
+                            model.selected_variant_index - 1
+                        };
+                        let target_preset_idx = model.variants[target_var_idx].preset_index;
+                        if state.has_unsaved_changes() {
+                            state.pending_preset_index = Some(target_preset_idx);
+                            state.screen = AppScreen::WarnDiscardChanges;
+                        } else {
+                            state.cycle_variant_prev();
+                        }
+                    }
+                }
+            }
+            KeyCode::Right if state.dashboard_focus == DashboardFocus::Left => {
+                if !state.grouped_models.is_empty() {
+                    let model_idx = state
+                        .selected_model_index
+                        .min(state.grouped_models.len() - 1);
+                    let model = &state.grouped_models[model_idx];
+                    if model.variants.len() > 1 {
+                        let target_var_idx =
+                            (model.selected_variant_index + 1) % model.variants.len();
+                        let target_preset_idx = model.variants[target_var_idx].preset_index;
+                        if state.has_unsaved_changes() {
+                            state.pending_preset_index = Some(target_preset_idx);
+                            state.screen = AppScreen::WarnDiscardChanges;
+                        } else {
+                            state.cycle_variant_next();
+                        }
+                    }
+                }
+            }
+            KeyCode::Enter if state.dashboard_focus == DashboardFocus::Left => {
+                state.dashboard_focus = DashboardFocus::Right;
+            }
+            KeyCode::Esc if state.dashboard_focus == DashboardFocus::Right => {
+                state.dashboard_focus = DashboardFocus::Left;
             }
             KeyCode::F(6) => {
                 // Spawns router mode server
@@ -302,6 +386,10 @@ pub fn handle_key_event(
                             .unwrap_or_default();
                     }
                     2 => {
+                        state.screen = AppScreen::EditingVariants;
+                        state.input_buffer = state.variants.clone();
+                    }
+                    3 => {
                         state.screen = AppScreen::EditingCtx;
                         state.input_buffer = if state.ctx_str.is_empty() {
                             state.ctx.to_string()
@@ -309,87 +397,87 @@ pub fn handle_key_event(
                             state.ctx_str.clone()
                         };
                     }
-                    3 => {
+                    4 => {
                         state.screen = AppScreen::EditingNgl;
                         state.input_buffer = state.ngl.clone();
                     }
-                    4 => {
+                    5 => {
                         state.mmproj_index_backup = state.mmproj_index;
                         state.screen = AppScreen::SelectingMMProj;
                     }
-                    5 => {
+                    6 => {
                         state.screen = AppScreen::EditingTemp;
                         state.input_buffer = state.temp.clone();
                     }
-                    6 => {
+                    7 => {
                         state.screen = AppScreen::EditingTopP;
                         state.input_buffer = state.top_p.clone();
                     }
-                    7 => {
+                    8 => {
                         state.screen = AppScreen::EditingTopK;
                         state.input_buffer = state.top_k.clone();
                     }
-                    8 => {
+                    9 => {
                         state.screen = AppScreen::EditingMinP;
                         state.input_buffer = state.min_p.clone();
                     }
-                    9 => {
+                    10 => {
                         state.screen = AppScreen::EditingRepeatPenalty;
                         state.input_buffer = state.repeat_penalty.clone();
                     }
-                    10 => {
+                    11 => {
                         state.screen = AppScreen::EditingRepeatLastN;
                         state.input_buffer = state.repeat_last_n.clone();
                     }
-                    11 => {
+                    12 => {
                         state.screen = AppScreen::EditingDryMultiplier;
                         state.input_buffer = state.dry_multiplier.clone();
                     }
-                    12 => {
+                    13 => {
                         state.screen = AppScreen::EditingDryBase;
                         state.input_buffer = state.dry_base.clone();
                     }
-                    13 => {
+                    14 => {
                         state.screen = AppScreen::EditingDryAllowedLength;
                         state.input_buffer = state.dry_allowed_length.clone();
                     }
-                    14 => {
+                    15 => {
                         state.screen = AppScreen::EditingDryPenaltyLastN;
                         state.input_buffer = state.dry_penalty_last_n.clone();
                     }
-                    15 => {
+                    16 => {
                         state.screen = AppScreen::EditingDrySequenceBreaker;
                         state.input_buffer = state.dry_sequence_breaker.clone();
                     }
-                    16 => {
+                    17 => {
                         state.reasoning_format_index_backup = state.reasoning_format_index;
                         state.screen = AppScreen::SelectingReasoningFormat;
                     }
-                    17 => {
+                    18 => {
                         state.reasoning_index_backup = state.reasoning_index;
                         state.screen = AppScreen::SelectingReasoning;
                     }
-                    18 => {
+                    19 => {
                         state.screen = AppScreen::EditingReasoningBudget;
                         state.input_buffer = state.reasoning_budget.clone();
                     }
-                    19 => {
+                    20 => {
                         state.draft_index_backup = state.draft_index;
                         state.screen = AppScreen::SelectingDraftModel;
                     }
-                    20 => {
+                    21 => {
                         state.screen = AppScreen::EditingDraftNgl;
                         state.input_buffer = state.draft_ngl.clone();
                     }
-                    21 => {
+                    22 => {
                         state.spec_type_backup = state.spec_type_index;
                         state.screen = AppScreen::SelectingSpecType;
                     }
-                    22 => {
+                    23 => {
                         state.screen = AppScreen::EditingSpecDraftNMax;
                         state.input_buffer = state.spec_draft_n_max.clone();
                     }
-                    23 => {
+                    24 => {
                         state.screen = AppScreen::EditingSpecDraftPMin;
                         state.input_buffer = state.spec_draft_p_min.clone();
                     }
@@ -584,6 +672,7 @@ pub fn handle_key_event(
                         state.presets =
                             crate::discovery::discover_presets_from_ini(&state.preset_path);
                         state.preset_index = 0;
+                        state.rebuild_grouped_models();
                         let new_state = app::get_models_dir_state(&state.models_dir);
                         state.last_models_dir_state = new_state.clone();
                         state.last_stable_models_dir_state = new_state;
@@ -608,6 +697,7 @@ pub fn handle_key_event(
         | AppScreen::EditingTopP
         | AppScreen::EditingTopK
         | AppScreen::EditingTotalLayers
+        | AppScreen::EditingVariants
         | AppScreen::EditingConfigFileName
         | AppScreen::EditingGlobalSetting
         | AppScreen::EditingMinP
@@ -714,6 +804,10 @@ pub fn handle_key_event(
                             state.validation_error =
                                 Some("Invalid total layers count (e.g. 33)".to_owned());
                         }
+                    }
+                    AppScreen::EditingVariants => {
+                        state.variants = state.input_buffer.trim().to_owned();
+                        state.screen = AppScreen::Dashboard;
                     }
                     AppScreen::EditingConfigFileName => {
                         state.config_file_name = state.input_buffer.trim().to_owned();
@@ -1193,6 +1287,23 @@ pub fn handle_key_event(
                         state.preset_index = target;
                     } else {
                         state.preset_index = 0;
+                    }
+                    let mut matched = false;
+                    for (m_idx, model) in state.grouped_models.iter_mut().enumerate() {
+                        if let Some(v_idx) = model
+                            .variants
+                            .iter()
+                            .position(|v| v.preset_index == state.preset_index)
+                        {
+                            state.selected_model_index = m_idx;
+                            model.selected_variant_index = v_idx;
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if !matched && !state.grouped_models.is_empty() {
+                        state.selected_model_index = 0;
+                        state.grouped_models[0].selected_variant_index = 0;
                     }
                     state.load_current_preset_settings(None);
                 }

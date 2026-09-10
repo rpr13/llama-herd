@@ -9,5 +9,5 @@ fmt-check = "fmt --all -- --check"
 rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [target.x86_64-pc-windows-msvc]
-# Use lld-link on Windows for faster rebuilds
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+# Use rust-lld on Windows for faster rebuilds
+rustflags = ["-C", "linker=rust-lld"]

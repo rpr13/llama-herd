@@ -9,7 +9,9 @@
 )]
 
 use llama_herd::config::{ModelAssets, UserSettings};
-use llama_herd::launcher::{build_launch_parameters, build_router_launch_parameters};
+use llama_herd::launcher::{
+    build_launch_parameters, build_router_launch_parameters, parse_server_version,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -598,6 +600,61 @@ fn test_build_router_launch_parameters_tensor_split() -> TestResult {
 
     let fitt_idx = params.iter().position(|r| r == "-fitt").unwrap();
     assert_eq!(params[fitt_idx + 1], "1024");
+
+    Ok(())
+}
+
+#[test]
+fn test_parse_server_version() -> TestResult {
+    // 1. Modern llama.cpp with semver and build number in parentheses (b10894 release)
+    let output_modern = "version: 0.4.0-dev (build 10894, commit d344123fe)\nbuilt with Clang 20.1.8 for Windows x86_64";
+    assert_eq!(parse_server_version(output_modern), "0.4.0-dev b10894");
+
+    // 2. Modern llama.cpp with (b10894, commit ...)
+    let output_paren_b = "version: 0.4.0 (b10894, commit d344123fe)";
+    assert_eq!(parse_server_version(output_paren_b), "0.4.0 b10894");
+
+    // 3. Semver with leading 'v' should have 'v' stripped
+    let output_v_semver = "version: v0.4.0-dev (build 10894, commit d344123fe)";
+    assert_eq!(parse_server_version(output_v_semver), "0.4.0-dev b10894");
+
+    // 4. Legacy llama.cpp with integer build number
+    let output_legacy_int = "version: 4567 (commit d344123fe)\nbuilt with GCC for Linux";
+    assert_eq!(parse_server_version(output_legacy_int), "b4567");
+
+    // 5. Legacy llama.cpp with 'b' prefix
+    let output_legacy_b = "version: b4567 (commit d344123fe)";
+    assert_eq!(parse_server_version(output_legacy_b), "b4567");
+
+    // 6. Alternate llama version prefix
+    let output_alt_prefix = "llama version 3210 (commit d344123fe)";
+    assert_eq!(parse_server_version(output_alt_prefix), "b3210");
+
+    // 7. Build info format from common/build-info.cpp
+    let output_build_info = "main: build = 10894 (d344123fe)\nbuilt with Clang";
+    assert_eq!(parse_server_version(output_build_info), "b10894");
+
+    // 8. Pure semver without build number
+    let output_semver = "version: 0.4.0 (commit d344123fe)";
+    assert_eq!(parse_server_version(output_semver), "0.4.0");
+
+    // 9. Pure semver with leading 'v' without build number
+    let output_v_only = "version: v0.4.0 (commit d344123fe)";
+    assert_eq!(parse_server_version(output_v_only), "0.4.0");
+
+    // 10. Pure semver-dev
+    let output_semver_dev = "version: 0.4.0-dev";
+    assert_eq!(parse_server_version(output_semver_dev), "0.4.0-dev");
+
+    // 11. Fallback on empty or unknown
+    assert_eq!(parse_server_version(""), "Unknown");
+
+    // 12. Real binary verification if d:\llama-cpp\llama-server.exe exists
+    let real_exe = PathBuf::from(r"d:\llama-cpp\llama-server.exe");
+    if real_exe.exists() {
+        use llama_herd::launcher::get_server_version;
+        assert_eq!(get_server_version(&real_exe), "0.4.0-dev b10894");
+    }
 
     Ok(())
 }

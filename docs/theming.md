@@ -19,6 +19,14 @@ The palette consists of several semantic colors that are used throughout the TUI
 | `header-bg` | Background color specifically for the top header bar. |
 | `footer-bg` | Background color specifically for the bottom hotkey hints bar. |
 
+### Operational Status Badges
+
+Server health states and badges dynamically inherit their colors from semantic palette entries:
+- **`HEALTHY`**: Styled with `success` color.
+- **`LOADING`**: Styled with `accent` color.
+- **`UNHEALTHY` / `RECOVERING` / `ERROR`**: Styled with `error` color (`RECOVERING` is also bolded).
+- **`STOPPED`**: Styled with `secondary` color.
+
 ## UI Behaviors
 
 Beyond colors, the theme system controls structural and aesthetic behaviors:

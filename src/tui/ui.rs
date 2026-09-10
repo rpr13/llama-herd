@@ -393,6 +393,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingTopP
         | AppScreen::EditingTopK
         | AppScreen::EditingTotalLayers
+        | AppScreen::EditingVariants
         | AppScreen::EditingConfigFileName
         | AppScreen::ConfirmSaveConfig
         | AppScreen::WarnDiscardChanges
@@ -437,6 +438,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
                 || state.top_p != state.original_top_p
                 || state.top_k != state.original_top_k
                 || state.total_layers != state.original_total_layers
+                || state.variants != state.original_variants
                 || state.config_file_name != state.original_config_file_name;
 
             let mut second_line_spans = vec![];
@@ -476,24 +478,31 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
                 " Launch Router  "
             };
 
-            let focus_label = if state.dashboard_focus == DashboardFocus::Left {
-                " Focus Params  "
-            } else {
-                " Focus List  "
-            };
-
-            let mut first_line_spans = vec![
-                Span::styled(
-                    " [Tab]",
-                    Style::default()
-                        .fg(theme.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(focus_label, Style::default().fg(theme.fg)),
-            ];
+            let mut first_line_spans = Vec::new();
 
             if state.dashboard_focus == DashboardFocus::Left {
                 first_line_spans.extend(vec![
+                    Span::styled(
+                        " [Tab/Enter]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Edit Params  ", Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [←/→]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Variant  ", Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [↑/↓]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Model  ", Style::default().fg(theme.fg)),
                     Span::styled(
                         " [F5]",
                         Style::default()
@@ -512,19 +521,33 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
             } else {
                 first_line_spans.extend(vec![
                     Span::styled(
-                        " [Up/Down]",
+                        " [Enter]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Edit Param  ", Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [↑/↓]",
                         Style::default()
                             .fg(theme.primary)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(" Select Param  ", Style::default().fg(theme.fg)),
                     Span::styled(
-                        " [Enter]",
+                        " [Ctrl+S]",
                         Style::default()
                             .fg(theme.primary)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(" Edit Selected  ", Style::default().fg(theme.fg)),
+                    Span::styled(" Save  ", Style::default().fg(theme.fg)),
+                    Span::styled(
+                        " [Esc/Tab]",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" Back to Models  ", Style::default().fg(theme.fg)),
                     Span::styled(
                         " [F5]",
                         Style::default()
@@ -606,6 +629,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingTopP
         | AppScreen::EditingTopK
         | AppScreen::EditingTotalLayers
+        | AppScreen::EditingVariants
         | AppScreen::EditingConfigFileName
         | AppScreen::EditingGlobalSetting
         | AppScreen::SelectingGlobalSettingOption
@@ -1406,7 +1430,7 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     // Split Content Area into Left (Presets List) and Right (Preset Parameters Details)
     let content_layout = if size.width < 110 {
         #[allow(clippy::cast_possible_truncation)]
-        let presets_height = (state.presets.len() as u16 + 2).clamp(5, 8);
+        let presets_height = (state.grouped_models.len() as u16 + 2).clamp(5, 8);
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(presets_height), Constraint::Min(5)])
@@ -1422,28 +1446,70 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let list_val_width = content_layout[0].width.saturating_sub(6) as usize;
     let is_left_focused = state.dashboard_focus == DashboardFocus::Left;
     let items: Vec<ListItem<'_>> = state
-        .presets
+        .grouped_models
         .iter()
         .enumerate()
-        .map(|(idx, (name, _))| {
-            let display_name = truncate_middle(name, list_val_width);
-            if idx == state.preset_index {
+        .map(|(idx, model)| {
+            let is_selected = idx == state.selected_model_index;
+
+            let mut badge_spans = Vec::with_capacity(model.variants.len());
+            let mut badges_char_len = 0;
+            for (v_idx, v) in model.variants.iter().enumerate() {
+                let badge_str = if v_idx == model.selected_variant_index {
+                    if is_selected {
+                        format!(" ▶[{}]◀", v.variant.badge_label())
+                    } else {
+                        format!(" [{}]", v.variant.badge_label())
+                    }
+                } else {
+                    format!(" [{}]", v.variant.badge_label())
+                };
+                badges_char_len += badge_str.chars().count();
+                let badge_style = if v_idx == model.selected_variant_index {
+                    if is_selected {
+                        Style::default()
+                            .fg(theme.selection)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                            .fg(theme.secondary)
+                            .add_modifier(Modifier::BOLD)
+                    }
+                } else {
+                    Style::default().fg(theme.secondary)
+                };
+                badge_spans.push(Span::styled(badge_str, badge_style));
+            }
+
+            let available_name_width = list_val_width.saturating_sub(badges_char_len);
+            let display_name = truncate_middle(&model.base_name, available_name_width);
+
+            let prefix_span = if is_selected {
                 if is_left_focused {
-                    ListItem::new(format!(" ➤ {display_name} ")).style(
+                    Span::styled(
+                        format!(" ➤ {display_name}"),
                         Style::default()
                             .fg(theme.selection)
                             .add_modifier(Modifier::BOLD),
                     )
                 } else {
-                    ListItem::new(format!(" • {display_name} ")).style(
+                    Span::styled(
+                        format!(" • {display_name}"),
                         Style::default()
                             .fg(theme.secondary)
                             .add_modifier(Modifier::BOLD),
                     )
                 }
             } else {
-                ListItem::new(format!("   {display_name} ")).style(Style::default().fg(theme.fg))
-            }
+                Span::styled(format!("   {display_name}"), Style::default().fg(theme.fg))
+            };
+
+            let mut spans = Vec::with_capacity(badge_spans.len() + 2);
+            spans.push(prefix_span);
+            spans.extend(badge_spans);
+            spans.push(Span::styled(" ", Style::default().fg(theme.fg)));
+
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
@@ -1459,9 +1525,15 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         theme.secondary
     };
 
+    let presets_title = if state.dashboard_focus == DashboardFocus::Left {
+        " Models [Active] "
+    } else {
+        " Models (Tab/Esc: Focus) "
+    };
+
     let presets_block = Block::default()
         .borders(presets_borders)
-        .title(" Presets ")
+        .title(presets_title)
         .border_type(theme.border_type)
         .style(Style::default().bg(theme.bg).fg(theme.fg))
         .border_style(Style::default().fg(presets_border_color));
@@ -1470,14 +1542,23 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
 
     // RIGHT Panel: Parameters Details
     let config_changed = state.has_unsaved_changes();
+    let is_right_focused = state.dashboard_focus == DashboardFocus::Right;
 
-    let right_title = if config_changed {
-        " Preset Details & Parameters (Unsaved Changes: Ctrl+S to save) ".to_owned()
-    } else {
-        " Preset Details & Parameters ".to_owned()
+    let right_title = match (config_changed, is_right_focused) {
+        (true, true) => {
+            " Preset Details & Parameters (Unsaved: Ctrl+S) [Active: Enter to edit, Esc to back] "
+                .to_owned()
+        }
+        (true, false) => {
+            " Preset Details & Parameters (Unsaved: Ctrl+S) (Tab or Enter to edit) ".to_owned()
+        }
+        (false, true) => {
+            " Preset Details & Parameters [Active: Enter to edit, Esc to back] ".to_owned()
+        }
+        (false, false) => " Preset Details & Parameters (Tab or Enter to edit) ".to_owned(),
     };
 
-    let right_border_color = if state.dashboard_focus == DashboardFocus::Right {
+    let right_border_color = if is_right_focused {
         theme.primary
     } else {
         theme.secondary
@@ -1625,30 +1706,31 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
 
     let (f_prompt, f_label) = make_param_cells(0, "Target Config File");
     let (l_prompt, l_label) = make_param_cells(1, "Total Layers");
-    let (c_prompt, c_label) = make_param_cells(2, "Context Size");
-    let (n_prompt, n_label) = make_param_cells(3, "N-GPU-Layers");
-    let (v_prompt, v_label) = make_param_cells(4, "MMProj (Vision)");
-    let (t_prompt, t_label) = make_param_cells(5, "Temperature");
-    let (p_prompt, p_label) = make_param_cells(6, "Top P");
-    let (k_prompt, k_label) = make_param_cells(7, "Top K");
-    let (m_prompt, m_label) = make_param_cells(8, "Min P");
-    let (e_prompt, e_label) = make_param_cells(9, "Repeat Penalty");
-    let (a_prompt, a_label) = make_param_cells(10, "Repeat Last N");
-    let (dry_mult_prompt, dry_mult_label) = make_param_cells(11, "DRY Multiplier");
-    let (dry_base_prompt, dry_base_label) = make_param_cells(12, "DRY Base");
+    let (variants_prompt, variants_label) = make_param_cells(2, "Variants");
+    let (c_prompt, c_label) = make_param_cells(3, "Context Size");
+    let (n_prompt, n_label) = make_param_cells(4, "N-GPU-Layers");
+    let (v_prompt, v_label) = make_param_cells(5, "MMProj (Vision)");
+    let (t_prompt, t_label) = make_param_cells(6, "Temperature");
+    let (p_prompt, p_label) = make_param_cells(7, "Top P");
+    let (k_prompt, k_label) = make_param_cells(8, "Top K");
+    let (m_prompt, m_label) = make_param_cells(9, "Min P");
+    let (e_prompt, e_label) = make_param_cells(10, "Repeat Penalty");
+    let (a_prompt, a_label) = make_param_cells(11, "Repeat Last N");
+    let (dry_mult_prompt, dry_mult_label) = make_param_cells(12, "DRY Multiplier");
+    let (dry_base_prompt, dry_base_label) = make_param_cells(13, "DRY Base");
     let (dry_allowed_len_prompt, dry_allowed_len_label) =
-        make_param_cells(13, "DRY Allowed Length");
-    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(14, "DRY Penalty Last N");
-    let (dry_seq_prompt, dry_seq_label) = make_param_cells(15, "DRY Seq Breaker");
-    let (o_prompt, o_label) = make_param_cells(16, "Reasoning Format");
-    let (u_prompt, u_label) = make_param_cells(17, "Reasoning Mode");
-    let (b_prompt, b_label) = make_param_cells(18, "Reasoning Budget");
-    let (d_prompt, d_label) = make_param_cells(19, "Draft Model");
-    let (g_prompt, g_label) = make_param_cells(20, "Draft GPU Layers");
-    let (y_prompt, y_label) = make_param_cells(21, "Speculative Type (spec-type)");
+        make_param_cells(14, "DRY Allowed Length");
+    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(15, "DRY Penalty Last N");
+    let (dry_seq_prompt, dry_seq_label) = make_param_cells(16, "DRY Seq Breaker");
+    let (o_prompt, o_label) = make_param_cells(17, "Reasoning Format");
+    let (u_prompt, u_label) = make_param_cells(18, "Reasoning Mode");
+    let (b_prompt, b_label) = make_param_cells(19, "Reasoning Budget");
+    let (d_prompt, d_label) = make_param_cells(20, "Draft Model");
+    let (g_prompt, g_label) = make_param_cells(21, "Draft GPU Layers");
+    let (y_prompt, y_label) = make_param_cells(22, "Speculative Type (spec-type)");
     let (draft_max_tokens_prompt, draft_max_tokens_label) =
-        make_param_cells(22, "Spec Draft N Max");
-    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(23, "Spec Draft P Min");
+        make_param_cells(23, "Spec Draft N Max");
+    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(24, "Spec Draft P Min");
 
     let rows = vec![
         // GROUP HEADER: llama herd
@@ -1701,6 +1783,15 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                     .map(|l| l.to_string())
                     .unwrap_or_default(),
                 Style::default().fg(theme.success),
+            ),
+        ]),
+        Row::new(vec![
+            variants_prompt,
+            variants_label,
+            make_val_cell(
+                &state.original_variants,
+                &state.variants,
+                Style::default().fg(theme.primary),
             ),
         ]),
         // GROUP HEADER: Common params
@@ -1998,28 +2089,29 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let selected_row_idx = match state.dashboard_param_index {
         0 => 3,   // Target Config File
         1 => 4,   // Total Layers
-        2 => 6,   // Context Size
-        3 => 7,   // N-GPU-Layers
-        4 => 8,   // Vision Projector
-        5 => 10,  // Temperature
-        6 => 11,  // Top P
-        7 => 12,  // Top K
-        8 => 13,  // Min P
-        9 => 14,  // Repeat Penalty
-        10 => 15, // Repeat Last N
-        11 => 16, // DRY Multiplier
-        12 => 17, // DRY Base
-        13 => 18, // DRY Allowed Length
-        14 => 19, // DRY Penalty Last N
-        15 => 20, // DRY Seq Breaker
-        16 => 22, // Reasoning Format
-        17 => 23, // Reasoning Mode
-        18 => 24, // Reasoning Budget
-        19 => 27, // Speculative Draft Model
-        20 => 28, // Draft GPU Layers
-        21 => 30, // Speculative Decoding Type
-        22 => 31, // Max Speculative Predictions
-        23 => 32, // Min Speculative Probability
+        2 => 5,   // Variants
+        3 => 7,   // Context Size
+        4 => 8,   // N-GPU-Layers
+        5 => 9,   // Vision Projector
+        6 => 11,  // Temperature
+        7 => 12,  // Top P
+        8 => 13,  // Top K
+        9 => 14,  // Min P
+        10 => 15, // Repeat Penalty
+        11 => 16, // Repeat Last N
+        12 => 17, // DRY Multiplier
+        13 => 18, // DRY Base
+        14 => 19, // DRY Allowed Length
+        15 => 20, // DRY Penalty Last N
+        16 => 21, // DRY Seq Breaker
+        17 => 23, // Reasoning Format
+        18 => 24, // Reasoning Mode
+        19 => 25, // Reasoning Budget
+        20 => 28, // Speculative Draft Model
+        21 => 29, // Draft GPU Layers
+        22 => 31, // Speculative Decoding Type
+        23 => 32, // Max Speculative Predictions
+        24 => 33, // Min Speculative Probability
         _ => 0,
     };
     let mut table_state = TableState::default();
@@ -2066,6 +2158,10 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             AppScreen::EditingTotalLayers => (
                 " Edit Total Model Layers ",
                 "Enter total model layers (e.g. 33):",
+            ),
+            AppScreen::EditingVariants => (
+                " Edit Model Variants ",
+                "Enter variants (e.g. base, draft, vision, draft-vision, or all):",
             ),
             AppScreen::EditingConfigFileName => (
                 " Edit Target Config File ",
@@ -2422,6 +2518,13 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             .unwrap_or_default();
         if total_layers_str != original_total_layers_str {
             changes.push(("Total Layers", original_total_layers_str, total_layers_str));
+        }
+        if state.variants != state.original_variants {
+            changes.push((
+                "Variants",
+                state.original_variants.clone(),
+                state.variants.clone(),
+            ));
         }
         if state.min_p != state.original_min_p {
             changes.push(("Min P", state.original_min_p.clone(), state.min_p.clone()));

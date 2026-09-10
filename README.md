@@ -32,11 +32,14 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 
 ### Key Capabilities
 
-- 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics, providing interactive selector menus directly on the Dashboard.
+- 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics, with variant filtering (`variants = ["base", "draft-vision"]`) and interactive variant badge cycling (`[B]`, `[D]`, `[V]`, `[DV]`) directly on the Dashboard.
+- 🖲️ **Hardware Topology Scanner & Multi-GPU Allocator**: Scans NVIDIA CUDA (`nvidia-smi`), AMD ROCm (`rocm-smi`), and Windows WDDM. Auto-calculates ratio-based `--tensor-split` with a 12% safety headroom buffer and injects `--fit-on` / `-fitt 1024` parameters for multi-GPU systems.
+- 🛡️ **Subprocess Supervisor & Auto-Recovery**: Supervises `llama-server` lifecycle, captures immutable launch configurations (`SupervisorConfig`), and automatically respawns crashed instances upon failure or OOM without parameter drift.
+- 🩺 **Health Monitoring & Generation Cancellation**: Non-blocking REST polling against `/health` tracking `HealthState` badges (`HEALTHY`, `LOADING`, `UNHEALTHY`, `RECOVERING`). Allows immediate inference generation cancellation with `F4` via `POST /v1/chat/completions/control`.
 - 🔒 **Configuration & Option Safety**: Enforces strict TOML key/value validation, filtering out option/command injection flags, restricting context size suffixes strictly to `'k'`/`'K'`, and performing safe sequential port searches (retrying up to +10).
-- ⚙️ **Robust Process Orchestration**: Spawns and monitors `llama-server` subprocesses, tracking active PIDs in a configuration-resident `active_pids.txt` file and terminating zombie instances cleanly using the `sysinfo` library.
-- 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing loaded status, resource allocations, and real-time logs.
-- 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with scroll, pause, and export controls.
+- ⚙️ **Robust Process Orchestration**: Spawns and monitors `llama-server` subprocesses, tracking active PIDs in `active_pids.txt` and terminating orphaned or zombie instances cleanly across Windows (`taskkill`) and Unix (`process.kill()`).
+- 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing real-time PID, active port, model name, low-frequency RAM/VRAM utilization bars, and health status badges.
+- 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with autoscroll (`A` / `Space`), pause (`P`), line wrapping (`W`), and clipboard export (`C`).
 - 🎨 **Customizable TUI Theme System**: Features a hybrid functional palette and procedural UI behavior system for a personalized dashboard experience.
 - 🔀 **Dynamic Preset Routing**: Coordinates on-demand model loading and routing configurations (governed by generated `models-preset.ini` files).
 - 🔄 **Dynamic Hot Reloading**: Automatically scans the models directory at runtime with active-writes stability checks (deferring updates during downloads) and alerts users with TUI warning bars when edits are unsaved.
@@ -82,6 +85,7 @@ Llama-Herd reads custom parameters from `.toml` files matching your `.gguf` mode
 [llama-herd]
 is-default = true
 draft = "Qwen2.5-1.5B-Instruct.gguf"
+variants = "draft-vision" # or: ["base", "draft-vision"]
 
 # llama-server long option parameters
 [llama-server-long]
@@ -103,6 +107,33 @@ sps = 0.6
 
 ---
 
+---
+
+## Keyboard Shortcuts
+
+| Key | Tab / Context | Function |
+| :--- | :--- | :--- |
+| `F1` | Global | Dashboard: Preset Details & Parameters |
+| `F2` | Global | Global Settings & Hardware Allocation |
+| `F3` | Global | Real-Time Log Viewer & Stream Monitor |
+| `F4` | Global | **Cancel active inference generation** via REST control signal |
+| `F5` | Global | **Start selected preset model** |
+| `F6` | Global | **Start Router Mode** server |
+| `F7` | Global | **Restart running server** |
+| `F8` | Global | **Stop / kill running server** |
+| `↑` / `↓` | Dashboard (Left Panel) | Navigate between base models in list |
+| `←` / `→` | Dashboard (Left Panel) | Cycle between available variants for selected model (`[B]`, `[D]`, `[V]`, `[DV]`) |
+| `Tab` | Dashboard | Toggle focus between Models (Left) and Preset Details & Parameters (Right) |
+| `Enter` | Dashboard | Focus parameter editing (Left panel) or edit selected parameter (Right panel) |
+| `Esc` | Dashboard | Return focus to Models list (from Right panel) |
+| `A` / `Space` | Logs (`F3`) | Toggle autoscroll (jump to bottom when active) |
+| `P` | Logs (`F3`) | Pause / resume real-time log ingestion |
+| `W` | Logs (`F3`) | Toggle line wrapping |
+| `C` | Logs (`F3`) | Copy full log buffer to system clipboard |
+| `Ctrl+C` | Global | Safe shutdown and exit |
+
+---
+
 ## Deep Dives & Reference
 
 For comprehensive details on how to design, configure, or optimize Llama-Herd, refer to:
@@ -110,6 +141,7 @@ For comprehensive details on how to design, configure, or optimize Llama-Herd, r
 - 🏛️ **[Architecture & System Design](docs/architecture.md)**: Visual flowchart, directory structures, and module architecture breakdown.
 - ⚙️ **[Configuration & Performance Optimization](docs/configuration.md)**: Global settings, model config keys list, API routing endpoints, and tuning tips.
 - 🎨 **[TUI Theming & Customization](docs/theming.md)**: Design principles, functional palette schema, and procedural UI behaviors.
+- 🤖 **[AI Agents & Contributor Guidelines](AGENTS.md)**: Architectural boundaries, quality gates, and rules for coding assistants.
 
 ---
 

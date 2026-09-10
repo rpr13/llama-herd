@@ -491,3 +491,11 @@ fn test_remove_global_config_value() -> TestResult {
 
     Ok(())
 }
+
+#[test]
+fn test_variants_key_is_restricted() {
+    assert!(
+        llama_herd::config::RESTRICTED_LONG.contains(&"variants"),
+        "RESTRICTED_LONG must contain 'variants' to guard against server CLI flag injection"
+    );
+}

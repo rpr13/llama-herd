@@ -38,6 +38,8 @@ pub enum AppScreen {
     EditingTopK,
     /// Editing total model layers parameter input mode.
     EditingTotalLayers,
+    /// Editing model variants parameter input mode.
+    EditingVariants,
     /// Editing TOML configuration filename input mode.
     EditingConfigFileName,
     /// Confirmation dialog before saving configuration changes.
@@ -81,6 +83,71 @@ pub enum DashboardFocus {
     Left,
     /// Right parameter overrides panel focus.
     Right,
+}
+
+/// Represents the variant type of a model preset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelVariant {
+    /// Base model without draft or vision projector.
+    Base,
+    /// Speculative decoding draft model.
+    Draft,
+    /// Multimodal vision projector model.
+    Vision,
+    /// Speculative draft model and multimodal vision projector.
+    DraftVision,
+}
+
+impl ModelVariant {
+    /// Returns the short badge label for the model variant.
+    #[must_use]
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub const fn badge_label(&self) -> &'static str {
+        match self {
+            Self::Base => "B",
+            Self::Draft => "D",
+            Self::Vision => "V",
+            Self::DraftVision => "DV",
+        }
+    }
+
+    /// Detects the model variant category from a preset name string.
+    #[must_use]
+    pub fn from_name(name: &str) -> Self {
+        if name.contains("-draft-vision") {
+            Self::DraftVision
+        } else if name.contains("-draft-") || name.ends_with("-draft") {
+            Self::Draft
+        } else if name.contains("-vision-") || name.ends_with("-vision") {
+            Self::Vision
+        } else {
+            Self::Base
+        }
+    }
+}
+
+/// A specific preset variant item associated with a base model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelVariantItem {
+    /// The variant category of this preset.
+    pub variant: ModelVariant,
+    /// The preset name.
+    pub preset_name: String,
+    /// Index of this preset in the underlying `presets` list.
+    pub preset_index: usize,
+}
+
+/// A grouped model entry consolidating multiple preset variants of the same model file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupedModel {
+    /// Clean display base name of the model.
+    pub base_name: String,
+    /// Path to the underlying model GGUF file.
+    pub model_path: PathBuf,
+    /// List of available preset variants for this model.
+    pub variants: Vec<ModelVariantItem>,
+    /// Index of the currently active variant in the `variants` list.
+    pub selected_variant_index: usize,
 }
 
 /// Representation of the state/contents of the GGUF models directory.
@@ -140,6 +207,10 @@ pub struct AppState {
     pub active_tab: usize,
     /// Currently selected preset index.
     pub preset_index: usize,
+    /// List of models grouped by base GGUF file with available variants.
+    pub grouped_models: Vec<GroupedModel>,
+    /// Index of the currently selected grouped model in `grouped_models`.
+    pub selected_model_index: usize,
     /// Currently selected global settings index.
     pub settings_index: usize,
     /// Active file picker instance.
@@ -151,6 +222,8 @@ pub struct AppState {
     pub ngl: String,
     /// Total layers in the model (read from configuration).
     pub total_layers: Option<usize>,
+    /// Configured model variants filter.
+    pub variants: String,
 
     /// List of discovered vision projectors.
     pub mmproj_list: Vec<Option<PathBuf>>,
@@ -286,6 +359,8 @@ pub struct AppState {
     pub original_top_k: String,
     /// Original total layers (to check for edits).
     pub original_total_layers: Option<usize>,
+    /// Original variants filter (to check for edits).
+    pub original_variants: String,
     /// Original configuration filename target (to check for edits).
     pub original_config_file_name: String,
 
@@ -370,11 +445,14 @@ impl AppState {
             screen: AppScreen::Dashboard,
             active_tab: 0,
             preset_index: 0,
+            grouped_models: Vec::new(),
+            selected_model_index: 0,
             settings_index: 0,
             picker: None,
             ctx: 131_072,
             ngl: "auto".to_owned(),
             total_layers: None,
+            variants: "all".to_owned(),
             mmproj_list: vec![None],
             mmproj_index: 0,
             mmproj_index_backup: 0,
@@ -455,6 +533,7 @@ impl AppState {
             original_top_p: String::new(),
             original_top_k: String::new(),
             original_total_layers: None,
+            original_variants: "all".to_owned(),
             original_config_file_name: String::new(),
             original_min_p: String::new(),
             original_repeat_penalty: String::new(),
@@ -483,8 +562,208 @@ impl AppState {
             draft_total_layers: None,
         };
 
+        state.rebuild_grouped_models();
+
+        // Auto-select designated default model if configured with is-default = true
+        for (m_idx, model) in state.grouped_models.iter().enumerate() {
+            let assets = crate::discovery::discover_assets(&model.model_path, &state.models_dir);
+            let is_default = assets
+                .config
+                .get("llama-herd")
+                .and_then(|lh| lh.get("is-default"))
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)
+                || assets
+                    .config
+                    .get("is-default")
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(true);
+            if is_default {
+                state.select_model(m_idx);
+                break;
+            }
+        }
+
         state.load_current_preset_settings(None);
         state
+    }
+
+    /// Rebuilds the grouped models data structure from `self.presets` and the preset INI configuration.
+    #[allow(clippy::too_many_lines)]
+    pub fn rebuild_grouped_models(&mut self) {
+        if self.presets.is_empty() {
+            self.grouped_models.clear();
+            self.selected_model_index = 0;
+            return;
+        }
+
+        let ini_content = std::fs::read_to_string(&self.preset_path).ok();
+        let ini_sections = ini_content
+            .as_deref()
+            .map(crate::config::parse_settings_ini);
+
+        let mut grouped: Vec<GroupedModel> = Vec::new();
+
+        for (preset_index, (preset_name, model_path)) in self.presets.iter().enumerate() {
+            let variant = if let Some(sec) = ini_sections.as_ref().and_then(|s| s.get(preset_name))
+            {
+                let has_draft = sec
+                    .get("model-draft")
+                    .is_some_and(|v| !v.trim().is_empty() && v != "none" && v != "false")
+                    || sec
+                        .get("draft-model")
+                        .is_some_and(|v| !v.trim().is_empty() && v != "none" && v != "false");
+                let has_mmproj = sec
+                    .get("mmproj")
+                    .is_some_and(|v| !v.trim().is_empty() && v != "none" && v != "false");
+                match (has_draft, has_mmproj) {
+                    (true, true) => ModelVariant::DraftVision,
+                    (true, false) => ModelVariant::Draft,
+                    (false, true) => ModelVariant::Vision,
+                    (false, false) => ModelVariant::from_name(preset_name),
+                }
+            } else {
+                ModelVariant::from_name(preset_name)
+            };
+
+            let item = ModelVariantItem {
+                variant,
+                preset_name: preset_name.clone(),
+                preset_index,
+            };
+
+            if preset_name == "default" {
+                grouped.push(GroupedModel {
+                    base_name: "default".to_owned(),
+                    model_path: model_path.clone(),
+                    variants: vec![item],
+                    selected_variant_index: 0,
+                });
+            } else if let Some(existing) = grouped
+                .iter_mut()
+                .find(|g| g.base_name != "default" && g.model_path == *model_path)
+            {
+                existing.variants.push(item);
+            } else {
+                grouped.push(GroupedModel {
+                    base_name: String::new(),
+                    model_path: model_path.clone(),
+                    variants: vec![item],
+                    selected_variant_index: 0,
+                });
+            }
+        }
+
+        for g in &mut grouped {
+            g.variants.sort_by_key(|v| v.variant);
+
+            if g.base_name != "default" {
+                let base_name = g
+                    .variants
+                    .iter()
+                    .find(|v| v.variant == ModelVariant::Base)
+                    .map_or_else(
+                        || crate::discovery::clean_model_id(&g.model_path),
+                        |base_item| base_item.preset_name.clone(),
+                    );
+                g.base_name = base_name;
+            }
+        }
+
+        // Preserve previous selected_variant_index for models if possible
+        for g in &mut grouped {
+            if let Some(prev) = self
+                .grouped_models
+                .iter()
+                .find(|p| p.base_name == g.base_name)
+            {
+                if prev.selected_variant_index < g.variants.len() {
+                    g.selected_variant_index = prev.selected_variant_index;
+                }
+            }
+        }
+
+        let mut matched = false;
+        for (m_idx, model) in grouped.iter_mut().enumerate() {
+            if let Some(v_idx) = model
+                .variants
+                .iter()
+                .position(|v| v.preset_index == self.preset_index)
+            {
+                self.selected_model_index = m_idx;
+                model.selected_variant_index = v_idx;
+                matched = true;
+                break;
+            }
+        }
+
+        if !matched && !grouped.is_empty() {
+            self.selected_model_index = 0;
+            grouped[0].selected_variant_index = 0;
+            if let Some(first_variant) = grouped[0].variants.first() {
+                self.preset_index = first_variant.preset_index;
+            }
+        }
+
+        self.grouped_models = grouped;
+    }
+
+    /// Cycles to the next variant for the currently selected model, wrapping around.
+    pub fn cycle_variant_next(&mut self) {
+        if self.grouped_models.is_empty() {
+            return;
+        }
+        if self.selected_model_index >= self.grouped_models.len() {
+            self.selected_model_index = 0;
+        }
+        let model = &mut self.grouped_models[self.selected_model_index];
+        if model.variants.is_empty() {
+            return;
+        }
+        model.selected_variant_index = (model.selected_variant_index + 1) % model.variants.len();
+        let new_preset_index = model.variants[model.selected_variant_index].preset_index;
+        self.preset_index = new_preset_index;
+        self.load_current_preset_settings(None);
+    }
+
+    /// Cycles to the previous variant for the currently selected model, wrapping around.
+    pub fn cycle_variant_prev(&mut self) {
+        if self.grouped_models.is_empty() {
+            return;
+        }
+        if self.selected_model_index >= self.grouped_models.len() {
+            self.selected_model_index = 0;
+        }
+        let model = &mut self.grouped_models[self.selected_model_index];
+        if model.variants.is_empty() {
+            return;
+        }
+        model.selected_variant_index = if model.selected_variant_index == 0 {
+            model.variants.len().saturating_sub(1)
+        } else {
+            model.selected_variant_index - 1
+        };
+        let new_preset_index = model.variants[model.selected_variant_index].preset_index;
+        self.preset_index = new_preset_index;
+        self.load_current_preset_settings(None);
+    }
+
+    /// Selects a grouped model by index and updates the active preset to its selected variant.
+    pub fn select_model(&mut self, model_idx: usize) {
+        if self.grouped_models.is_empty() {
+            return;
+        }
+        self.selected_model_index = model_idx.min(self.grouped_models.len() - 1);
+        let model = &mut self.grouped_models[self.selected_model_index];
+        if model.variants.is_empty() {
+            return;
+        }
+        if model.selected_variant_index >= model.variants.len() {
+            model.selected_variant_index = 0;
+        }
+        let new_preset_index = model.variants[model.selected_variant_index].preset_index;
+        self.preset_index = new_preset_index;
+        self.load_current_preset_settings(None);
     }
 
     /// Loads the configuration settings for the currently selected preset, with an optional path override.
@@ -526,6 +805,22 @@ impl AppState {
             .or_else(|| get_long_val("total-layers"))
             .and_then(|v| v.as_u64().map(|i| i as usize));
         self.total_layers = total_layers;
+
+        let variants_str = get_lh_val("variants")
+            .or_else(|| get_long_val("variants"))
+            .map_or_else(
+                || "all".to_owned(),
+                |v| match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Array(arr) => arr
+                        .iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    _ => "all".to_owned(),
+                },
+            );
+        self.variants = variants_str;
 
         // Context Size
         let ctx_val = ini_settings.remove("ctx-size").map_or_else(
@@ -873,6 +1168,7 @@ impl AppState {
         self.original_spec_draft_p_min = spec_draft_p_min_val;
 
         self.original_total_layers = self.total_layers;
+        self.original_variants = self.variants.clone();
     }
 
     /// Saves the current configuration of the selected preset, optionally generating a backup file first.
@@ -1022,6 +1318,34 @@ impl AppState {
             herd_obj.remove("total-layers");
         }
 
+        // variants
+        let trimmed_variants = self.variants.trim();
+        if trimmed_variants.is_empty() || trimmed_variants.eq_ignore_ascii_case("all") {
+            herd_obj.remove("variants");
+        } else {
+            let variant_list: Vec<&str> = trimmed_variants
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            if variant_list.is_empty()
+                || (variant_list.len() == 1 && variant_list[0].eq_ignore_ascii_case("all"))
+            {
+                herd_obj.remove("variants");
+            } else if variant_list.len() == 1 {
+                herd_obj.insert(
+                    "variants".to_owned(),
+                    serde_json::Value::String(variant_list[0].to_owned()),
+                );
+            } else {
+                let arr = variant_list
+                    .into_iter()
+                    .map(|v| serde_json::Value::String(v.to_owned()))
+                    .collect();
+                herd_obj.insert("variants".to_owned(), serde_json::Value::Array(arr));
+            }
+        }
+
         // 7. draft
         let draft_val = match self.draft_list.get(self.draft_index) {
             Some(Some(path)) => path
@@ -1117,10 +1441,13 @@ impl AppState {
             );
         }
 
-        let current_model_path = if self.presets.is_empty() {
-            None
+        let (current_preset_name, current_model_path) = if self.presets.is_empty() {
+            (None, None)
         } else {
-            Some(self.presets[self.preset_index].1.clone())
+            (
+                Some(self.presets[self.preset_index].0.clone()),
+                Some(self.presets[self.preset_index].1.clone()),
+            )
         };
 
         crate::config::save_config(&target_path, &current_config)?;
@@ -1133,15 +1460,33 @@ impl AppState {
         )?;
         self.presets = crate::discovery::discover_presets_from_ini(&self.preset_path);
 
-        if let Some(ref model_path) = current_model_path {
-            if let Some(idx) = self.presets.iter().position(|(_, path)| path == model_path) {
+        if let Some(ref preset_name) = current_preset_name {
+            if let Some(idx) = self
+                .presets
+                .iter()
+                .position(|(name, _)| name == preset_name)
+            {
                 self.preset_index = idx;
+            } else if let Some(ref model_path) = current_model_path {
+                self.preset_index = self
+                    .presets
+                    .iter()
+                    .position(|(_, path)| path == model_path)
+                    .unwrap_or(0);
             } else {
                 self.preset_index = 0;
             }
+        } else if let Some(ref model_path) = current_model_path {
+            self.preset_index = self
+                .presets
+                .iter()
+                .position(|(_, path)| path == model_path)
+                .unwrap_or(0);
         } else {
             self.preset_index = 0;
         }
+
+        self.rebuild_grouped_models();
 
         self.load_current_preset_settings(Some(target_path));
         Ok(())
@@ -1171,6 +1516,7 @@ impl AppState {
             || self.top_p != self.original_top_p
             || self.top_k != self.original_top_k
             || self.total_layers != self.original_total_layers
+            || self.variants != self.original_variants
             || self.config_file_name != self.original_config_file_name
             || self.min_p != self.original_min_p
             || self.repeat_penalty != self.original_repeat_penalty
@@ -1287,6 +1633,8 @@ impl AppState {
         } else {
             self.preset_index = 0;
         }
+
+        self.rebuild_grouped_models();
 
         if should_reload {
             self.load_current_preset_settings(None);
