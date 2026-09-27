@@ -173,7 +173,7 @@ mod tests {
         );
         state.ctx = 123;
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 3; // Context Size
+        state.dashboard_param_index = 4; // Context Size
         let key = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -247,7 +247,7 @@ mod tests {
         state.spec_draft_p_min = "0.0".to_owned();
 
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 23; // Spec Draft N Max
+        state.dashboard_param_index = 24; // Spec Draft N Max
 
         let key_enter = KeyEvent {
             code: KeyCode::Enter,
@@ -268,8 +268,8 @@ mod tests {
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.spec_draft_n_max, "8");
 
-        // Go to spec-draft-p-min edit screen (index 24)
-        state.dashboard_param_index = 24;
+        // Go to spec-draft-p-min edit screen (index 25)
+        state.dashboard_param_index = 25;
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::EditingSpecDraftPMin);
         assert_eq!(state.input_buffer, "0.0");
@@ -417,7 +417,7 @@ mod tests {
 
         // 1. Enter key -> enters MMProj selection popup
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 5; // MMProj
+        state.dashboard_param_index = 6; // MMProj
         let key_v = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -488,7 +488,7 @@ mod tests {
 
         // 1. Enter key -> enters Draft model selection popup
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 20; // Draft Model
+        state.dashboard_param_index = 21; // Draft Model
         let key_d = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -570,7 +570,7 @@ temp = 0.7
             llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
 
         let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
-        assert_eq!(presets.len(), 2);
+        assert_eq!(presets.len(), 1);
 
         let mut state = AppState::new(
             presets,
@@ -632,7 +632,7 @@ temp = 0.7
 
         // Verify presets were regenerated
         let new_presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
-        assert_eq!(new_presets.len(), 2);
+        assert_eq!(new_presets.len(), 1);
     }
 
     #[test]
@@ -745,9 +745,9 @@ temp = 0.7
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
 
-        // Trigger config filename edit screen (index 0 on right pane)
+        // Trigger config filename edit screen (index 1 on right pane)
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 0; // Target Config File
+        state.dashboard_param_index = 1; // Target Config File
         let key_f = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -1647,13 +1647,12 @@ model = model2.gguf
         );
         state.config_path = config_path;
 
-        // Verify initial state has default and model1 in grouped_models
-        assert_eq!(state.grouped_models.len(), 2);
-        assert_eq!(state.grouped_models[0].base_name, "default");
-        assert_eq!(state.grouped_models[1].base_name, "model1");
-        assert_eq!(state.grouped_models[1].model_path, model1_path);
+        // Verify initial state has model1 in grouped_models
+        assert_eq!(state.grouped_models.len(), 1);
+        assert_eq!(state.grouped_models[0].base_name, "model1");
+        assert_eq!(state.grouped_models[0].model_path, model1_path);
         assert!(
-            state.grouped_models[1]
+            state.grouped_models[0]
                 .variants
                 .iter()
                 .any(|v| v.preset_name == "model1")
@@ -1680,13 +1679,12 @@ model = model2.gguf
         assert_eq!(state.screen, AppScreen::Settings);
         assert_eq!(state.models_dir, models_dir_2);
 
-        // Verify grouped_models has been rebuilt to reflect default and model2
-        assert_eq!(state.grouped_models.len(), 2);
-        assert_eq!(state.grouped_models[0].base_name, "default");
-        assert_eq!(state.grouped_models[1].base_name, "model2");
-        assert_eq!(state.grouped_models[1].model_path, model2_path);
+        // Verify grouped_models has been rebuilt to reflect model2
+        assert_eq!(state.grouped_models.len(), 1);
+        assert_eq!(state.grouped_models[0].base_name, "model2");
+        assert_eq!(state.grouped_models[0].model_path, model2_path);
         assert!(
-            state.grouped_models[1]
+            state.grouped_models[0]
                 .variants
                 .iter()
                 .any(|v| v.preset_name == "model2")
@@ -1745,7 +1743,7 @@ model = model2.gguf
         assert!(!state.has_unsaved_changes());
 
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 2; // Variants
+        state.dashboard_param_index = 3; // Variants
 
         let key_enter = KeyEvent {
             code: KeyCode::Enter,
@@ -1794,8 +1792,8 @@ draft = "my-model-draft.gguf"
         let _ =
             llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
         let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
-        // Generates default + my-model + my-model-draft = 3 presets
-        assert_eq!(presets.len(), 3);
+        // Generates my-model + my-model-draft = 2 presets
+        assert_eq!(presets.len(), 2);
 
         let mut state = AppState::new(
             presets,
@@ -1806,15 +1804,14 @@ draft = "my-model-draft.gguf"
             Theme::default(),
         );
 
-        // 2 grouped models: "default" and "my-model"
-        assert_eq!(state.grouped_models.len(), 2);
-        assert_eq!(state.grouped_models[0].base_name, "default");
-        assert_eq!(state.grouped_models[1].base_name, "my-model");
-        assert_eq!(state.grouped_models[1].variants.len(), 2);
+        // 1 grouped model: "my-model"
+        assert_eq!(state.grouped_models.len(), 1);
+        assert_eq!(state.grouped_models[0].base_name, "my-model");
+        assert_eq!(state.grouped_models[0].variants.len(), 2);
         assert_eq!(state.variants, "all");
 
-        // Switch selection to my-model (index 1)
-        state.select_model(1);
+        // Select my-model (index 0)
+        state.select_model(0);
 
         // Restrict variants to only "base"
         state.variants = "base".to_owned();
@@ -1829,12 +1826,12 @@ draft = "my-model-draft.gguf"
         let herd = saved_config.get("llama-herd").unwrap().as_object().unwrap();
         assert_eq!(herd.get("variants").unwrap().as_str().unwrap(), "base");
 
-        // Verify presets and grouped models reloaded with only 1 variant for my-model (+ default preset)
-        assert_eq!(state.presets.len(), 2);
-        assert_eq!(state.grouped_models.len(), 2);
-        assert_eq!(state.grouped_models[1].variants.len(), 1);
+        // Verify presets and grouped models reloaded with only 1 variant for my-model
+        assert_eq!(state.presets.len(), 1);
+        assert_eq!(state.grouped_models.len(), 1);
+        assert_eq!(state.grouped_models[0].variants.len(), 1);
         assert_eq!(
-            state.grouped_models[1].variants[0].variant,
+            state.grouped_models[0].variants[0].variant,
             llama_herd::tui::app::ModelVariant::Base
         );
     }
@@ -1866,8 +1863,8 @@ draft = "my-model-draft.gguf"
         let _ =
             llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
         let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
-        // default + base + vision + draft + draft-vision = 5 presets
-        assert_eq!(presets.len(), 5);
+        // base + vision + draft + draft-vision = 4 presets
+        assert_eq!(presets.len(), 4);
 
         let mut state = AppState::new(
             presets,
@@ -1878,10 +1875,10 @@ draft = "my-model-draft.gguf"
             Theme::default(),
         );
 
-        // Select model 1 (gemma), and cycle to draft-vision variant
-        state.select_model(1);
+        // Select model 0 (gemma), and cycle to draft-vision variant
+        state.select_model(0);
         while {
-            let m = &state.grouped_models[1];
+            let m = &state.grouped_models[0];
             m.variants[m.selected_variant_index].variant
                 != llama_herd::tui::app::ModelVariant::DraftVision
         } {
@@ -1893,8 +1890,8 @@ draft = "my-model-draft.gguf"
         state.save_current_preset_config(false).unwrap();
 
         // After save, the selected variant should be DraftVision, NOT reset to Base or default
-        assert_eq!(state.selected_model_index, 1);
-        let current_model = &state.grouped_models[1];
+        assert_eq!(state.selected_model_index, 0);
+        let current_model = &state.grouped_models[0];
         assert_eq!(
             current_model.variants[current_model.selected_variant_index].variant,
             llama_herd::tui::app::ModelVariant::DraftVision
@@ -1904,5 +1901,84 @@ draft = "my-model-draft.gguf"
             current_preset_name.contains("draft-vision"),
             "Expected current preset to contain draft-vision, got: {current_preset_name}"
         );
+    }
+
+    #[test]
+    fn test_dashboard_param_navigation() {
+        let mut state = AppState::new(
+            vec![("test-preset".to_owned(), PathBuf::from("test-model.gguf"))],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 0;
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let key_up = KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let key_down = KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let key_esc = KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+
+        // 1. Up from 0 wraps to 25
+        handle_key_event(&mut state, key_up, &tx);
+        assert_eq!(state.dashboard_param_index, 25);
+
+        // 2. Down from 25 wraps to 0
+        handle_key_event(&mut state, key_down, &tx);
+        assert_eq!(state.dashboard_param_index, 0);
+
+        // 3. Enter on index 0 opens EditingCustomName
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingCustomName);
+
+        // Edit custom name and submit
+        state.input_buffer = "My Custom Preset".to_owned();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.current_custom_name(), "My Custom Preset");
+        assert!(state.has_unsaved_changes());
+
+        // 4. Index 1 opens EditingConfigFileName
+        state.dashboard_param_index = 1;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingConfigFileName);
+        handle_key_event(&mut state, key_esc, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+
+        // 5. Index 2 opens EditingTotalLayers
+        state.dashboard_param_index = 2;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingTotalLayers);
+        handle_key_event(&mut state, key_esc, &tx);
+
+        // 6. Index 3 opens EditingVariants
+        state.dashboard_param_index = 3;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingVariants);
+        handle_key_event(&mut state, key_esc, &tx);
     }
 }

@@ -32,13 +32,13 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 
 ### Key Capabilities
 
-- 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics, with variant filtering (`variants = ["base", "draft-vision"]`) and interactive variant badge cycling (`[B]`, `[D]`, `[V]`, `[DV]`) directly on the Dashboard.
+- 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics, with variant filtering (`variants = ["base", "draft-vision"]`), custom preset naming (`[llama-herd.custom-name]`), and interactive variant badge cycling (`[B]`, `[D]`, `[V]`, `[DV]`) directly on the Dashboard.
 - 🖲️ **Hardware Topology Scanner & Multi-GPU Allocator**: Scans NVIDIA CUDA (`nvidia-smi`), AMD ROCm (`rocm-smi`), and Windows WDDM. Auto-calculates ratio-based `--tensor-split` with a 12% safety headroom buffer and injects `--fit-on` / `-fitt 1024` parameters for multi-GPU systems.
 - 🛡️ **Subprocess Supervisor & Auto-Recovery**: Supervises `llama-server` lifecycle, captures immutable launch configurations (`SupervisorConfig`), and automatically respawns crashed instances upon failure or OOM without parameter drift.
 - 🩺 **Health Monitoring & Generation Cancellation**: Non-blocking REST polling against `/health` tracking `HealthState` badges (`HEALTHY`, `LOADING`, `UNHEALTHY`, `RECOVERING`). Allows immediate inference generation cancellation with `F4` via `POST /v1/chat/completions/control`.
 - 🔒 **Configuration & Option Safety**: Enforces strict TOML key/value validation, filtering out option/command injection flags, restricting context size suffixes strictly to `'k'`/`'K'`, and performing safe sequential port searches (retrying up to +10).
 - ⚙️ **Robust Process Orchestration**: Spawns and monitors `llama-server` subprocesses, tracking active PIDs in `active_pids.txt` and terminating orphaned or zombie instances cleanly across Windows (`taskkill`) and Unix (`process.kill()`).
-- 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing real-time PID, active port, model name, low-frequency RAM/VRAM utilization bars, and health status badges.
+- 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing real-time PID, active port, model name, low-frequency RAM/VRAM utilization bars, health status badges, and editable preset parameters (including Custom Name, Context Size, GPU Offload, Samplers, and Speculative Decoding).
 - 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with autoscroll (`A` / `Space`), pause (`P`), line wrapping (`W`), and clipboard export (`C`).
 - 🎨 **Customizable TUI Theme System**: Features a hybrid functional palette and procedural UI behavior system for a personalized dashboard experience.
 - 🔀 **Dynamic Preset Routing**: Coordinates on-demand model loading and routing configurations (governed by generated `models-preset.ini` files).
@@ -83,9 +83,15 @@ Llama-Herd reads custom parameters from `.toml` files matching your `.gguf` mode
 ```toml
 # Llama-Herd Orchestration Settings
 [llama-herd]
-is-default = true
 draft = "Qwen2.5-1.5B-Instruct.gguf"
 variants = "draft-vision" # or: ["base", "draft-vision"]
+
+# Optional custom preset naming per variant (or shorthand `custom-name = "my-preset"` under [llama-herd]):
+[llama-herd.custom-name]
+base = "qwen-base"
+draft = "qwen-fast"
+vision = "qwen-vl"
+draft-vision = "qwen-vl-fast"
 
 # llama-server long option parameters
 [llama-server-long]

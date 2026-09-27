@@ -53,6 +53,13 @@ fn test_port_saturation() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
+fn test_resolve_port_auto_defaults_to_9931() -> Result<(), Box<dyn std::error::Error>> {
+    let resolved = llama_herd::launcher::resolve_port("auto")?;
+    assert!(resolved >= 9931);
+    Ok(())
+}
+
+#[test]
 fn test_parse_ctx_str_validation() {
     use llama_herd::config::parse_ctx_str;
 

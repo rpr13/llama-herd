@@ -31,7 +31,7 @@ impl SupervisorConfig {
     #[must_use]
     pub fn new(params: Vec<String>, cwd: PathBuf, model_name: Option<String>) -> Self {
         let mut host = "127.0.0.1".to_owned();
-        let mut port = 8080;
+        let mut port = 9931;
 
         let mut idx = 0;
         while idx < params.len() {

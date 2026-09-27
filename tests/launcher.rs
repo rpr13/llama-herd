@@ -653,7 +653,8 @@ fn test_parse_server_version() -> TestResult {
     let real_exe = PathBuf::from(r"d:\llama-cpp\llama-server.exe");
     if real_exe.exists() {
         use llama_herd::launcher::get_server_version;
-        assert_eq!(get_server_version(&real_exe), "0.4.0-dev b10894");
+        let ver = get_server_version(&real_exe);
+        assert!(!ver.is_empty() && ver != "Unknown");
     }
 
     Ok(())

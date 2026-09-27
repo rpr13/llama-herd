@@ -66,9 +66,9 @@ pub const SETTINGS: &[SettingItem] = &[
     SettingItem {
         label: "Server Port",
         key: "port",
-        default_val: "8080",
+        default_val: "9931",
         emoji: "🔌",
-        description: "The port number for llama-server. Defaults to '8080'. If set to 'auto', it binds to the first sequentially free port.",
+        description: "The port number for llama-server. Defaults to '9931'. If set to 'auto', it binds to the first sequentially free port.",
         group: "Common params",
     },
     SettingItem {
@@ -395,6 +395,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingTotalLayers
         | AppScreen::EditingVariants
         | AppScreen::EditingConfigFileName
+        | AppScreen::EditingCustomName
         | AppScreen::ConfirmSaveConfig
         | AppScreen::WarnDiscardChanges
         | AppScreen::EditingMinP
@@ -631,6 +632,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingTotalLayers
         | AppScreen::EditingVariants
         | AppScreen::EditingConfigFileName
+        | AppScreen::EditingCustomName
         | AppScreen::EditingGlobalSetting
         | AppScreen::SelectingGlobalSettingOption
         | AppScreen::SelectingMMProj
@@ -1571,12 +1573,6 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         .style(Style::default().bg(theme.bg).fg(theme.fg))
         .border_style(Style::default().fg(right_border_color));
 
-    let preset_name = if state.presets.is_empty() {
-        "None".to_owned()
-    } else {
-        state.presets[state.preset_index].0.clone()
-    };
-
     let model_name = if state.presets.is_empty() {
         "None".to_owned()
     } else {
@@ -1622,7 +1618,29 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         );
 
     let val_width = content_layout[1].width.saturating_sub(26) as usize;
-    let display_preset_name = truncate_middle(&preset_name, val_width);
+    let active_variant = state
+        .grouped_models
+        .get(state.selected_model_index)
+        .and_then(|m| m.variants.get(m.selected_variant_index))
+        .map_or(crate::tui::app::ModelVariant::Base, |v| v.variant);
+    let clean_name = if state.presets.is_empty() {
+        "None".to_owned()
+    } else {
+        crate::discovery::clean_model_id(&state.presets[state.preset_index].1)
+    };
+    let auto_preset_name = match active_variant {
+        crate::tui::app::ModelVariant::Base => clean_name,
+        crate::tui::app::ModelVariant::Draft => {
+            crate::discovery::insert_variant_suffix(&clean_name, "draft")
+        }
+        crate::tui::app::ModelVariant::Vision => {
+            crate::discovery::insert_variant_suffix(&clean_name, "vision")
+        }
+        crate::tui::app::ModelVariant::DraftVision => {
+            crate::discovery::insert_variant_suffix(&clean_name, "draft-vision")
+        }
+    };
+    let display_preset_name = truncate_middle(&auto_preset_name, val_width);
     let display_model_name = truncate_middle(&model_name, val_width);
 
     let make_val_cell = |orig: &str, curr: &str, default_style: Style| -> Cell<'static> {
@@ -1704,33 +1722,43 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         (prompt_cell, label_cell)
     };
 
-    let (f_prompt, f_label) = make_param_cells(0, "Target Config File");
-    let (l_prompt, l_label) = make_param_cells(1, "Total Layers");
-    let (variants_prompt, variants_label) = make_param_cells(2, "Variants");
-    let (c_prompt, c_label) = make_param_cells(3, "Context Size");
-    let (n_prompt, n_label) = make_param_cells(4, "N-GPU-Layers");
-    let (v_prompt, v_label) = make_param_cells(5, "MMProj (Vision)");
-    let (t_prompt, t_label) = make_param_cells(6, "Temperature");
-    let (p_prompt, p_label) = make_param_cells(7, "Top P");
-    let (k_prompt, k_label) = make_param_cells(8, "Top K");
-    let (m_prompt, m_label) = make_param_cells(9, "Min P");
-    let (e_prompt, e_label) = make_param_cells(10, "Repeat Penalty");
-    let (a_prompt, a_label) = make_param_cells(11, "Repeat Last N");
-    let (dry_mult_prompt, dry_mult_label) = make_param_cells(12, "DRY Multiplier");
-    let (dry_base_prompt, dry_base_label) = make_param_cells(13, "DRY Base");
+    let (custom_name_prompt, custom_name_label) = make_param_cells(0, "Custom Name");
+    let (f_prompt, f_label) = make_param_cells(1, "Target Config File");
+    let (l_prompt, l_label) = make_param_cells(2, "Total Layers");
+    let (variants_prompt, variants_label) = make_param_cells(3, "Variants");
+    let (c_prompt, c_label) = make_param_cells(4, "Context Size");
+    let (n_prompt, n_label) = make_param_cells(5, "N-GPU-Layers");
+    let (v_prompt, v_label) = make_param_cells(6, "MMProj (Vision)");
+    let (t_prompt, t_label) = make_param_cells(7, "Temperature");
+    let (p_prompt, p_label) = make_param_cells(8, "Top P");
+    let (k_prompt, k_label) = make_param_cells(9, "Top K");
+    let (m_prompt, m_label) = make_param_cells(10, "Min P");
+    let (e_prompt, e_label) = make_param_cells(11, "Repeat Penalty");
+    let (a_prompt, a_label) = make_param_cells(12, "Repeat Last N");
+    let (dry_mult_prompt, dry_mult_label) = make_param_cells(13, "DRY Multiplier");
+    let (dry_base_prompt, dry_base_label) = make_param_cells(14, "DRY Base");
     let (dry_allowed_len_prompt, dry_allowed_len_label) =
-        make_param_cells(14, "DRY Allowed Length");
-    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(15, "DRY Penalty Last N");
-    let (dry_seq_prompt, dry_seq_label) = make_param_cells(16, "DRY Seq Breaker");
-    let (o_prompt, o_label) = make_param_cells(17, "Reasoning Format");
-    let (u_prompt, u_label) = make_param_cells(18, "Reasoning Mode");
-    let (b_prompt, b_label) = make_param_cells(19, "Reasoning Budget");
-    let (d_prompt, d_label) = make_param_cells(20, "Draft Model");
-    let (g_prompt, g_label) = make_param_cells(21, "Draft GPU Layers");
-    let (y_prompt, y_label) = make_param_cells(22, "Speculative Type (spec-type)");
+        make_param_cells(15, "DRY Allowed Length");
+    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(16, "DRY Penalty Last N");
+    let (dry_seq_prompt, dry_seq_label) = make_param_cells(17, "DRY Seq Breaker");
+    let (o_prompt, o_label) = make_param_cells(18, "Reasoning Format");
+    let (u_prompt, u_label) = make_param_cells(19, "Reasoning Mode");
+    let (b_prompt, b_label) = make_param_cells(20, "Reasoning Budget");
+    let (d_prompt, d_label) = make_param_cells(21, "Draft Model");
+    let (g_prompt, g_label) = make_param_cells(22, "Draft GPU Layers");
+    let (y_prompt, y_label) = make_param_cells(23, "Speculative Type (spec-type)");
     let (draft_max_tokens_prompt, draft_max_tokens_label) =
-        make_param_cells(23, "Spec Draft N Max");
-    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(24, "Spec Draft P Min");
+        make_param_cells(24, "Spec Draft N Max");
+    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(25, "Spec Draft P Min");
+
+    let custom_val = state.current_custom_name();
+    let original_custom_val = state
+        .original_custom_names
+        .get(state.current_variant_key())
+        .map_or("", |s| s.as_str());
+
+    let orig_ctx_display = crate::config::format_ctx_display(&state.original_ctx_str);
+    let curr_ctx_display = crate::config::format_ctx_display(&state.ctx_str);
 
     let rows = vec![
         // GROUP HEADER: llama herd
@@ -1752,6 +1780,15 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             )),
             Cell::from(display_preset_name)
                 .style(Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+        ]),
+        Row::new(vec![
+            custom_name_prompt,
+            custom_name_label,
+            make_val_cell(
+                original_custom_val,
+                custom_val,
+                Style::default().fg(theme.success),
+            ),
         ]),
         Row::new(vec![
             Cell::from(""),
@@ -1809,8 +1846,8 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             c_prompt,
             c_label,
             make_val_cell(
-                &state.original_ctx_str,
-                &state.ctx_str,
+                &orig_ctx_display,
+                &curr_ctx_display,
                 Style::default().fg(theme.success),
             ),
         ]),
@@ -2087,31 +2124,32 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     )
     .block(right_block);
     let selected_row_idx = match state.dashboard_param_index {
-        0 => 3,   // Target Config File
-        1 => 4,   // Total Layers
-        2 => 5,   // Variants
-        3 => 7,   // Context Size
-        4 => 8,   // N-GPU-Layers
-        5 => 9,   // Vision Projector
-        6 => 11,  // Temperature
-        7 => 12,  // Top P
-        8 => 13,  // Top K
-        9 => 14,  // Min P
-        10 => 15, // Repeat Penalty
-        11 => 16, // Repeat Last N
-        12 => 17, // DRY Multiplier
-        13 => 18, // DRY Base
-        14 => 19, // DRY Allowed Length
-        15 => 20, // DRY Penalty Last N
-        16 => 21, // DRY Seq Breaker
-        17 => 23, // Reasoning Format
-        18 => 24, // Reasoning Mode
-        19 => 25, // Reasoning Budget
-        20 => 28, // Speculative Draft Model
-        21 => 29, // Draft GPU Layers
-        22 => 31, // Speculative Decoding Type
-        23 => 32, // Max Speculative Predictions
-        24 => 33, // Min Speculative Probability
+        0 => 2,   // Custom Name
+        1 => 4,   // Target Config File
+        2 => 5,   // Total Layers
+        3 => 6,   // Variants
+        4 => 8,   // Context Size
+        5 => 9,   // N-GPU-Layers
+        6 => 10,  // Vision Projector
+        7 => 12,  // Temperature
+        8 => 13,  // Top P
+        9 => 14,  // Top K
+        10 => 15, // Min P
+        11 => 16, // Repeat Penalty
+        12 => 17, // Repeat Last N
+        13 => 18, // DRY Multiplier
+        14 => 19, // DRY Base
+        15 => 20, // DRY Allowed Length
+        16 => 21, // DRY Penalty Last N
+        17 => 22, // DRY Seq Breaker
+        18 => 24, // Reasoning Format
+        19 => 25, // Reasoning Mode
+        20 => 26, // Reasoning Budget
+        21 => 29, // Speculative Draft Model
+        22 => 30, // Draft GPU Layers
+        23 => 32, // Speculative Decoding Type
+        24 => 33, // Max Speculative Predictions
+        25 => 34, // Min Speculative Probability
         _ => 0,
     };
     let mut table_state = TableState::default();
@@ -2133,6 +2171,10 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         && state.screen != AppScreen::SelectingSpecType
     {
         let (title, prompt) = match state.screen {
+            AppScreen::EditingCustomName => (
+                " Custom Name [Enter to apply, Esc to cancel] ",
+                "Enter custom preset display name (leave blank to clear):",
+            ),
             AppScreen::EditingCtx => (
                 " Edit Context Size ",
                 "Enter new context size (e.g. 131072, 8k, 32k):",
@@ -2475,8 +2517,8 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         if state.ctx_str != state.original_ctx_str {
             changes.push((
                 "Context Size",
-                state.original_ctx_str.clone(),
-                state.ctx_str.clone(),
+                crate::config::format_ctx_display(&state.original_ctx_str),
+                crate::config::format_ctx_display(&state.ctx_str),
             ));
         }
         if state.ngl != state.original_ngl {
@@ -2762,7 +2804,7 @@ fn render_logs(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
         .and_then(|v| v.as_str())
         .unwrap_or("127.0.0.1");
     let port = if let Some(ref _server) = state.active_server {
-        let mut p = "8080".to_owned();
+        let mut p = "9931".to_owned();
         let mut idx = 0;
         while idx < state.last_launch_args.len() {
             if state.last_launch_args[idx] == "--port" && idx + 1 < state.last_launch_args.len() {

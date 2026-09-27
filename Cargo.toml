@@ -1,6 +1,6 @@
 [package]
 name = "llama-herd"
-version = "1.0.20"
+version = "1.0.21"
 keywords = ["llama", "tui", "cli", "llama-server", "orchestrator"]
 categories = ["command-line-utilities", "development-tools"]
 edition = "2024"
@@ -19,14 +19,14 @@ exclude = [
 ]
 
 [dependencies]
-ratatui = "0.30.1"
+ratatui = "0.30.2"
 crossterm = "0.29.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 arboard = "3.6.1"
-regex = "1.12.4"
-toml = "1.1.2"
-sysinfo = "0.39.3"
+regex = "1.13.1"
+toml = "1.1.6"
+sysinfo = "0.39.6"
 thiserror = "2"
 
 [dev-dependencies]

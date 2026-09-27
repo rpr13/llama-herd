@@ -45,7 +45,7 @@ The `llama-server` executable path and the `models-dir` (where your models are l
 - `llama-server` (Path to the `llama-server` executable)
 - `models-dir` (Path to the directory containing your GGUF models)
 - `host` (default: `"0.0.0.0"`)
-- `port` (default: `"auto"`) - Binds to 8080 or the first free port sequentially (retrying up to +10 ports) if auto or occupied.
+- `port` (default: `"auto"`) - Binds to 9931 or the first free port sequentially (retrying up to +10 ports) if auto or occupied.
 - `flash-attn` (default: `"auto"`)
 - `kv-quant` (default: `"q8_0"`)
 - `models-max` (default: `1`) - Maximum active models loaded concurrently in Router Mode
@@ -77,7 +77,7 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
 > - **Strict Keys**: Keys in TOML configurations must not contain underscores (`_`) or start with a dash (`-`). Violating keys are rejected at parse/load time, with warning logs emitted in `load_toml_safe`.
 > - **Strict Values / Injection Guard**: Option values must not start with a double dash (`--`), single dash followed by non-digits, or contain control/shell metacharacters to prevent option/command injection.
 > - **Context Size Parsing**: Suffixes for context size (`ctx-size`) are strictly restricted to `'k'`/`'K'` (multiplying by 1024), rejecting other suffixes (like `'M'`/`'G'`) or non-numeric/negative values to prevent massive VRAM over-allocations.
-> - **Table `[llama-herd]`**: Reserved for `llama-herd` custom settings (e.g. `is-default`, `is-draft`). These are handled internally and not passed to `llama-server`.
+> - **Table `[llama-herd]`**: Reserved for `llama-herd` custom settings (e.g. `custom-name`, `is-draft`, `variants`). These are handled internally and not passed to `llama-server`.
 > - **Table `[llama-server-long]`**: Mapped directly to double-dash long options for `llama-server`. For example, `ctx-size = "32k"` maps to `--ctx-size 32768`.
 > - **Table `[llama-server-short]`**: Mapped directly to single-dash short options for `llama-server`. For example, `sps = 0.5` maps to `-sps 0.5`.
 > - **Root level**: Treated as long options, maintaining backward compatibility.
@@ -86,11 +86,11 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
 
 - **Heuristic & Discovery Controls**:
   - `is-draft` / `is-draft-only`: Flag this model as a draft (hides it from the main select list).
-  - `is-default`: Designates this model as the default startup selection in the TUI.
   - `draft` / `draft-model`: Specify a draft model filename (or `"none"` / `"false"` to disable draft pairing).
   - `mmproj`: Explicitly define the vision projector model filename to pair with this model.
   - `total-layers`: Total number of layers for layers-based computations.
   - `variants`: Filter preset variants to generate (`"base"`, `"draft"`, `"vision"`, `"draft-vision"`, or `"all"`, accepting a single string or array of strings).
+  - `custom-name` / `custom-names`: Override generated preset section header names either as a shorthand string or a mapping table (`[llama-herd.custom-name]`) specifying per-variant names (`base`, `draft`, `vision`, `draft-vision`).
 
 ### 3. Dynamic Configuration Scanning & Active Writes Settling
 
@@ -104,10 +104,10 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
 To enhance visual organization, parameters on both TUI screens are categorized and separated using styled headers:
 
 - **Dashboard Tab (Tab 1) - Preset Details & Parameters**:
-  - **llama herd**: Contains orchestrator settings like Preset Name, Model File, Target Config File, and Total Layers. Placed at the top of the dashboard.
-  - **Common params**: Contains context size, GPU offload layers, and vision projector.
+  - **llama herd**: Contains orchestrator settings like Preset Name (read-only), Custom Name (editable text at parameter index 0), Model File (read-only), Target Config File, Total Layers, and Variants. Placed at the top of the dashboard.
+  - **Common params**: Contains context size (displaying token count and k-approximation, e.g. `131072 (128k)`), GPU offload layers, and vision projector.
   - **Draft params**: Contains speculative draft models, draft GPU offload layers, speculative decoding type, max speculative predictions, and min probability threshold.
-  - **Sampling params**: Contains temperature, Top P, Top K, Min P, and repetition penalties.
+  - **Sampling params**: Contains temperature, Top P, Top K, Min P, repetition penalties, and DRY sampler parameters (`dry-multiplier`, `dry-base`, `dry-allowed-length`, `dry-penalty-last-n`, `dry-sequence-breaker`).
   - **Server-specific params**: Contains reasoning/thinking configurations (mode, format, budget).
 - **Settings Tab (Tab 2) - Global Settings**:
   - **llama herd**: Orchestration parameters (`llama-server`, `models-dir`) and concurrency limits (`models-max`).
@@ -147,7 +147,7 @@ Every UI component in LlamaHerd **must** use the theme system.
 
 To prevent conflicts with managed options, any key (long, short, prefixed with `s-`, or unprefixed) matching a managed parameter is **restricted** and ignored during the passthrough stage.
 
-- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `spec-type`, `spec-draft-n-max`, `spec-draft-p-min`, `is-draft`, `is-default`, `is-draft-only`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `ctx-checkpoints`, `checkpoint-min-step`, `no-mmap`, `log-verbosity`, `verbosity`, `lv`, `min-p`, `repeat-penalty`, `repeat-last-n`, `reasoning-budget`, `cache-prompt`, `no-cache-prompt`, `context-shift`, `no-context-shift`, `mlock`, `numa`, `split-mode`, `device`, `api-key-file`, `ssl-key-file`, `ssl-cert-file`, `tensor-split`, `fit`, `fitt`, `variants`.
+- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `spec-type`, `spec-draft-n-max`, `spec-draft-p-min`, `is-draft`, `is-draft-only`, `custom-name`, `custom-names`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `ctx-checkpoints`, `checkpoint-min-step`, `no-mmap`, `log-verbosity`, `verbosity`, `lv`, `min-p`, `repeat-penalty`, `repeat-last-n`, `dry-multiplier`, `dry-base`, `dry-allowed-length`, `dry-penalty-last-n`, `dry-sequence-breaker`, `reasoning-budget`, `cache-prompt`, `no-cache-prompt`, `context-shift`, `no-context-shift`, `mlock`, `numa`, `split-mode`, `device`, `api-key-file`, `ssl-key-file`, `ssl-cert-file`, `tensor-split`, `fit`, `fitt`, `variants`.
 - **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`, `lv`, `fit`, `fitt`.
 
 ### 3. Automated Quality Gates

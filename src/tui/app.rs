@@ -42,6 +42,8 @@ pub enum AppScreen {
     EditingVariants,
     /// Editing TOML configuration filename input mode.
     EditingConfigFileName,
+    /// Editing custom preset display name input mode.
+    EditingCustomName,
     /// Confirmation dialog before saving configuration changes.
     ConfirmSaveConfig,
     /// Warning dialog before discarding unsaved configuration changes.
@@ -282,6 +284,8 @@ pub struct AppState {
     pub top_k: String,
     /// Configuration filename target.
     pub config_file_name: String,
+    /// Map of variant keys to custom display names.
+    pub custom_names: HashMap<String, String>,
     /// Raw context size input string.
     pub ctx_str: String,
     /// Flag indicating whether to create a backup file when saving.
@@ -363,6 +367,8 @@ pub struct AppState {
     pub original_variants: String,
     /// Original configuration filename target (to check for edits).
     pub original_config_file_name: String,
+    /// Original map of variant keys to custom display names (to check for edits).
+    pub original_custom_names: HashMap<String, String>,
 
     /// Original min-p (to check for edits).
     pub original_min_p: String,
@@ -480,6 +486,7 @@ impl AppState {
             top_p: String::new(),
             top_k: String::new(),
             config_file_name: String::new(),
+            custom_names: HashMap::new(),
             ctx_str: String::new(),
             backup_config: true,
             pending_preset_index: None,
@@ -535,6 +542,7 @@ impl AppState {
             original_total_layers: None,
             original_variants: "all".to_owned(),
             original_config_file_name: String::new(),
+            original_custom_names: HashMap::new(),
             original_min_p: String::new(),
             original_repeat_penalty: String::new(),
             original_repeat_last_n: String::new(),
@@ -632,21 +640,11 @@ impl AppState {
                 preset_index,
             };
 
-            if preset_name == "default" {
-                grouped.push(GroupedModel {
-                    base_name: "default".to_owned(),
-                    model_path: model_path.clone(),
-                    variants: vec![item],
-                    selected_variant_index: 0,
-                });
-            } else if let Some(existing) = grouped
-                .iter_mut()
-                .find(|g| g.base_name != "default" && g.model_path == *model_path)
-            {
+            if let Some(existing) = grouped.iter_mut().find(|g| g.model_path == *model_path) {
                 existing.variants.push(item);
             } else {
                 grouped.push(GroupedModel {
-                    base_name: String::new(),
+                    base_name: crate::discovery::clean_model_id(model_path),
                     model_path: model_path.clone(),
                     variants: vec![item],
                     selected_variant_index: 0,
@@ -656,18 +654,6 @@ impl AppState {
 
         for g in &mut grouped {
             g.variants.sort_by_key(|v| v.variant);
-
-            if g.base_name != "default" {
-                let base_name = g
-                    .variants
-                    .iter()
-                    .find(|v| v.variant == ModelVariant::Base)
-                    .map_or_else(
-                        || crate::discovery::clean_model_id(&g.model_path),
-                        |base_item| base_item.preset_name.clone(),
-                    );
-                g.base_name = base_name;
-            }
         }
 
         // Preserve previous selected_variant_index for models if possible
@@ -675,7 +661,7 @@ impl AppState {
             if let Some(prev) = self
                 .grouped_models
                 .iter()
-                .find(|p| p.base_name == g.base_name)
+                .find(|p| p.model_path == g.model_path)
             {
                 if prev.selected_variant_index < g.variants.len() {
                     g.selected_variant_index = prev.selected_variant_index;
@@ -766,6 +752,46 @@ impl AppState {
         self.load_current_preset_settings(None);
     }
 
+    /// Returns the variant key string corresponding to the currently active variant.
+    #[must_use]
+    pub fn current_variant_key(&self) -> &'static str {
+        if self.presets.is_empty() || self.selected_model_index >= self.grouped_models.len() {
+            return "base";
+        }
+        let model = &self.grouped_models[self.selected_model_index];
+        if model.variants.is_empty() {
+            return "base";
+        }
+        let v_idx = model
+            .selected_variant_index
+            .min(model.variants.len().saturating_sub(1));
+        match model.variants[v_idx].variant {
+            ModelVariant::Base => "base",
+            ModelVariant::Draft => "draft",
+            ModelVariant::Vision => "vision",
+            ModelVariant::DraftVision => "draft-vision",
+        }
+    }
+
+    /// Returns the custom display name for the currently active variant, or an empty string if unset.
+    #[must_use]
+    pub fn current_custom_name(&self) -> &str {
+        let key = self.current_variant_key();
+        self.custom_names.get(key).map_or("", |s| s.as_str())
+    }
+
+    /// Sets or removes the custom display name for the currently active variant.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn set_current_custom_name(&mut self, val: String) {
+        let key = self.current_variant_key().to_owned();
+        let trimmed = val.trim().to_owned();
+        if trimmed.is_empty() {
+            self.custom_names.remove(&key);
+        } else {
+            self.custom_names.insert(key, trimmed);
+        }
+    }
+
     /// Loads the configuration settings for the currently selected preset, with an optional path override.
     #[allow(
         clippy::similar_names,
@@ -800,6 +826,29 @@ impl AppState {
                 .and_then(|l| l.get(key))
                 .or_else(|| assets.config.get(key))
         };
+
+        let mut custom_names = HashMap::new();
+        let custom_val = get_lh_val("custom-name")
+            .or_else(|| get_lh_val("custom-names"))
+            .or_else(|| get_long_val("custom-name"))
+            .or_else(|| get_long_val("custom-names"));
+        if let Some(val) = custom_val {
+            if let Some(obj) = val.as_object() {
+                for (k, v) in obj {
+                    if let Some(s) = v.as_str() {
+                        if !s.trim().is_empty() {
+                            custom_names.insert(k.clone(), s.trim().to_owned());
+                        }
+                    }
+                }
+            } else if let Some(s) = val.as_str() {
+                if !s.trim().is_empty() {
+                    custom_names.insert("base".to_owned(), s.trim().to_owned());
+                }
+            }
+        }
+        self.custom_names = custom_names.clone();
+        self.original_custom_names = custom_names;
 
         let total_layers = get_lh_val("total-layers")
             .or_else(|| get_long_val("total-layers"))
@@ -1431,6 +1480,28 @@ impl AppState {
             herd_obj.remove("mmproj");
         }
 
+        // 9. custom-name
+        if self.custom_names.is_empty() {
+            herd_obj.remove("custom-name");
+            herd_obj.remove("custom-names");
+        } else {
+            let mut map = serde_json::Map::new();
+            let mut sorted_keys: Vec<&String> = self.custom_names.keys().collect();
+            sorted_keys.sort();
+            for k in sorted_keys {
+                let val = &self.custom_names[k];
+                if !val.trim().is_empty() {
+                    map.insert(k.clone(), serde_json::Value::String(val.clone()));
+                }
+            }
+            herd_obj.remove("custom-names");
+            herd_obj.insert("custom-name".to_owned(), serde_json::Value::Object(map));
+        }
+        herd_obj.remove("is-default");
+        long_obj.remove("custom-name");
+        long_obj.remove("custom-names");
+        long_obj.remove("is-default");
+
         if !herd_obj.is_empty() {
             current_config.insert("llama-herd".to_owned(), serde_json::Value::Object(herd_obj));
         }
@@ -1449,6 +1520,7 @@ impl AppState {
                 Some(self.presets[self.preset_index].1.clone()),
             )
         };
+        let saved_variant = self.current_variant_key();
 
         crate::config::save_config(&target_path, &current_config)?;
 
@@ -1487,6 +1559,31 @@ impl AppState {
         }
 
         self.rebuild_grouped_models();
+
+        if let Some(ref model_path) = current_model_path {
+            if let Some(m_idx) = self
+                .grouped_models
+                .iter()
+                .position(|m| m.model_path == *model_path)
+            {
+                self.selected_model_index = m_idx;
+                let model = &mut self.grouped_models[m_idx];
+                let v_pos = model
+                    .variants
+                    .iter()
+                    .position(|v| match v.variant {
+                        ModelVariant::Base => saved_variant == "base",
+                        ModelVariant::Draft => saved_variant == "draft",
+                        ModelVariant::Vision => saved_variant == "vision",
+                        ModelVariant::DraftVision => saved_variant == "draft-vision",
+                    })
+                    .unwrap_or(0);
+                model.selected_variant_index = v_pos;
+                if let Some(variant) = model.variants.get(v_pos) {
+                    self.preset_index = variant.preset_index;
+                }
+            }
+        }
 
         self.load_current_preset_settings(Some(target_path));
         Ok(())
@@ -1532,6 +1629,7 @@ impl AppState {
             || self.spec_type != self.original_spec_type
             || self.spec_draft_n_max != self.original_spec_draft_n_max
             || self.spec_draft_p_min != self.original_spec_draft_p_min
+            || self.custom_names != self.original_custom_names
     }
 
     /// Periodically scans the models directory in the background and invalidates/updates presets when file changes settle.

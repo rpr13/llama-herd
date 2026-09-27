@@ -124,7 +124,7 @@ pub fn handle_key_event(
             KeyCode::Up => {
                 if state.dashboard_focus == DashboardFocus::Right {
                     if state.dashboard_param_index == 0 {
-                        state.dashboard_param_index = 24;
+                        state.dashboard_param_index = 25;
                     } else {
                         state.dashboard_param_index -= 1;
                     }
@@ -165,7 +165,7 @@ pub fn handle_key_event(
             }
             KeyCode::Down => {
                 if state.dashboard_focus == DashboardFocus::Right {
-                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 25;
+                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 26;
                 } else if !state.grouped_models.is_empty() {
                     let target_model_idx =
                         (state.selected_model_index + 1) % state.grouped_models.len();
@@ -361,6 +361,10 @@ pub fn handle_key_event(
             KeyCode::Enter if state.dashboard_focus == DashboardFocus::Right => {
                 match state.dashboard_param_index {
                     0 => {
+                        state.screen = AppScreen::EditingCustomName;
+                        state.input_buffer = state.current_custom_name().to_owned();
+                    }
+                    1 => {
                         state.screen = AppScreen::EditingConfigFileName;
                         state.input_buffer = state.config_file_name.clone();
                         if state.presets.is_empty() {
@@ -378,18 +382,18 @@ pub fn handle_key_event(
                                 .position(|f| f == &state.input_buffer);
                         }
                     }
-                    1 => {
+                    2 => {
                         state.screen = AppScreen::EditingTotalLayers;
                         state.input_buffer = state
                             .total_layers
                             .map(|l| l.to_string())
                             .unwrap_or_default();
                     }
-                    2 => {
+                    3 => {
                         state.screen = AppScreen::EditingVariants;
                         state.input_buffer = state.variants.clone();
                     }
-                    3 => {
+                    4 => {
                         state.screen = AppScreen::EditingCtx;
                         state.input_buffer = if state.ctx_str.is_empty() {
                             state.ctx.to_string()
@@ -397,87 +401,87 @@ pub fn handle_key_event(
                             state.ctx_str.clone()
                         };
                     }
-                    4 => {
+                    5 => {
                         state.screen = AppScreen::EditingNgl;
                         state.input_buffer = state.ngl.clone();
                     }
-                    5 => {
+                    6 => {
                         state.mmproj_index_backup = state.mmproj_index;
                         state.screen = AppScreen::SelectingMMProj;
                     }
-                    6 => {
+                    7 => {
                         state.screen = AppScreen::EditingTemp;
                         state.input_buffer = state.temp.clone();
                     }
-                    7 => {
+                    8 => {
                         state.screen = AppScreen::EditingTopP;
                         state.input_buffer = state.top_p.clone();
                     }
-                    8 => {
+                    9 => {
                         state.screen = AppScreen::EditingTopK;
                         state.input_buffer = state.top_k.clone();
                     }
-                    9 => {
+                    10 => {
                         state.screen = AppScreen::EditingMinP;
                         state.input_buffer = state.min_p.clone();
                     }
-                    10 => {
+                    11 => {
                         state.screen = AppScreen::EditingRepeatPenalty;
                         state.input_buffer = state.repeat_penalty.clone();
                     }
-                    11 => {
+                    12 => {
                         state.screen = AppScreen::EditingRepeatLastN;
                         state.input_buffer = state.repeat_last_n.clone();
                     }
-                    12 => {
+                    13 => {
                         state.screen = AppScreen::EditingDryMultiplier;
                         state.input_buffer = state.dry_multiplier.clone();
                     }
-                    13 => {
+                    14 => {
                         state.screen = AppScreen::EditingDryBase;
                         state.input_buffer = state.dry_base.clone();
                     }
-                    14 => {
+                    15 => {
                         state.screen = AppScreen::EditingDryAllowedLength;
                         state.input_buffer = state.dry_allowed_length.clone();
                     }
-                    15 => {
+                    16 => {
                         state.screen = AppScreen::EditingDryPenaltyLastN;
                         state.input_buffer = state.dry_penalty_last_n.clone();
                     }
-                    16 => {
+                    17 => {
                         state.screen = AppScreen::EditingDrySequenceBreaker;
                         state.input_buffer = state.dry_sequence_breaker.clone();
                     }
-                    17 => {
+                    18 => {
                         state.reasoning_format_index_backup = state.reasoning_format_index;
                         state.screen = AppScreen::SelectingReasoningFormat;
                     }
-                    18 => {
+                    19 => {
                         state.reasoning_index_backup = state.reasoning_index;
                         state.screen = AppScreen::SelectingReasoning;
                     }
-                    19 => {
+                    20 => {
                         state.screen = AppScreen::EditingReasoningBudget;
                         state.input_buffer = state.reasoning_budget.clone();
                     }
-                    20 => {
+                    21 => {
                         state.draft_index_backup = state.draft_index;
                         state.screen = AppScreen::SelectingDraftModel;
                     }
-                    21 => {
+                    22 => {
                         state.screen = AppScreen::EditingDraftNgl;
                         state.input_buffer = state.draft_ngl.clone();
                     }
-                    22 => {
+                    23 => {
                         state.spec_type_backup = state.spec_type_index;
                         state.screen = AppScreen::SelectingSpecType;
                     }
-                    23 => {
+                    24 => {
                         state.screen = AppScreen::EditingSpecDraftNMax;
                         state.input_buffer = state.spec_draft_n_max.clone();
                     }
-                    24 => {
+                    25 => {
                         state.screen = AppScreen::EditingSpecDraftPMin;
                         state.input_buffer = state.spec_draft_p_min.clone();
                     }
@@ -699,6 +703,7 @@ pub fn handle_key_event(
         | AppScreen::EditingTotalLayers
         | AppScreen::EditingVariants
         | AppScreen::EditingConfigFileName
+        | AppScreen::EditingCustomName
         | AppScreen::EditingGlobalSetting
         | AppScreen::EditingMinP
         | AppScreen::EditingRepeatPenalty
@@ -720,6 +725,10 @@ pub fn handle_key_event(
             }
             KeyCode::Enter => {
                 match state.screen {
+                    AppScreen::EditingCustomName => {
+                        state.set_current_custom_name(state.input_buffer.clone());
+                        state.screen = AppScreen::Dashboard;
+                    }
                     AppScreen::EditingCtx => {
                         let val = state.input_buffer.trim().to_owned();
                         match crate::config::parse_ctx_str(&val) {

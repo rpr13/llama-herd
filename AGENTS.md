@@ -23,7 +23,7 @@ This document defines architectural boundaries, coding standards, quality gates,
 | :--- | :--- |
 | `src/main.rs` | CLI entry point, argument parsing (`--ini`), global configuration loading, and TUI lifecycle. |
 | `src/launcher.rs` | Builds command-line arguments for single-model and router modes, tracks active PIDs (`active_pids.txt`), and terminates stray processes. |
-| `src/discovery.rs` | Scans `models_dir`, runs pairing heuristics (draft models, `mmproj` vision projectors with precision/quant token stripping), detects GPU hardware topology (CUDA, ROCm, WDDM), and generates `models-preset.ini` with variant filtering. |
+| `src/discovery.rs` | Scans `models_dir`, runs pairing heuristics (draft models, `mmproj` vision projectors with precision/quant token stripping), detects GPU hardware topology (CUDA, ROCm, WDDM), resolves custom preset names per variant (`[llama-herd.custom-name]`), and generates `models-preset.ini` with variant filtering. |
 | `src/config.rs` | Enforces strict TOML rules, key/value injection guards, context size parsing, and restricted parameter lists. |
 | `src/health.rs` | Polling engine for `GET /health`, classifying `HealthState` (`Healthy`, `Loading`, `Unhealthy`, `Recovering`). |
 | `src/control.rs` | REST control dispatcher sending cancellation signals to `/v1/chat/completions/control` (triggered via `F4`). |
@@ -50,7 +50,7 @@ This document defines architectural boundaries, coding standards, quality gates,
 - **No Underscores or Leading Dashes**: Keys in model TOML configs must not contain underscores (`_`) or start with a dash (`-`). Violating keys must be rejected/ignored at load time.
 - **Injection Guard**: Option values must not start with `--` or `-` followed by alphabetic characters, and must not contain shell metacharacters (`;`, `&`, `|`).
 - **Context Size Parsing**: Suffixes for `ctx-size` are strictly restricted to `'k'`/`'K'` (multiplying by 1024). Other suffixes (`'M'`, `'G'`) or non-numeric/negative values must be rejected.
-- **Restricted Keys**: Any parameter managed by LlamaHerd (including `variants`, orchestrator settings, and server options) is strictly restricted from arbitrary passthrough to prevent duplicate/conflicting flags.
+- **Restricted Keys**: Any parameter managed by LlamaHerd (including `custom-name`, `custom-names`, `variants`, orchestrator settings, and server options; `is-default` is no longer supported) is strictly restricted from arbitrary passthrough to prevent duplicate/conflicting flags.
 
 ### Rule 4: Windows & Cross-Platform Compatibility
 - When querying process status or health endpoints, always account for Windows socket behaviors:
@@ -71,6 +71,15 @@ This document defines architectural boundaries, coding standards, quality gates,
   - `F7`: Restart active server process.
   - `F8`: Stop running server.
 - **Log viewer controls**: `A` / `Space` (auto-scroll toggle), `P` (pause), `W` (wrap toggle), `C` (copy to clipboard).
+
+### Rule 6: Dashboard Parameters & Grouping Hierarchy
+- Parameters on the Dashboard (Tab 1, right panel) must follow the established visual grouping:
+  - **llama herd**: `Preset Name` (read-only), `Custom Name` (editable parameter at index 0), `Model File` (read-only), `Target Config File` (index 1), `Total Layers` (index 2), `Variants` (index 3).
+  - **Common params**: `Context Size` (index 4), `N-GPU-Layers` (index 5), `MMProj (Vision)` (index 6).
+  - **Sampling params**: `Temperature` (index 7), `Top P` (index 8), `Top K` (index 9), `Min P` (index 10), `Repeat Penalty` (index 11), `Repeat Last N` (index 12), DRY parameters (indexes 13-17).
+  - **Server-specific params**: Reasoning/Thinking configurations (indexes 18-20).
+  - **Draft params**: Speculative decoding configurations (indexes 21-25).
+- Whenever adding, removing, or reordering parameters in `src/tui/ui.rs`, ensure prompt navigation indices and `app.rs` field mappings match exactly.
 
 ---
 

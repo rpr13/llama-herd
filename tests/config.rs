@@ -9,9 +9,10 @@
 )]
 
 use llama_herd::config::{
-    calculate_ngl, format_arg_name, format_ini_key, get_global_config_string, get_optimal_threads,
-    is_restricted_key, load_settings_from_ini, load_toml_safe, load_toml_silent, parse_ctx,
-    parse_ctx_str, parse_settings_ini, remove_global_config_value, update_global_config_value,
+    calculate_ngl, format_arg_name, format_ctx_display, format_ini_key, get_global_config_string,
+    get_optimal_threads, is_restricted_key, load_settings_from_ini, load_toml_safe,
+    load_toml_silent, parse_ctx, parse_ctx_str, parse_settings_ini, remove_global_config_value,
+    update_global_config_value,
 };
 use serde_json::json;
 use std::fs::File;
@@ -122,6 +123,9 @@ fn test_is_restricted_key_checks() -> TestResult {
     assert!(is_restricted_key("log-verbosity"));
     assert!(is_restricted_key("verbosity"));
     assert!(is_restricted_key("lv"));
+    assert!(is_restricted_key("custom-name"));
+    assert!(is_restricted_key("custom-names"));
+    assert!(is_restricted_key("is-default"));
 
     // 2. Pass-through keys
     assert!(!is_restricted_key("slot-prompt-similarity"));
@@ -331,6 +335,9 @@ fn test_is_restricted_key_internal() {
     assert!(is_restricted_key("log-verbosity"));
     assert!(is_restricted_key("verbosity"));
     assert!(is_restricted_key("lv"));
+    assert!(is_restricted_key("custom-name"));
+    assert!(is_restricted_key("custom-names"));
+    assert!(is_restricted_key("is-default"));
 
     assert!(!is_restricted_key("slot-prompt-similarity"));
 }
@@ -498,4 +505,38 @@ fn test_variants_key_is_restricted() {
         llama_herd::config::RESTRICTED_LONG.contains(&"variants"),
         "RESTRICTED_LONG must contain 'variants' to guard against server CLI flag injection"
     );
+    assert!(
+        llama_herd::config::RESTRICTED_LONG.contains(&"is-default"),
+        "RESTRICTED_LONG must contain 'is-default' to guard against server CLI flag injection"
+    );
+}
+
+#[test]
+fn test_format_ctx_display() {
+    // Exact multiples (power of 2)
+    assert_eq!(format_ctx_display("131072"), "131072 (128k)");
+    assert_eq!(format_ctx_display("65536"), "65536 (64k)");
+    assert_eq!(format_ctx_display("32768"), "32768 (32k)");
+
+    // Exact multiples (non-power of 2)
+    assert_eq!(format_ctx_display("128000"), "128000 (125k)");
+
+    // Inexact approximations (no decimals, integer division)
+    assert_eq!(format_ctx_display("131584"), "131584 (~128k)");
+    assert_eq!(format_ctx_display("130560"), "130560 (~127k)");
+    assert_eq!(format_ctx_display("131900"), "131900 (~128k)");
+
+    // Suffix input normalization
+    assert_eq!(format_ctx_display("128k"), "131072 (128k)");
+    assert_eq!(format_ctx_display("128K"), "131072 (128k)");
+    assert_eq!(format_ctx_display("64k"), "65536 (64k)");
+
+    // Boundary & small values
+    assert_eq!(format_ctx_display("0"), "0 (0k)");
+    assert_eq!(format_ctx_display("512"), "512 (~0k)");
+
+    // Fallbacks
+    assert_eq!(format_ctx_display(""), "");
+    assert_eq!(format_ctx_display("   "), "");
+    assert_eq!(format_ctx_display("invalid"), "invalid");
 }

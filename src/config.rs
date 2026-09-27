@@ -88,6 +88,34 @@ pub fn parse_ctx_str(s: &str) -> Result<usize, String> {
     Ok(val)
 }
 
+/// Formats a context size string (number or string with 'k'/'K' suffix) into a human-readable display string
+/// showing both token count and k-approximation (without decimals).
+///
+/// # Examples
+/// - "131072" -> "131072 (128k)"
+/// - "128000" -> "128000 (125k)"
+/// - "131584" -> "131584 (~128k)"
+/// - "130560" -> "130560 (~127k)"
+/// - "128k"   -> "131072 (128k)"
+#[must_use]
+pub fn format_ctx_display(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    parse_ctx_str(trimmed).map_or_else(
+        |_| raw.to_owned(),
+        |tokens| {
+            let k = tokens / 1024;
+            if tokens % 1024 == 0 {
+                format!("{tokens} ({k}k)")
+            } else {
+                format!("{tokens} (~{k}k)")
+            }
+        },
+    )
+}
+
 /// Validates that a setting value does not contain injection attempts (e.g., options starting with '--').
 #[must_use]
 pub fn is_safe_value(val: &serde_json::Value) -> bool {
@@ -162,8 +190,9 @@ pub const RESTRICTED_LONG: &[&str] = &[
     "spec-draft-n-max",
     "spec-draft-p-min",
     "is-draft",
-    "is-default",
     "is-draft-only",
+    "custom-name",
+    "custom-names",
     "ui",
     "webui",
     "model",
@@ -219,6 +248,7 @@ pub const RESTRICTED_LONG: &[&str] = &[
     "fit",
     "fitt",
     "variants",
+    "is-default",
 ];
 
 const RESTRICTED_SHORT: &[&str] = &[

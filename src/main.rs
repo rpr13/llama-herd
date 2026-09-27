@@ -28,7 +28,7 @@ fn show_help() {
         "  If missing, an interactive setup wizard will guide you on startup.\n\n",
         "Global Settings in config.toml:\n",
         "  host = \"127.0.0.1\"      # Host IP to bind the server\n",
-        "  port = 8080             # Port to listen on\n",
+        "  port = 9931             # Port to listen on\n",
         "  flash_attn = \"auto\"     # Enable flash attention (\"auto\", \"1\", \"0\")\n",
         "  cache_type_k = \"f16\"    # KV cache key quantization (\"f16\", \"q8_0\", etc.)\n",
         "  cache_type_v = \"f16\"    # KV cache value quantization (\"f16\", \"q8_0\", etc.)\n",

@@ -1334,7 +1334,7 @@ pub fn is_port_available(port: u16) -> bool {
 /// Returns an error if the port string is invalid or if the requested port (and retries) are already in use.
 pub fn resolve_port(port_str: &str) -> Result<u16, std::io::Error> {
     if port_str == "auto" {
-        let mut port = 8080;
+        let mut port = 9931;
         while port < 65535 {
             if is_port_available(port) {
                 return Ok(port);
@@ -1343,7 +1343,7 @@ pub fn resolve_port(port_str: &str) -> Result<u16, std::io::Error> {
         }
         Err(std::io::Error::new(
             std::io::ErrorKind::AddrInUse,
-            "No available ports found in range 8080-65535".to_owned(),
+            "No available ports found in range 9931-65535".to_owned(),
         ))
     } else {
         let parsed: u16 = port_str.parse().map_err(|e| {

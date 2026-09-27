@@ -155,8 +155,8 @@ fn test_discover_presets_from_ini_filtering() -> TestResult {
         [*]
         flash-attn = auto
 
-        [default]
-        model = models/gemma-2-9b.gguf
+        [alpha-model]
+        model = models/alpha-model.gguf
 
         [gemma-2-9b]
         model = models/gemma-2-9b.gguf
@@ -174,9 +174,9 @@ fn test_discover_presets_from_ini_filtering() -> TestResult {
     let presets = discover_presets_from_ini(&path);
     assert_eq!(presets.len(), 3);
 
-    // Verify ordering places default first, then alphabetical, excluding draft and *
-    assert_eq!(presets[0].0, "default");
-    assert_eq!(presets[0].1, PathBuf::from("models/gemma-2-9b.gguf"));
+    // Verify ordering is alphabetical, excluding draft and *
+    assert_eq!(presets[0].0, "alpha-model");
+    assert_eq!(presets[0].1, PathBuf::from("models/alpha-model.gguf"));
     assert_eq!(presets[1].0, "gemma-2-9b");
     assert_eq!(presets[1].1, PathBuf::from("models/gemma-2-9b.gguf"));
     assert_eq!(presets[2].0, "llama-3-8b");
@@ -262,8 +262,8 @@ fn test_generate_presets_ini_generation() -> TestResult {
     assert!(ini_content.contains("cache-type-k = q4_k"));
     assert!(ini_content.contains("cache-type-v = q4_k"));
 
-    // Must contain the [default] section since it was marked is-default
-    assert!(ini_content.contains("[default]"));
+    // Must NOT contain a [default] section (obsolete duplicate default section removed)
+    assert!(!ini_content.contains("[default]"));
 
     // Must contain the clean preset section
     assert!(ini_content.contains("[gemma-2-9b-it]"));
@@ -306,7 +306,7 @@ fn test_generate_presets_hyphenated_keys() {
     let config_path = models_dir.join("test-model.toml");
     std::fs::write(
         &config_path,
-        "[llama-herd]\nis-default = true\ntotal-layers = 32\n\n[llama-server-long]\nctx-size = \"8k\"\n",
+        "[llama-herd]\ntotal-layers = 32\n\n[llama-server-long]\nctx-size = \"8k\"\n",
     )
     .unwrap();
 
@@ -320,7 +320,8 @@ fn test_generate_presets_hyphenated_keys() {
 
     assert!(output_path.exists());
     let content = std::fs::read_to_string(output_path).unwrap();
-    assert!(content.contains("[default]"));
+    assert!(!content.contains("[default]"));
+    assert!(content.contains("[test-model]"));
     assert!(content.contains("ctx-size = 8192"));
     assert!(content.contains("n-gpu-layers = 32"));
 }
@@ -401,7 +402,7 @@ fn test_generate_presets_tensor_split_and_fit() -> Result<(), Box<dyn std::error
     let config_path = models_dir.join("ts-model.toml");
     std::fs::write(
         &config_path,
-        "[llama-herd]\nis-default = true\n\n[llama-server-long]\ntensor-split = \"1,2\"\nfit = \"on\"\nfitt = 2048\n",
+        "[llama-server-long]\ntensor-split = \"1,2\"\nfit = \"on\"\nfitt = 2048\n",
     )?;
 
     let global_config = std::collections::HashMap::new();
@@ -412,6 +413,8 @@ fn test_generate_presets_tensor_split_and_fit() -> Result<(), Box<dyn std::error
     )?;
 
     let content = std::fs::read_to_string(output_path)?;
+    assert!(!content.contains("[default]"));
+    assert!(content.contains("[ts-model]"));
     assert!(content.contains("tensor-split = 1,2"));
     assert!(content.contains("fit = on"));
     assert!(content.contains("fitt = 2048"));
@@ -518,4 +521,107 @@ fn test_generate_presets_with_variants_fallback_base() -> Result<(), Box<dyn std
     assert!(!content.contains("[gemma-2-9b-draft-it]"));
     assert!(!content.contains("[gemma-2-9b-vision-it]"));
     Ok(())
+}
+
+#[test]
+fn test_custom_name_in_generated_presets() {
+    let temp = tempfile::tempdir().unwrap();
+    let models_dir = temp.path().join("models");
+    std::fs::create_dir_all(&models_dir).unwrap();
+
+    let model_path = models_dir.join("MyModel-7B.Q4_K_M.gguf");
+    std::fs::write(&model_path, b"dummy").unwrap();
+
+    let toml_content = r#"
+[llama-herd]
+variants = ["base"]
+
+[llama-herd.custom-name]
+base = "Renamed-Base"
+"#;
+    std::fs::write(models_dir.join("MyModel-7B.Q4_K_M.toml"), toml_content).unwrap();
+
+    let ini_path = temp.path().join("models-preset.ini");
+    let global_config = std::collections::HashMap::new();
+
+    let _ = llama_herd::discovery::generate_presets_ini(&models_dir, &ini_path, &global_config)
+        .unwrap();
+    let content = std::fs::read_to_string(&ini_path).unwrap();
+
+    assert!(content.contains("[Renamed-Base]"));
+    assert!(!content.contains("[default]"));
+}
+
+#[test]
+fn test_custom_name_all_variants_and_fallback() {
+    let temp = tempfile::tempdir().unwrap();
+    let models_dir = temp.path().join("models");
+    std::fs::create_dir_all(&models_dir).unwrap();
+
+    let model_path = models_dir.join("MyModel-7B.Q4_K_M.gguf");
+    std::fs::write(&model_path, b"dummy").unwrap();
+
+    let draft_path = models_dir.join("MyModel-Draft.gguf");
+    std::fs::write(&draft_path, b"draft").unwrap();
+
+    let mmproj_path = models_dir.join("MyModel-mmproj.gguf");
+    std::fs::write(&mmproj_path, b"vision").unwrap();
+
+    let draft_toml = r#"
+[llama-herd]
+is-draft = true
+"#;
+    std::fs::write(models_dir.join("MyModel-Draft.toml"), draft_toml).unwrap();
+
+    let toml_content = r#"
+[llama-herd]
+variants = ["base", "draft", "vision", "draft-vision"]
+
+[llama-herd.custom-name]
+base = "Custom-Base"
+draft = "Custom-Draft"
+# vision is deliberately omitted to test fallback!
+draft-vision = "Custom-Draft-Vision"
+"#;
+    std::fs::write(models_dir.join("MyModel-7B.Q4_K_M.toml"), toml_content).unwrap();
+
+    let ini_path = temp.path().join("models-preset.ini");
+    let global_config = std::collections::HashMap::new();
+
+    let _ = llama_herd::discovery::generate_presets_ini(&models_dir, &ini_path, &global_config)
+        .unwrap();
+    let content = std::fs::read_to_string(&ini_path).unwrap();
+
+    assert!(content.contains("[Custom-Base]"));
+    assert!(content.contains("[Custom-Draft]"));
+    assert!(content.contains("[Custom-Draft-Vision]"));
+    // vision omitted from custom-name falls back to auto-generated suffix:
+    assert!(content.contains("[MyModel-7B-vision-Q4_K_M]"));
+    assert!(!content.contains("[default]"));
+}
+
+#[test]
+fn test_custom_name_shorthand_string() {
+    let temp = tempfile::tempdir().unwrap();
+    let models_dir = temp.path().join("models");
+    std::fs::create_dir_all(&models_dir).unwrap();
+
+    let model_path = models_dir.join("MyModel-7B.Q4_K_M.gguf");
+    std::fs::write(&model_path, b"dummy").unwrap();
+
+    let toml_content = r#"
+[llama-herd]
+custom-name = "Shorthand-Base"
+"#;
+    std::fs::write(models_dir.join("MyModel-7B.Q4_K_M.toml"), toml_content).unwrap();
+
+    let ini_path = temp.path().join("models-preset.ini");
+    let global_config = std::collections::HashMap::new();
+
+    let _ = llama_herd::discovery::generate_presets_ini(&models_dir, &ini_path, &global_config)
+        .unwrap();
+    let content = std::fs::read_to_string(&ini_path).unwrap();
+
+    assert!(content.contains("[Shorthand-Base]"));
+    assert!(!content.contains("[default]"));
 }

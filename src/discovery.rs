@@ -140,19 +140,10 @@ pub fn discover_presets_from_ini(preset_path: &Path) -> Vec<(String, PathBuf)> {
         let sections = crate::config::parse_settings_ini(&content);
         let mut presets = Vec::new();
 
-        let mut sorted_keys: Vec<&String> = sections
-            .keys()
-            .filter(|&k| k != "*" && k != "default")
-            .collect();
+        let mut sorted_keys: Vec<&String> = sections.keys().filter(|&k| k != "*").collect();
         sorted_keys.sort();
 
-        let mut ordered_keys: Vec<&String> = Vec::new();
-        if let Some(def_key) = sections.keys().find(|&k| k == "default") {
-            ordered_keys.push(def_key);
-        }
-        ordered_keys.extend(sorted_keys);
-
-        for section in ordered_keys {
+        for section in sorted_keys {
             if let Some(map) = sections.get(section) {
                 if map.get("is-draft").map(String::as_str) == Some("true") {
                     continue;
@@ -244,45 +235,6 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
         }
     }
 
-    let mut default_candidates = Vec::new();
-    for model in &main_models {
-        let stem = model
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_lowercase();
-        for js in &toml_files {
-            let js_stem = js
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if stem.starts_with(&js_stem) {
-                let cfg = crate::config::load_toml_silent(js);
-                if let Some(lh) = cfg.get("llama-herd")
-                    && lh.get("is-default").and_then(serde_json::Value::as_bool) == Some(true)
-                {
-                    default_candidates.push(model.clone());
-                }
-                break;
-            }
-        }
-    }
-
-    let designated_default = if !default_candidates.is_empty() {
-        default_candidates
-            .iter()
-            .min_by_key(|m| std::fs::metadata(m).map_or(u64::MAX, |meta| meta.len()))
-            .cloned()
-    } else if !main_models.is_empty() {
-        main_models
-            .iter()
-            .min_by_key(|m| std::fs::metadata(m).map_or(u64::MAX, |meta| meta.len()))
-            .cloned()
-    } else {
-        None
-    };
-
     let mut mmproj_files = Vec::new();
     if let Ok(entries) = std::fs::read_dir(models_dir) {
         for entry in entries.flatten() {
@@ -367,12 +319,9 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
     let gpus = scan_gpu_topology();
     let auto_tensor_split = calculate_tensor_split(&gpus, 0.12);
 
-    let mut default_preset_lines = Vec::new();
-
     for model_path in &main_models {
         let assets = discover_assets(model_path, models_dir);
         let clean_name = clean_model_id(model_path);
-        let is_default = Some(model_path) == designated_default.as_ref();
 
         let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
             assets.config.get("llama-herd").and_then(|lh| lh.get(key))
@@ -521,30 +470,47 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                 Some(valid_items)
             });
 
-        let mut candidates = vec![("base", clean_name.clone(), false, false)];
+        let custom_names_val = get_lh_val("custom-name")
+            .or_else(|| get_lh_val("custom-names"))
+            .or_else(|| get_long_val("custom-name"))
+            .or_else(|| get_long_val("custom-names"));
+        let get_variant_custom_name = |variant_id: &str| -> Option<String> {
+            if let Some(val) = custom_names_val {
+                if let Some(obj) = val.as_object() {
+                    if let Some(s) = obj.get(variant_id).and_then(|v| v.as_str()) {
+                        let trimmed = s.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_owned());
+                        }
+                    }
+                } else if variant_id == "base" {
+                    if let Some(s) = val.as_str() {
+                        let trimmed = s.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_owned());
+                        }
+                    }
+                }
+            }
+            None
+        };
+
+        let base_name = get_variant_custom_name("base").unwrap_or_else(|| clean_name.clone());
+        let mut candidates = vec![("base", base_name.clone(), false, false)];
         if mmproj_file.is_some() {
-            candidates.push((
-                "vision",
-                insert_variant_suffix(&clean_name, "vision"),
-                false,
-                true,
-            ));
+            let vis_name = get_variant_custom_name("vision")
+                .unwrap_or_else(|| insert_variant_suffix(&clean_name, "vision"));
+            candidates.push(("vision", vis_name, false, true));
         }
         if draft_file.is_some() {
-            candidates.push((
-                "draft",
-                insert_variant_suffix(&clean_name, "draft"),
-                true,
-                false,
-            ));
+            let draft_name = get_variant_custom_name("draft")
+                .unwrap_or_else(|| insert_variant_suffix(&clean_name, "draft"));
+            candidates.push(("draft", draft_name, true, false));
         }
         if draft_file.is_some() && mmproj_file.is_some() {
-            candidates.push((
-                "draft-vision",
-                insert_variant_suffix(&clean_name, "draft-vision"),
-                true,
-                true,
-            ));
+            let dv_name = get_variant_custom_name("draft-vision")
+                .unwrap_or_else(|| insert_variant_suffix(&clean_name, "draft-vision"));
+            candidates.push(("draft-vision", dv_name, true, true));
         }
 
         let presets_to_generate: Vec<(String, bool, bool)> = match variants_cfg {
@@ -555,7 +521,7 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                     .map(|(_, name, ud, uv)| (name, ud, uv))
                     .collect();
                 if filtered.is_empty() {
-                    vec![(clean_name.clone(), false, false)]
+                    vec![(base_name, false, false)]
                 } else {
                     filtered
                 }
@@ -823,19 +789,8 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
 
             current_preset.push(String::new());
 
-            if is_default && (preset_name == clean_name || default_preset_lines.is_empty()) {
-                default_preset_lines = current_preset
-                    .iter()
-                    .map(|line| line.replace(&format!("[{preset_name}]"), "[default]"))
-                    .collect();
-            }
-
             lines.extend(current_preset);
         }
-    }
-
-    if !default_preset_lines.is_empty() {
-        lines.extend(default_preset_lines);
     }
 
     std::fs::write(output_path, lines.join("\n"))?;

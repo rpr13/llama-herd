@@ -21,7 +21,7 @@ Placed inside the platform-specific global configuration directory to define glo
 | Parameter      | Default       | Type       | Description                                                                                                                                                                                                                                                                                            |
 | :------------- | :------------ | :--------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `host`         | `"127.0.0.1"` | String     | Host binding IP for `llama-server`.                                                                                                                                                                                                                                                                    |
-| `port`         | `"8080"`      | String/Int | Listen port for incoming inference requests. Managed globally in the Settings tab; llama-herd dynamically finds the next available TCP port sequentially (up to 10 consecutive ports starting at 8080 or the requested port) if set to `"auto"` or occupied, returning an error if none are available. |
+| `port`         | `"9931"`      | String/Int | Listen port for incoming inference requests. Managed globally in the Settings tab; llama-herd dynamically finds the next available TCP port sequentially (up to 10 consecutive ports starting at 9931 or the requested port) if set to `"auto"` or occupied, returning an error if none are available. |
 | `flash-attn`   | `"auto"`      | String     | Enables flash attention processing (`"auto"`, `"1"`, or `"0"`).                                                                                                                                                                                                                                        |
 | `cache-type-k` | `"f16"`       | String     | Quantization format for KV cache keys (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).                                                                                                                                                                                                                              |
 | `cache-type-v` | `"f16"`       | String     | Quantization format for KV cache values (e.g. `"f16"`, `"q8_0"`, `"q4_0"`).                                                                                                                                                                                                                            |
@@ -79,7 +79,7 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 
 ### Configuration Tables
 
-- **`[llama-herd]`**: Custom parameters processed internally by `llama-herd` (like `is-default`, `is-draft`, `total-layers`, etc.) and excluded from direct `llama-server` CLI arguments.
+- **`[llama-herd]`**: Custom parameters processed internally by `llama-herd` (like `custom-name`, `is-draft`, `total-layers`, etc.) and excluded from direct `llama-server` CLI arguments.
 - **`[llama-server-long]`**: Mapped to long options for `llama-server`. For example, `ctx-size = "32k"` becomes `--ctx-size 32768`.
 - **`[llama-server-short]`**: Mapped to short options for `llama-server`. For example, `sps = 0.6` becomes `-sps 0.6`.
 - **Root level**: Any parameters written directly at the root level (no table) are treated as long options, maintaining full backward compatibility.
@@ -91,11 +91,26 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 | Key                          | Default | Type         | Description                                                                          |
 | :--------------------------- | :------ | :----------- | :----------------------------------------------------------------------------------- |
 | `is-draft` / `is-draft-only` | `false` | Boolean      | Designates the GGUF file as a speculative draft (hides it from the primary lists).   |
-| `is-default`                 | `false` | Boolean      | Declares this model the default startup preset.                                      |
+| `custom-name` / `custom-names` | `none` | String/Table | Custom preset section header alias or per-variant mapping table (`[llama-herd.custom-name]`). |
 | `draft` / `draft-model`      | `none`  | String       | Specific draft model file to pair with (use `"none"` or `"false"` to block pairing). |
 | `mmproj`                     | `none`  | String       | Explicit vision projector filename to couple with this model.                        |
 | `total-layers`               | `none`  | Integer      | Total structural layers of the neural network (used to resolve `"auto"` offloading). |
 | `variants`                   | `"all"` | String/Array | Controls which preset variants are generated (`"base"`, `"draft"`, `"vision"`, `"draft-vision"`, or `"all"`). Accepts a single string or array of strings. |
+
+##### Custom Preset Naming (`custom-name`)
+
+The `custom-name` option allows overriding the generated preset section headers in `models-preset.ini` and the display labels in the TUI:
+
+- **Per-Variant Table (`[llama-herd.custom-name]`)**: Specify distinct custom names for each variant:
+  ```toml
+  [llama-herd.custom-name]
+  base = "my-model"
+  draft = "my-model-fast"
+  vision = "my-model-vl"
+  draft-vision = "my-model-vl-fast"
+  ```
+- **Shorthand String (`custom-name = "..."`)**: Providing a string directly under `[llama-herd]` (or at the root level) assigns that name to the `"base"` variant.
+- **TUI Dashboard Editing**: In the TUI Dashboard (`F1`), the `Custom Name` parameter appears under the `llama herd` parameter group (index 0). Editing and applying this parameter assigns the custom name to whichever model variant is currently selected.
 
 ##### Preset Variant Filtering (`variants`)
 
@@ -156,7 +171,7 @@ If a configured variant is unavailable (for example, `"draft-vision"` is request
 
 Model preset parameters are visually grouped in the Preset Details & Parameters panel on Tab 1 (Dashboard) using styled headers:
 - **llama herd**: Unique orchestrator parameters (Preset Name, Model File, Target Config File, and Total Layers) placed on top.
-- **Common params**: Main options (Context Size, GPU Layers, and MMProj vision projector).
+- **Common params**: Main options (Context Size with human-readable k-approximation, GPU Layers, and MMProj vision projector).
 - **Draft params**: Speculative decoding parameters (Draft Model, Draft NGL Layers, Speculative Type, Max Speculative Predictions, and Min Probability Threshold).
 - **Sampling params**: Sampling hyper-parameters (Temperature, Top P, Top K, Min P, Repeat Penalty, and Repeat Last N).
 - **Server-specific params**: Reasoning format extraction, Reasoning Mode, and Reasoning Budget settings.
@@ -209,10 +224,14 @@ This configuration enables speculative decoding with a matching draft model, ove
 
 # Llama-Herd Orchestration Settings
 [llama-herd]
-is-default = true
 total-layers = 28
 draft = "Qwen2.5-1.5B-Instruct.gguf"
 variants = ["base", "draft"]
+
+# Optional custom preset naming per variant
+[llama-herd.custom-name]
+base = "qwen-7b"
+draft = "qwen-7b-draft"
 
 # llama-server Long Options Override
 [llama-server-long]
@@ -255,8 +274,8 @@ ctx-checkpoints = 32
 checkpoint-min-step = 256
 no-mmap = false
 
-; --- qwen2-5-7b-instruct ---
-[qwen2-5-7b-instruct]
+; --- qwen-7b ---
+[qwen-7b]
 model = /llama/models/Qwen2.5-7B-Instruct.gguf
 ctx-size = 32768
 n-gpu-layers = 28
@@ -268,8 +287,8 @@ reasoning-format = deepseek
 sps = 0.6
 slot-prompt-similarity = 0.5
 
-; --- qwen2-5-7b-instruct-draft ---
-[qwen2-5-7b-instruct-draft]
+; --- qwen-7b-draft ---
+[qwen-7b-draft]
 model = /llama/models/Qwen2.5-7B-Instruct.gguf
 ctx-size = 32768
 n-gpu-layers = 28
@@ -285,19 +304,10 @@ spec-type = draft-mtp
 spec-draft-n-max = 4
 spec-draft-p-min = 0.85
 gpu-layers-draft = 4
-
-[default]
-model = /llama/models/Qwen2.5-7B-Instruct.gguf
-ctx-size = 32768
-n-gpu-layers = 28
-temp = 0.8
-top-p = 0.95
-top-k = 40
-reasoning = on
-reasoning-format = deepseek
-sps = 0.6
-slot-prompt-similarity = 0.5
 ```
+
+> [!NOTE]
+> **No Default Preset Section**: Earlier versions generated a duplicate `[default]` section pointing to the default model. In modern LlamaHerd, `models-preset.ini` generates clean, distinct preset sections without a redundant `[default]` section.
 
 ---
 

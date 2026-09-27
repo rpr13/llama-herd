@@ -414,7 +414,7 @@ gpu-layers-draft = 10
     assert_eq!(state.selected_model_index, 0);
 
     let grouped = &state.grouped_models[0];
-    assert_eq!(grouped.base_name, "test-preset");
+    assert_eq!(grouped.base_name, "main-model");
     assert_eq!(grouped.model_path, model_path);
     assert_eq!(grouped.variants.len(), 4);
     assert_eq!(grouped.selected_variant_index, 0);
@@ -589,9 +589,9 @@ model = model2.gguf
 
     assert_eq!(state.grouped_models.len(), 2);
     assert_eq!(state.selected_model_index, 0);
-    assert_eq!(state.grouped_models[0].base_name, "model1-preset");
+    assert_eq!(state.grouped_models[0].base_name, "model1");
     assert_eq!(state.grouped_models[0].variants.len(), 2);
-    assert_eq!(state.grouped_models[1].base_name, "model2-preset");
+    assert_eq!(state.grouped_models[1].base_name, "model2");
     assert_eq!(state.grouped_models[1].variants.len(), 1);
 
     // Switch to Model 2
@@ -626,9 +626,6 @@ fn test_grouped_models_never_groups_into_default() {
     fs::write(
         &preset_path,
         r#"
-[default]
-model = gemma-12b.gguf
-
 [gemma-12b]
 model = gemma-12b.gguf
 
@@ -640,7 +637,6 @@ model-draft = draft.gguf
     .unwrap();
 
     let presets = vec![
-        ("default".to_string(), model_path.clone()),
         ("gemma-12b".to_string(), model_path.clone()),
         ("gemma-12b-draft".to_string(), model_path.clone()),
     ];
@@ -654,17 +650,126 @@ model-draft = draft.gguf
         llama_herd::tui::theme::Theme::default(),
     );
 
-    assert_eq!(state.grouped_models.len(), 2);
-    assert_eq!(state.grouped_models[0].base_name, "default");
-    assert_eq!(state.grouped_models[0].variants.len(), 1);
-    assert_eq!(state.grouped_models[0].variants[0].preset_name, "default");
-
-    assert_eq!(state.grouped_models[1].base_name, "gemma-12b");
-    assert_eq!(state.grouped_models[1].variants.len(), 2);
+    assert_eq!(state.grouped_models.len(), 1);
+    assert_eq!(state.grouped_models[0].base_name, "gemma-12b");
+    assert_eq!(state.grouped_models[0].variants.len(), 2);
     assert!(
-        !state.grouped_models[1]
-            .variants
+        !state
+            .grouped_models
             .iter()
-            .any(|v| v.preset_name == "default")
+            .any(|g| g.base_name == "default")
+    );
+}
+
+#[test]
+fn test_app_state_variant_custom_names_loading_cycling_and_saving() {
+    let dir = tempdir().unwrap();
+    let models_dir = dir.path().join("models");
+    fs::create_dir(&models_dir).unwrap();
+
+    let model_path = models_dir.join("main-model.gguf");
+    fs::write(&model_path, "dummy").unwrap();
+
+    let draft_path = models_dir.join("draft-model.gguf");
+    fs::write(&draft_path, "dummy").unwrap();
+
+    let draft_config_path = models_dir.join("draft-model.toml");
+    fs::write(
+        &draft_config_path,
+        r#"
+[llama-herd]
+is-draft = true
+"#,
+    )
+    .unwrap();
+
+    let model_config_path = models_dir.join("main-model.toml");
+    fs::write(
+        &model_config_path,
+        r#"
+[llama-herd]
+is-default = true
+
+[llama-herd.custom-name]
+base = "my-custom-base"
+draft = "my-custom-draft"
+"#,
+    )
+    .unwrap();
+
+    let preset_path = dir.path().join("models-preset.ini");
+    fs::write(
+        &preset_path,
+        r#"
+[my-custom-base]
+model = main-model.gguf
+
+[my-custom-draft]
+model = main-model.gguf
+model-draft = draft-model.gguf
+"#,
+    )
+    .unwrap();
+
+    let presets = vec![
+        ("my-custom-base".to_string(), model_path.clone()),
+        ("my-custom-draft".to_string(), model_path.clone()),
+    ];
+
+    let mut state = AppState::new(
+        presets,
+        models_dir,
+        preset_path,
+        HashMap::new(),
+        PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
+    );
+
+    // 1. load_current_preset_settings populates custom_names from [llama-herd.custom-name]
+    assert_eq!(
+        state.custom_names.get("base").map(String::as_str),
+        Some("my-custom-base")
+    );
+    assert_eq!(
+        state.custom_names.get("draft").map(String::as_str),
+        Some("my-custom-draft")
+    );
+    assert_eq!(state.current_variant_key(), "base");
+    assert_eq!(state.current_custom_name(), "my-custom-base");
+    // GroupedModel base_name in left panel must always be the clean model ID:
+    assert_eq!(state.grouped_models[0].base_name, "main-model");
+
+    // 2. Cycling variants changes current_custom_name()
+    state.cycle_variant_next();
+    assert_eq!(state.current_variant_key(), "draft");
+    assert_eq!(state.current_custom_name(), "my-custom-draft");
+
+    // 3. Modifying custom name sets unsaved changes and save_current_preset_config writes it
+    state.set_current_custom_name("new-draft-name".to_string());
+    assert_eq!(state.current_custom_name(), "new-draft-name");
+    assert!(state.has_unsaved_changes());
+
+    state.save_current_preset_config(false).unwrap();
+
+    // Verify file content: inactive variant (base) is preserved, active (draft) is updated, is-default removed
+    let saved_toml = fs::read_to_string(&model_config_path).unwrap();
+    let parsed: toml::Value = toml::from_str(&saved_toml).unwrap();
+    let herd = parsed
+        .get("llama-herd")
+        .expect("llama-herd section must exist");
+    assert!(
+        herd.get("is-default").is_none(),
+        "legacy is-default must be removed"
+    );
+    let custom_name_table = herd
+        .get("custom-name")
+        .expect("custom-name section must exist");
+    assert_eq!(
+        custom_name_table.get("base").and_then(|v| v.as_str()),
+        Some("my-custom-base")
+    );
+    assert_eq!(
+        custom_name_table.get("draft").and_then(|v| v.as_str()),
+        Some("new-draft-name")
     );
 }
