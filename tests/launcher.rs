@@ -11,6 +11,7 @@
 use llama_herd::config::{ModelAssets, UserSettings};
 use llama_herd::launcher::{
     build_launch_parameters, build_router_launch_parameters, parse_server_version,
+    resolve_load_mode,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -37,6 +38,7 @@ fn test_build_launch_parameters_defaults() -> TestResult {
         mmproj: None,
         draft_model: None,
         draft_ngl: "".to_owned(),
+        model_alias: None,
     };
 
     let global_config = HashMap::new();
@@ -128,6 +130,7 @@ fn test_build_launch_parameters_overrides() -> TestResult {
         mmproj: Some(PathBuf::from("/models/mmproj.gguf")),
         draft_model: Some(PathBuf::from("/models/gemma-draft.gguf")),
         draft_ngl: "16".to_owned(),
+        model_alias: None,
     };
 
     // 3. Setup global overrides
@@ -226,6 +229,7 @@ fn test_build_launch_parameters_speculative_types() -> TestResult {
         mmproj: None,
         draft_model: Some(PathBuf::from("draft.gguf")),
         draft_ngl: "0".to_owned(),
+        model_alias: None,
     };
 
     let params = build_launch_parameters(
@@ -318,6 +322,7 @@ spec-draft-p-min = 0.85
         mmproj: None,
         draft_model: Some(draft_path),
         draft_ngl: "0".to_owned(),
+        model_alias: None,
     };
 
     let params = build_launch_parameters(
@@ -363,6 +368,7 @@ fn test_build_launch_parameters_new_rich_settings() -> TestResult {
         mmproj: None,
         draft_model: None,
         draft_ngl: "".to_owned(),
+        model_alias: None,
     };
 
     let mut global_config = HashMap::new();
@@ -451,6 +457,7 @@ fn test_build_launch_parameters_checkpointing_and_mmap() -> TestResult {
         mmproj: None,
         draft_model: None,
         draft_ngl: "".to_owned(),
+        model_alias: None,
     };
 
     let mut global_config = HashMap::new();
@@ -488,7 +495,9 @@ fn test_build_launch_parameters_checkpointing_and_mmap() -> TestResult {
         .unwrap();
     assert_eq!(params[step_idx + 1], "2048");
 
-    assert!(params.contains(&"--no-mmap".to_owned()));
+    let load_mode_idx = params.iter().position(|r| r == "--load-mode").unwrap();
+    assert_eq!(params[load_mode_idx + 1], "none");
+    assert!(!params.contains(&"--no-mmap".to_owned()));
 
     Ok(())
 }
@@ -514,6 +523,7 @@ fn test_build_launch_parameters_subtraction_resolution() -> Result<(), Box<dyn s
         mmproj: None,
         draft_model: None,
         draft_ngl: "".to_owned(),
+        model_alias: None,
     };
 
     let params = build_launch_parameters(
@@ -557,6 +567,7 @@ fn test_build_launch_parameters_tensor_split_and_fit() -> TestResult {
         mmproj: None,
         draft_model: None,
         draft_ngl: "".to_owned(),
+        model_alias: None,
     };
 
     let params = build_launch_parameters(
@@ -656,6 +667,285 @@ fn test_parse_server_version() -> TestResult {
         let ver = get_server_version(&real_exe);
         assert!(!ver.is_empty() && ver != "Unknown");
     }
+
+    Ok(())
+}
+
+#[test]
+fn test_build_launch_parameters_model_alias() -> TestResult {
+    let exe_path = PathBuf::from("/bin/llama-server");
+    let model_path = PathBuf::from("/models/gemma-2b.gguf");
+
+    // 1. Explicit model_alias from UserSettings
+    let assets = ModelAssets {
+        config: HashMap::new(),
+        jinja_template: None,
+    };
+    let settings_explicit = UserSettings {
+        ctx: 2048,
+        ngl: "32".to_owned(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "".to_owned(),
+        model_alias: Some("Gemma 4 Custom".to_owned()),
+    };
+    let params1 = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings_explicit,
+        &HashMap::new(),
+        8080,
+    );
+    let alias_idx1 = params1.iter().position(|r| r == "--alias").unwrap();
+    assert_eq!(params1[alias_idx1 + 1], "Gemma 4 Custom");
+
+    // 2. Fallback to custom-name in assets config when model_alias is None
+    let mut config_data = HashMap::new();
+    let mut herd_map = serde_json::Map::new();
+    herd_map.insert(
+        "custom-name".to_owned(),
+        serde_json::json!("Configured Custom"),
+    );
+    config_data.insert("llama-herd".to_owned(), serde_json::Value::Object(herd_map));
+    let assets_with_custom = ModelAssets {
+        config: config_data,
+        jinja_template: None,
+    };
+    let settings_none = UserSettings {
+        ctx: 2048,
+        ngl: "32".to_owned(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "".to_owned(),
+        model_alias: None,
+    };
+    let params2 = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets_with_custom,
+        &settings_none,
+        &HashMap::new(),
+        8080,
+    );
+    let alias_idx2 = params2.iter().position(|r| r == "--alias").unwrap();
+    assert_eq!(params2[alias_idx2 + 1], "Configured Custom");
+
+    // 3. Fallback to clean generated model id when no custom name exists
+    let params3 = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings_none,
+        &HashMap::new(),
+        8080,
+    );
+    let alias_idx3 = params3.iter().position(|r| r == "--alias").unwrap();
+    assert_eq!(params3[alias_idx3 + 1], "gemma-2b");
+
+    Ok(())
+}
+
+#[test]
+fn test_resolve_load_mode_logic() {
+    // Explicit takes priority
+    assert_eq!(
+        resolve_load_mode(Some("mmap+mlock"), false, false),
+        Some("mmap+mlock".to_owned())
+    );
+    assert_eq!(
+        resolve_load_mode(Some("dio"), true, true),
+        Some("dio".to_owned())
+    );
+    assert_eq!(
+        resolve_load_mode(Some("auto"), false, false),
+        Some("auto".to_owned())
+    );
+
+    // Fallback to legacy mlock
+    assert_eq!(
+        resolve_load_mode(None, true, false),
+        Some("mlock".to_owned())
+    );
+    assert_eq!(
+        resolve_load_mode(None, true, true),
+        Some("mlock".to_owned())
+    );
+
+    // Fallback to legacy no-mmap
+    assert_eq!(
+        resolve_load_mode(None, false, true),
+        Some("none".to_owned())
+    );
+
+    // Default when neither is set
+    assert_eq!(resolve_load_mode(None, false, false), None);
+}
+
+#[test]
+fn test_build_launch_parameters_load_mode_and_mlock() -> TestResult {
+    let exe_path = PathBuf::from("llama-server");
+    let model_path = PathBuf::from("model.gguf");
+    let assets = ModelAssets {
+        config: HashMap::new(),
+        jinja_template: None,
+    };
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "0".to_owned(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "0".to_owned(),
+        model_alias: None,
+    };
+
+    // 1. mlock = true generates --load-mode mlock
+    let mut global_config = HashMap::new();
+    global_config.insert("mlock".to_owned(), serde_json::json!(true));
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &global_config,
+        8080,
+    );
+    let lm_idx = params.iter().position(|r| r == "--load-mode").unwrap();
+    assert_eq!(params[lm_idx + 1], "mlock");
+    assert!(!params.contains(&"--mlock".to_owned()));
+
+    // 2. Explicit load-mode = "mmap+mlock"
+    let mut global_config_lm = HashMap::new();
+    global_config_lm.insert("load-mode".to_owned(), serde_json::json!("mmap+mlock"));
+    let params_lm = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &global_config_lm,
+        8080,
+    );
+    let lm_idx2 = params_lm.iter().position(|r| r == "--load-mode").unwrap();
+    assert_eq!(params_lm[lm_idx2 + 1], "mmap+mlock");
+
+    // 3. Router mode with mlock = true
+    let router_params = build_router_launch_parameters(
+        &exe_path,
+        &PathBuf::from("/models/presets.ini"),
+        &global_config,
+        8080,
+    );
+    let r_lm_idx = router_params
+        .iter()
+        .position(|r| r == "--load-mode")
+        .unwrap();
+    assert_eq!(router_params[r_lm_idx + 1], "mlock");
+    assert!(!router_params.contains(&"--mlock".to_owned()));
+
+    Ok(())
+}
+
+#[test]
+fn test_build_launch_parameters_speculative_n_ubatch_and_sampling() -> TestResult {
+    let exe_path = PathBuf::from("llama-server");
+    let model_path = PathBuf::from("model.gguf");
+
+    let mut config_data = HashMap::new();
+    let mut draft_map = serde_json::Map::new();
+    draft_map.insert("spec-type".to_owned(), serde_json::json!("draft-mtp"));
+    draft_map.insert("spec-draft-n-max".to_owned(), serde_json::json!(5));
+    draft_map.insert("spec-draft-p-min".to_owned(), serde_json::json!(0.9));
+    draft_map.insert("spec-draft-n-ubatch".to_owned(), serde_json::json!(16));
+    draft_map.insert(
+        "spec-draft-sampling".to_owned(),
+        serde_json::json!("probabilistic"),
+    );
+    config_data.insert(
+        "llama-server-long".to_owned(),
+        serde_json::Value::Object(draft_map),
+    );
+
+    let assets = ModelAssets {
+        config: config_data,
+        jinja_template: None,
+    };
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "0".to_owned(),
+        mmproj: None,
+        draft_model: Some(PathBuf::from("draft.gguf")),
+        draft_ngl: "0".to_owned(),
+        model_alias: None,
+    };
+
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &HashMap::new(),
+        8080,
+    );
+
+    let ubatch_idx = params
+        .iter()
+        .position(|r| r == "--spec-draft-n-ubatch")
+        .unwrap();
+    assert_eq!(params[ubatch_idx + 1], "16");
+
+    let sampling_idx = params
+        .iter()
+        .position(|r| r == "--spec-draft-sampling")
+        .unwrap();
+    assert_eq!(params[sampling_idx + 1], "probabilistic");
+
+    Ok(())
+}
+
+#[test]
+fn test_build_launch_parameters_moe_cache_mib() -> TestResult {
+    let exe_path = PathBuf::from("llama-server");
+    let model_path = PathBuf::from("model.gguf");
+    let assets = ModelAssets {
+        config: HashMap::new(),
+        jinja_template: None,
+    };
+    let settings = UserSettings {
+        ctx: 2048,
+        ngl: "0".to_owned(),
+        mmproj: None,
+        draft_model: None,
+        draft_ngl: "0".to_owned(),
+        model_alias: None,
+    };
+
+    let mut global_config = HashMap::new();
+    global_config.insert("moe-cache-mib".to_owned(), serde_json::json!(2048));
+
+    let params = build_launch_parameters(
+        &exe_path,
+        &model_path,
+        &assets,
+        &settings,
+        &global_config,
+        8080,
+    );
+
+    let moe_idx = params.iter().position(|r| r == "--moe-cache-mib").unwrap();
+    assert_eq!(params[moe_idx + 1], "2048");
+
+    let router_params = build_router_launch_parameters(
+        &exe_path,
+        &PathBuf::from("/models/presets.ini"),
+        &global_config,
+        8080,
+    );
+
+    let r_moe_idx = router_params
+        .iter()
+        .position(|r| r == "--moe-cache-mib")
+        .unwrap();
+    assert_eq!(router_params[r_moe_idx + 1], "2048");
 
     Ok(())
 }

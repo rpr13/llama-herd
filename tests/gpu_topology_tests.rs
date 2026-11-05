@@ -98,7 +98,7 @@ fn test_scan_gpu_topology_fallback() {
     let devices = scan_gpu_topology();
     // Verify scan returns a valid Vec (either empty on systems without supported GPU tools, or detected GPUs)
     for dev in &devices {
-        assert!(!dev.name.is_empty());
+        assert_ne!(dev.name, "");
         assert!(matches!(
             dev.driver_type,
             DriverType::Cuda | DriverType::Rocm | DriverType::Wddm | DriverType::Unknown

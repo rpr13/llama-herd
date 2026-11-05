@@ -45,7 +45,7 @@ fn show_help() {
     std::process::exit(0);
 }
 
-#[allow(clippy::exit)]
+#[allow(clippy::exit, clippy::too_many_lines)]
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let (should_show_help, generate_ini) = config::parse_args(&args);
@@ -125,22 +125,34 @@ fn main() {
     }
 
     // Retrieve active presets list
-    let presets = discovery::discover_presets_from_ini(&preset_ini_path);
-    if presets.is_empty() {
-        eprintln!("Error: No valid presets discovered in models-preset.ini.");
-        std::process::exit(1);
-    }
+    let (presets, fallback_to_hidden) = {
+        let active = discovery::discover_presets_from_ini(&preset_ini_path);
+        if active.is_empty() {
+            let hidden_presets = discovery::discover_hidden_presets(&models_dir);
+            if hidden_presets.is_empty() {
+                eprintln!("Error: No valid presets discovered in models-preset.ini.");
+                std::process::exit(1);
+            }
+            (hidden_presets, true)
+        } else {
+            (active, false)
+        }
+    };
 
     // Load Theme
     let theme_path = lh_dir.join("theme.toml");
-    let theme = if theme_path.exists() {
-        tui::theme::Theme::load(&theme_path)
-    } else {
-        tui::theme::Theme::default()
-    };
+    let theme_str = config::get_global_config_string(&global_config, "theme", "default");
+    let theme_preset = tui::theme::ThemePreset::from_id(&theme_str);
+    let theme_transparent = global_config
+        .get("llama-herd")
+        .and_then(|lh| lh.get("theme-transparent"))
+        .or_else(|| global_config.get("theme-transparent"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(theme_preset == tui::theme::ThemePreset::Default);
+    let theme = theme_preset.build_theme(Some(&theme_path), theme_transparent);
 
     // Run Ratatui Dashboard
-    let app_state = AppState::new(
+    let mut app_state = AppState::new(
         presets,
         models_dir,
         preset_ini_path,
@@ -148,6 +160,10 @@ fn main() {
         server_exe,
         theme,
     );
+    if fallback_to_hidden {
+        app_state.show_hidden = true;
+        app_state.rebuild_grouped_models();
+    }
 
     if let Err(err) = tui::run_tui(app_state) {
         eprintln!("TUI Error: {err}");

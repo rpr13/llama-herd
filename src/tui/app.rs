@@ -76,6 +76,24 @@ pub enum AppScreen {
     EditingSpecDraftNMax,
     /// Editing speculative draft min probability (spec-draft-p-min).
     EditingSpecDraftPMin,
+    /// File picker for selecting a global setting file path (api-key-file, ssl-key-file, ssl-cert-file).
+    PickingGlobalSettingFile,
+    /// Selecting model variants filter from dropdown mode.
+    SelectingVariants,
+    /// Selecting context size from dropdown mode.
+    SelectingCtx,
+    /// Editing N-CPU-MoE layers parameter input mode.
+    EditingNCpuMoe,
+    /// Editing `MoE` Cache MiB parameter input mode.
+    EditingMoeCacheMib,
+    /// Editing speculative draft ubatch size (spec-draft-n-ubatch).
+    EditingSpecDraftNUbatch,
+    /// Selecting speculative draft sampling algorithm (spec-draft-sampling).
+    SelectingSpecDraftSampling,
+    /// Selecting reasoning effort level dropdown mode.
+    SelectingReasoningEffort,
+    /// Selecting reasoning preserve mode dropdown mode.
+    SelectingReasoningPreserve,
 }
 
 /// The focus panels on the TUI dashboard tab.
@@ -150,6 +168,8 @@ pub struct GroupedModel {
     pub variants: Vec<ModelVariantItem>,
     /// Index of the currently active variant in the `variants` list.
     pub selected_variant_index: usize,
+    /// Flag indicating whether this model is marked hidden in its configuration.
+    pub is_hidden: bool,
 }
 
 /// Representation of the state/contents of the GGUF models directory.
@@ -211,8 +231,12 @@ pub struct AppState {
     pub preset_index: usize,
     /// List of models grouped by base GGUF file with available variants.
     pub grouped_models: Vec<GroupedModel>,
+    /// Flag indicating whether hidden models should be displayed in the models list.
+    pub show_hidden: bool,
     /// Index of the currently selected grouped model in `grouped_models`.
     pub selected_model_index: usize,
+    /// Override hidden model configuration state.
+    pub hidden: bool,
     /// Currently selected global settings index.
     pub settings_index: usize,
     /// Active file picker instance.
@@ -265,6 +289,14 @@ pub struct AppState {
     pub is_router_mode: bool,
     /// Styling theme.
     pub theme: crate::tui::theme::Theme,
+    /// Active theme preset.
+    pub theme_preset: crate::tui::theme::ThemePreset,
+    /// Whether terminal background transparency is enabled.
+    pub theme_transparent: bool,
+    /// Path to user theme.toml.
+    pub theme_path: PathBuf,
+    /// Last modified time of theme.toml for live hot-reloading.
+    pub theme_mtime: Option<std::time::SystemTime>,
     /// Selected option index in a dropdown menu.
     pub option_selector_index: usize,
     /// List of options in a dropdown menu.
@@ -315,12 +347,24 @@ pub struct AppState {
     pub reasoning_format: String,
     /// Override reasoning budget.
     pub reasoning_budget: String,
+    /// Override reasoning effort level (reasoning-effort).
+    pub reasoning_effort: String,
+    /// Override reasoning preserve history flag (reasoning-preserve).
+    pub reasoning_preserve: String,
     /// Override speculative type (spec-type).
     pub spec_type: String,
     /// Override speculative draft max tokens (spec-draft-n-max).
     pub spec_draft_n_max: String,
     /// Override speculative draft min probability (spec-draft-p-min).
     pub spec_draft_p_min: String,
+    /// Override N-CPU-MoE layers (n-cpu-moe).
+    pub n_cpu_moe: String,
+    /// Override `MoE` Cache size in MiB (moe-cache-mib).
+    pub moe_cache_mib: String,
+    /// Override speculative draft ubatch size (spec-draft-n-ubatch).
+    pub spec_draft_n_ubatch: String,
+    /// Override speculative draft sampling algorithm (spec-draft-sampling).
+    pub spec_draft_sampling: String,
 
     /// List of reasoning settings options.
     pub reasoning_list: Vec<String>,
@@ -336,12 +380,33 @@ pub struct AppState {
     /// Backup of the selected reasoning format index.
     pub reasoning_format_index_backup: usize,
 
+    /// List of reasoning effort options.
+    pub reasoning_effort_list: Vec<String>,
+    /// Selected reasoning effort index.
+    pub reasoning_effort_index: usize,
+    /// Backup of the selected reasoning effort index.
+    pub reasoning_effort_index_backup: usize,
+
+    /// List of reasoning preserve options.
+    pub reasoning_preserve_list: Vec<String>,
+    /// Selected reasoning preserve index.
+    pub reasoning_preserve_index: usize,
+    /// Backup of the selected reasoning preserve index.
+    pub reasoning_preserve_index_backup: usize,
+
     /// List of speculative type options.
     pub spec_type_list: Vec<String>,
     /// Selected speculative type index.
     pub spec_type_index: usize,
     /// Backup of the selected speculative type index.
     pub spec_type_backup: usize,
+
+    /// List of speculative draft sampling options.
+    pub spec_draft_sampling_list: Vec<String>,
+    /// Selected speculative draft sampling index.
+    pub spec_draft_sampling_index: usize,
+    /// Backup of the selected speculative draft sampling index.
+    pub spec_draft_sampling_backup: usize,
 
     /// Original context size input string (to check for edits).
     pub original_ctx_str: String,
@@ -392,10 +457,18 @@ pub struct AppState {
     pub original_reasoning_format: String,
     /// Original reasoning budget (to check for edits).
     pub original_reasoning_budget: String,
+    /// Original reasoning effort level (to check for edits).
+    pub original_reasoning_effort: String,
+    /// Original reasoning preserve flag (to check for edits).
+    pub original_reasoning_preserve: String,
     /// Original reasoning index (to check for edits).
     pub original_reasoning_index: usize,
     /// Original reasoning format index (to check for edits).
     pub original_reasoning_format_index: usize,
+    /// Original reasoning effort index (to check for edits).
+    pub original_reasoning_effort_index: usize,
+    /// Original reasoning preserve index (to check for edits).
+    pub original_reasoning_preserve_index: usize,
     /// Original speculative type setting (to check for edits).
     pub original_spec_type: String,
     /// Original speculative type index (to check for edits).
@@ -404,6 +477,18 @@ pub struct AppState {
     pub original_spec_draft_n_max: String,
     /// Original speculative draft min probability (to check for edits).
     pub original_spec_draft_p_min: String,
+    /// Original N-CPU-MoE layers (to check for edits).
+    pub original_n_cpu_moe: String,
+    /// Original `MoE` Cache size in MiB (to check for edits).
+    pub original_moe_cache_mib: String,
+    /// Original speculative draft ubatch size (to check for edits).
+    pub original_spec_draft_n_ubatch: String,
+    /// Original speculative draft sampling algorithm (to check for edits).
+    pub original_spec_draft_sampling: String,
+    /// Original speculative draft sampling index (to check for edits).
+    pub original_spec_draft_sampling_index: usize,
+    /// Original hidden model configuration state (to check for edits).
+    pub original_hidden: bool,
 
     /// Number of clock ticks (useful for flash animations).
     pub tick_count: u64,
@@ -439,6 +524,22 @@ impl AppState {
         let models_dir_invalid = std::fs::read_dir(&models_dir).is_err();
         let shared_models_dir = std::sync::Arc::new(std::sync::Mutex::new(models_dir.clone()));
 
+        let theme_path = crate::config::get_llama_herd_dir().join("theme.toml");
+        let theme_str = crate::config::get_global_config_string(&global_config, "theme", "default");
+        let theme_preset = crate::tui::theme::ThemePreset::from_id(&theme_str);
+        let theme_transparent = global_config
+            .get("llama-herd")
+            .and_then(|lh| lh.get("theme-transparent"))
+            .or_else(|| global_config.get("theme-transparent"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(theme_preset == crate::tui::theme::ThemePreset::Default);
+        let theme_mtime = theme_path.metadata().and_then(|m| m.modified()).ok();
+        let resolved_theme = if theme == crate::tui::theme::Theme::default() {
+            theme_preset.build_theme(Some(&theme_path), theme_transparent)
+        } else {
+            theme
+        };
+
         let mut state = Self {
             dashboard_focus: DashboardFocus::Left,
             dashboard_param_index: 0,
@@ -452,7 +553,9 @@ impl AppState {
             active_tab: 0,
             preset_index: 0,
             grouped_models: Vec::new(),
+            show_hidden: false,
             selected_model_index: 0,
+            hidden: false,
             settings_index: 0,
             picker: None,
             ctx: 131_072,
@@ -476,7 +579,11 @@ impl AppState {
             auto_scroll: true,
             last_launch_args: Vec::new(),
             is_router_mode: false,
-            theme,
+            theme: resolved_theme,
+            theme_preset,
+            theme_transparent,
+            theme_path,
+            theme_mtime,
             option_selector_index: 0,
             option_selector_list: Vec::new(),
             config_path: crate::config::get_llama_herd_dir().join("config.toml"),
@@ -501,9 +608,15 @@ impl AppState {
             reasoning: String::new(),
             reasoning_format: String::new(),
             reasoning_budget: String::new(),
+            reasoning_effort: String::new(),
+            reasoning_preserve: String::new(),
             spec_type: String::new(),
             spec_draft_n_max: String::new(),
             spec_draft_p_min: String::new(),
+            n_cpu_moe: String::new(),
+            moe_cache_mib: String::new(),
+            spec_draft_n_ubatch: String::new(),
+            spec_draft_sampling: String::new(),
             reasoning_list: vec![
                 String::new(),
                 "auto".to_owned(),
@@ -521,15 +634,44 @@ impl AppState {
             ],
             reasoning_format_index: 0,
             reasoning_format_index_backup: 0,
+            reasoning_effort_list: vec![
+                String::new(),
+                "default".to_owned(),
+                "minimal".to_owned(),
+                "low".to_owned(),
+                "medium".to_owned(),
+                "high".to_owned(),
+                "xhigh".to_owned(),
+                "max".to_owned(),
+            ],
+            reasoning_effort_index: 0,
+            reasoning_effort_index_backup: 0,
+            reasoning_preserve_list: vec![String::new(), "true".to_owned(), "false".to_owned()],
+            reasoning_preserve_index: 0,
+            reasoning_preserve_index_backup: 0,
             spec_type_list: vec![
                 String::new(),
                 "none".to_owned(),
-                "draft".to_owned(),
                 "draft-mtp".to_owned(),
                 "draft-eagle3".to_owned(),
+                "draft-simple".to_owned(),
+                "draft-dflash".to_owned(),
+                "draft-dspark".to_owned(),
+                "ngram-simple".to_owned(),
+                "ngram-map-k".to_owned(),
+                "ngram-map-k4v".to_owned(),
+                "ngram-mod".to_owned(),
+                "ngram-cache".to_owned(),
             ],
             spec_type_index: 0,
             spec_type_backup: 0,
+            spec_draft_sampling_list: vec![
+                String::new(),
+                "greedy".to_owned(),
+                "probabilistic".to_owned(),
+            ],
+            spec_draft_sampling_index: 0,
+            spec_draft_sampling_backup: 0,
             original_ctx_str: String::new(),
             original_ctx: 131_072,
             original_ngl: "auto".to_owned(),
@@ -554,12 +696,22 @@ impl AppState {
             original_reasoning: String::new(),
             original_reasoning_format: String::new(),
             original_reasoning_budget: String::new(),
+            original_reasoning_effort: String::new(),
+            original_reasoning_preserve: String::new(),
             original_reasoning_index: 0,
             original_reasoning_format_index: 0,
+            original_reasoning_effort_index: 0,
+            original_reasoning_preserve_index: 0,
             original_spec_type: String::new(),
             original_spec_type_index: 0,
             original_spec_draft_n_max: String::new(),
             original_spec_draft_p_min: String::new(),
+            original_n_cpu_moe: String::new(),
+            original_moe_cache_mib: String::new(),
+            original_spec_draft_n_ubatch: String::new(),
+            original_spec_draft_sampling: String::new(),
+            original_spec_draft_sampling_index: 0,
+            original_hidden: false,
             tick_count: 0,
             last_models_dir_state: last_models_dir_state.clone(),
             last_stable_models_dir_state: last_models_dir_state,
@@ -596,10 +748,18 @@ impl AppState {
         state
     }
 
+    /// Reloads the application theme according to current `theme_preset` and `theme_transparent` settings.
+    pub fn reload_theme(&mut self) {
+        self.theme = self
+            .theme_preset
+            .build_theme(Some(&self.theme_path), self.theme_transparent);
+        self.theme_mtime = self.theme_path.metadata().and_then(|m| m.modified()).ok();
+    }
+
     /// Rebuilds the grouped models data structure from `self.presets` and the preset INI configuration.
     #[allow(clippy::too_many_lines)]
     pub fn rebuild_grouped_models(&mut self) {
-        if self.presets.is_empty() {
+        if self.presets.is_empty() && !self.show_hidden {
             self.grouped_models.clear();
             self.selected_model_index = 0;
             return;
@@ -613,6 +773,13 @@ impl AppState {
         let mut grouped: Vec<GroupedModel> = Vec::new();
 
         for (preset_index, (preset_name, model_path)) in self.presets.iter().enumerate() {
+            if !self.show_hidden {
+                let assets = crate::discovery::discover_assets(model_path, &self.models_dir);
+                if crate::discovery::is_model_hidden(&assets.config) {
+                    continue;
+                }
+            }
+
             let variant = if let Some(sec) = ini_sections.as_ref().and_then(|s| s.get(preset_name))
             {
                 let has_draft = sec
@@ -648,7 +815,43 @@ impl AppState {
                     model_path: model_path.clone(),
                     variants: vec![item],
                     selected_variant_index: 0,
+                    is_hidden: false,
                 });
+            }
+        }
+
+        if self.show_hidden {
+            let hidden_presets = crate::discovery::discover_hidden_presets(&self.models_dir);
+            for (name, path) in hidden_presets {
+                if let Some(existing) = grouped.iter_mut().find(|g| {
+                    g.model_path.file_name() == path.file_name()
+                        || g.base_name == crate::discovery::clean_model_id(&path)
+                }) {
+                    existing.is_hidden = true;
+                } else {
+                    let matching_idx = self
+                        .presets
+                        .iter()
+                        .position(|(_, p)| {
+                            p == &path
+                                || p.file_name() == path.file_name()
+                                || crate::discovery::clean_model_id(p)
+                                    == crate::discovery::clean_model_id(&path)
+                        })
+                        .unwrap_or(0);
+                    let item = ModelVariantItem {
+                        variant: ModelVariant::Base,
+                        preset_name: name,
+                        preset_index: matching_idx,
+                    };
+                    grouped.push(GroupedModel {
+                        base_name: crate::discovery::clean_model_id(&path),
+                        model_path: path,
+                        variants: vec![item],
+                        selected_variant_index: 0,
+                        is_hidden: true,
+                    });
+                }
             }
         }
 
@@ -662,10 +865,9 @@ impl AppState {
                 .grouped_models
                 .iter()
                 .find(|p| p.model_path == g.model_path)
+                && prev.selected_variant_index < g.variants.len()
             {
-                if prev.selected_variant_index < g.variants.len() {
-                    g.selected_variant_index = prev.selected_variant_index;
-                }
+                g.selected_variant_index = prev.selected_variant_index;
             }
         }
 
@@ -691,7 +893,32 @@ impl AppState {
             }
         }
 
+        if grouped.is_empty() {
+            self.selected_model_index = 0;
+            self.preset_index = 0;
+        } else {
+            self.selected_model_index = self.selected_model_index.min(grouped.len() - 1);
+            let model = &mut grouped[self.selected_model_index];
+            if !model.variants.is_empty() {
+                model.selected_variant_index = model
+                    .selected_variant_index
+                    .min(model.variants.len().saturating_sub(1));
+            }
+        }
+
         self.grouped_models = grouped;
+    }
+
+    /// Toggles the visibility of hidden models in the dashboard left panel.
+    pub fn toggle_show_hidden(&mut self) {
+        self.show_hidden = !self.show_hidden;
+        self.rebuild_grouped_models();
+        if !self.grouped_models.is_empty() {
+            self.selected_model_index = self
+                .selected_model_index
+                .min(self.grouped_models.len().saturating_sub(1));
+            self.load_current_preset_settings(None);
+        }
     }
 
     /// Cycles to the next variant for the currently selected model, wrapping around.
@@ -780,6 +1007,48 @@ impl AppState {
         self.custom_names.get(key).map_or("", |s| s.as_str())
     }
 
+    /// Returns the auto-generated preset name for the currently selected model variant based on clean model ID and variant suffixes.
+    #[must_use]
+    pub fn current_auto_preset_name(&self) -> String {
+        let active_variant = self
+            .grouped_models
+            .get(self.selected_model_index)
+            .and_then(|m| m.variants.get(m.selected_variant_index))
+            .map_or(ModelVariant::Base, |v| v.variant);
+        let clean_name = if self.presets.is_empty() {
+            if let Some(m) = self.grouped_models.get(self.selected_model_index) {
+                m.base_name.clone()
+            } else {
+                "None".to_owned()
+            }
+        } else if self.preset_index < self.presets.len() {
+            crate::discovery::clean_model_id(&self.presets[self.preset_index].1)
+        } else if let Some(m) = self.grouped_models.get(self.selected_model_index) {
+            m.base_name.clone()
+        } else {
+            "None".to_owned()
+        };
+
+        match active_variant {
+            ModelVariant::Base => clean_name,
+            ModelVariant::Draft => crate::discovery::insert_variant_suffix(&clean_name, "draft"),
+            ModelVariant::Vision => crate::discovery::insert_variant_suffix(&clean_name, "vision"),
+            ModelVariant::DraftVision => {
+                crate::discovery::insert_variant_suffix(&clean_name, "draft-vision")
+            }
+        }
+    }
+
+    /// Returns the effective model name: the custom name if set/non-empty, otherwise the auto-generated preset name.
+    #[must_use]
+    pub fn current_effective_model_name(&self) -> String {
+        let custom = self.current_custom_name().trim();
+        if !custom.is_empty() {
+            return custom.to_owned();
+        }
+        self.current_auto_preset_name()
+    }
+
     /// Sets or removes the custom display name for the currently active variant.
     #[allow(clippy::needless_pass_by_value)]
     pub fn set_current_custom_name(&mut self, val: String) {
@@ -800,22 +1069,42 @@ impl AppState {
     )]
     pub fn load_current_preset_settings(&mut self, toml_path_override: Option<PathBuf>) {
         self.models_dir_changed_dirty = false;
-        if self.presets.is_empty() {
-            return;
-        }
-        if self.preset_index >= self.presets.len() {
-            self.preset_index = 0;
-        }
+        let (preset_name, model_path): (String, PathBuf) =
+            if let Some(grouped_model) = self.grouped_models.get(self.selected_model_index) {
+                let p_name = grouped_model
+                    .variants
+                    .get(grouped_model.selected_variant_index)
+                    .map_or_else(
+                        || grouped_model.base_name.clone(),
+                        |v| v.preset_name.clone(),
+                    );
+                (p_name, grouped_model.model_path.clone())
+            } else if !self.presets.is_empty() {
+                if self.preset_index >= self.presets.len() {
+                    self.preset_index = 0;
+                }
+                let (ref p_name, ref m_path) = self.presets[self.preset_index];
+                (p_name.clone(), m_path.clone())
+            } else if let Some(ref override_path) = toml_path_override {
+                let m_path = override_path.with_extension("gguf");
+                let p_name = crate::discovery::clean_model_id(&m_path);
+                (p_name, m_path)
+            } else {
+                return;
+            };
 
-        let (preset_name, model_path) = &self.presets[self.preset_index];
         let mut ini_settings =
-            crate::config::load_settings_from_ini(preset_name, &self.preset_path)
+            crate::config::load_settings_from_ini(&preset_name, &self.preset_path)
                 .unwrap_or_default();
 
-        let mut assets = crate::discovery::discover_assets(model_path, &self.models_dir);
+        let mut assets = crate::discovery::discover_assets(&model_path, &self.models_dir);
         if let Some(ref path) = toml_path_override {
             assets.config = crate::config::load_toml_silent(path);
         }
+
+        let is_hidden = crate::discovery::is_model_hidden(&assets.config);
+        self.hidden = is_hidden;
+        self.original_hidden = is_hidden;
         let get_lh_val = |key: &str| -> Option<&serde_json::Value> {
             assets.config.get("llama-herd").and_then(|lh| lh.get(key))
         };
@@ -835,16 +1124,16 @@ impl AppState {
         if let Some(val) = custom_val {
             if let Some(obj) = val.as_object() {
                 for (k, v) in obj {
-                    if let Some(s) = v.as_str() {
-                        if !s.trim().is_empty() {
-                            custom_names.insert(k.clone(), s.trim().to_owned());
-                        }
+                    if let Some(s) = v.as_str()
+                        && !s.trim().is_empty()
+                    {
+                        custom_names.insert(k.clone(), s.trim().to_owned());
                     }
                 }
-            } else if let Some(s) = val.as_str() {
-                if !s.trim().is_empty() {
-                    custom_names.insert("base".to_owned(), s.trim().to_owned());
-                }
+            } else if let Some(s) = val.as_str()
+                && !s.trim().is_empty()
+            {
+                custom_names.insert("base".to_owned(), s.trim().to_owned());
             }
         }
         self.custom_names = custom_names.clone();
@@ -947,14 +1236,14 @@ impl AppState {
                         .to_string_lossy()
                         .to_lowercase()
                         .contains("mmproj")
-                    && &path != model_path
+                    && path != model_path
                 {
                     let stem = path
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("")
                         .to_lowercase();
-                    let mut is_draft = false;
+                    let mut is_draft = crate::discovery::is_draft_sidecar_filename(&stem);
                     if let Ok(sub_entries) = std::fs::read_dir(&self.models_dir) {
                         for se in sub_entries.flatten() {
                             let sp = se.path();
@@ -1025,7 +1314,7 @@ impl AppState {
             } else {
                 // Automatically select draft if discovered by heuristic
                 let heuristic_draft = crate::discovery::find_matching_draft(
-                    model_path,
+                    &model_path,
                     &self
                         .draft_list
                         .iter()
@@ -1093,7 +1382,7 @@ impl AppState {
         }
 
         let toml_path = toml_path_override
-            .unwrap_or_else(|| crate::config::resolve_toml_path(model_path, &self.models_dir));
+            .unwrap_or_else(|| crate::config::resolve_toml_path(&model_path, &self.models_dir));
         let config_file_name = toml_path
             .file_name()
             .and_then(|s| s.to_str())
@@ -1129,11 +1418,28 @@ impl AppState {
         let reasoning_val = get_string_val(get_long_val("reasoning"));
         let reasoning_format_val = get_string_val(get_long_val("reasoning-format"));
         let reasoning_budget_val = get_string_val(get_long_val("reasoning-budget"));
+        let reasoning_effort_val = get_string_val(get_long_val("reasoning-effort"));
+        let reasoning_preserve_val = get_string_val(get_long_val("reasoning-preserve"));
         let spec_draft_n_max_val = get_string_val(
             get_long_val("spec-draft-n-max").or_else(|| get_draft_long("spec-draft-n-max")),
         );
         let spec_draft_p_min_val = get_string_val(
             get_long_val("spec-draft-p-min").or_else(|| get_draft_long("spec-draft-p-min")),
+        );
+        let n_cpu_moe_val = get_string_val(
+            get_long_val("n-cpu-moe")
+                .or_else(|| config.get("llama-herd").and_then(|lh| lh.get("n-cpu-moe"))),
+        );
+        let moe_cache_mib_val = get_string_val(get_long_val("moe-cache-mib").or_else(|| {
+            config
+                .get("llama-herd")
+                .and_then(|lh| lh.get("moe-cache-mib"))
+        }));
+        let spec_draft_n_ubatch_val = get_string_val(
+            get_long_val("spec-draft-n-ubatch").or_else(|| get_draft_long("spec-draft-n-ubatch")),
+        );
+        let spec_draft_sampling_val = get_string_val(
+            get_long_val("spec-draft-sampling").or_else(|| get_draft_long("spec-draft-sampling")),
         );
 
         self.config_file_name = config_file_name.clone();
@@ -1201,6 +1507,26 @@ impl AppState {
         self.reasoning_budget = reasoning_budget_val.clone();
         self.original_reasoning_budget = reasoning_budget_val;
 
+        self.reasoning_effort.clone_from(&reasoning_effort_val);
+        self.original_reasoning_effort
+            .clone_from(&reasoning_effort_val);
+        self.reasoning_effort_index = self
+            .reasoning_effort_list
+            .iter()
+            .position(|r| r == &reasoning_effort_val)
+            .unwrap_or(0);
+        self.original_reasoning_effort_index = self.reasoning_effort_index;
+
+        self.reasoning_preserve.clone_from(&reasoning_preserve_val);
+        self.original_reasoning_preserve
+            .clone_from(&reasoning_preserve_val);
+        self.reasoning_preserve_index = self
+            .reasoning_preserve_list
+            .iter()
+            .position(|r| r == &reasoning_preserve_val)
+            .unwrap_or(0);
+        self.original_reasoning_preserve_index = self.reasoning_preserve_index;
+
         self.spec_type.clone_from(&spec_type_val);
         self.original_spec_type.clone_from(&spec_type_val);
         self.spec_type_index = self
@@ -1215,6 +1541,26 @@ impl AppState {
 
         self.spec_draft_p_min = spec_draft_p_min_val.clone();
         self.original_spec_draft_p_min = spec_draft_p_min_val;
+
+        self.n_cpu_moe = n_cpu_moe_val.clone();
+        self.original_n_cpu_moe = n_cpu_moe_val;
+
+        self.moe_cache_mib = moe_cache_mib_val.clone();
+        self.original_moe_cache_mib = moe_cache_mib_val;
+
+        self.spec_draft_n_ubatch = spec_draft_n_ubatch_val.clone();
+        self.original_spec_draft_n_ubatch = spec_draft_n_ubatch_val;
+
+        self.spec_draft_sampling
+            .clone_from(&spec_draft_sampling_val);
+        self.original_spec_draft_sampling
+            .clone_from(&spec_draft_sampling_val);
+        self.spec_draft_sampling_index = self
+            .spec_draft_sampling_list
+            .iter()
+            .position(|s| s == &spec_draft_sampling_val)
+            .unwrap_or(0);
+        self.original_spec_draft_sampling_index = self.spec_draft_sampling_index;
 
         self.original_total_layers = self.total_layers;
         self.original_variants = self.variants.clone();
@@ -1263,9 +1609,21 @@ impl AppState {
             .and_then(|v| v.as_object().cloned())
             .unwrap_or_default();
 
-        // 1. ctx-size
+        // 1. ctx-size (save as "<N>k" when evenly divisible by 1024)
         if self.ctx_str.is_empty() {
             long_obj.remove("ctx-size");
+        } else if let Ok(tokens) = crate::config::parse_ctx_str(&self.ctx_str) {
+            if tokens > 0 && tokens % 1024 == 0 {
+                long_obj.insert(
+                    "ctx-size".to_owned(),
+                    serde_json::Value::String(format!("{}k", tokens / 1024)),
+                );
+            } else {
+                long_obj.insert(
+                    "ctx-size".to_owned(),
+                    serde_json::Value::Number((tokens as i64).into()),
+                );
+            }
         } else if let Ok(num) = self.ctx_str.parse::<i64>() {
             long_obj.insert("ctx-size".to_owned(), serde_json::Value::Number(num.into()));
         } else {
@@ -1286,6 +1644,12 @@ impl AppState {
                 serde_json::Value::String(self.ngl.clone()),
             );
         }
+
+        // n-cpu-moe & moe-cache-mib
+        update_int_setting(&mut long_obj, "n-cpu-moe", &self.n_cpu_moe);
+        herd_obj.remove("n-cpu-moe");
+        update_int_setting(&mut long_obj, "moe-cache-mib", &self.moe_cache_mib);
+        herd_obj.remove("moe-cache-mib");
 
         // 3. temp
         update_float_setting(&mut long_obj, "temp", &self.temp);
@@ -1347,10 +1711,42 @@ impl AppState {
         // reasoning-budget
         update_int_setting(&mut long_obj, "reasoning-budget", &self.reasoning_budget);
 
-        // spec-type, spec-draft-n-max, spec-draft-p-min are NOT saved in main model's config
+        // reasoning-effort
+        if self.reasoning_effort.is_empty() {
+            long_obj.remove("reasoning-effort");
+        } else {
+            long_obj.insert(
+                "reasoning-effort".to_owned(),
+                serde_json::Value::String(self.reasoning_effort.clone()),
+            );
+        }
+
+        // reasoning-preserve
+        if self.reasoning_preserve.is_empty() {
+            long_obj.remove("reasoning-preserve");
+        } else if self.reasoning_preserve.eq_ignore_ascii_case("true") {
+            long_obj.insert(
+                "reasoning-preserve".to_owned(),
+                serde_json::Value::Bool(true),
+            );
+        } else if self.reasoning_preserve.eq_ignore_ascii_case("false") {
+            long_obj.insert(
+                "reasoning-preserve".to_owned(),
+                serde_json::Value::Bool(false),
+            );
+        } else {
+            long_obj.insert(
+                "reasoning-preserve".to_owned(),
+                serde_json::Value::String(self.reasoning_preserve.clone()),
+            );
+        }
+
+        // spec-type, spec-draft-n-max, spec-draft-p-min, spec-draft-n-ubatch, spec-draft-sampling are NOT saved in main model's config
         long_obj.remove("spec-type");
         long_obj.remove("spec-draft-n-max");
         long_obj.remove("spec-draft-p-min");
+        long_obj.remove("spec-draft-n-ubatch");
+        long_obj.remove("spec-draft-sampling");
 
         // 6. total-layers
         if let Some(num) = self.total_layers {
@@ -1454,6 +1850,23 @@ impl AppState {
                 );
             }
 
+            // 5. spec-draft-n-ubatch
+            update_int_setting(
+                &mut draft_long_obj,
+                "spec-draft-n-ubatch",
+                &self.spec_draft_n_ubatch,
+            );
+
+            // 6. spec-draft-sampling
+            if self.spec_draft_sampling.is_empty() {
+                draft_long_obj.remove("spec-draft-sampling");
+            } else {
+                draft_long_obj.insert(
+                    "spec-draft-sampling".to_owned(),
+                    serde_json::Value::String(self.spec_draft_sampling.clone()),
+                );
+            }
+
             if !draft_long_obj.is_empty() {
                 draft_config.insert(
                     "llama-server-long".to_owned(),
@@ -1502,6 +1915,13 @@ impl AppState {
         long_obj.remove("custom-names");
         long_obj.remove("is-default");
 
+        herd_obj.insert("hidden".to_owned(), serde_json::Value::Bool(self.hidden));
+        herd_obj.remove("is-hidden");
+        long_obj.remove("hidden");
+        long_obj.remove("is-hidden");
+        current_config.remove("hidden");
+        current_config.remove("is-hidden");
+
         if !herd_obj.is_empty() {
             current_config.insert("llama-herd".to_owned(), serde_json::Value::Object(herd_obj));
         }
@@ -1512,14 +1932,24 @@ impl AppState {
             );
         }
 
-        let (current_preset_name, current_model_path) = if self.presets.is_empty() {
-            (None, None)
-        } else {
-            (
-                Some(self.presets[self.preset_index].0.clone()),
-                Some(self.presets[self.preset_index].1.clone()),
-            )
-        };
+        let (current_preset_name, current_model_path) =
+            if let Some(grouped_model) = self.grouped_models.get(self.selected_model_index) {
+                let p_name = grouped_model
+                    .variants
+                    .get(grouped_model.selected_variant_index)
+                    .map_or_else(
+                        || grouped_model.base_name.clone(),
+                        |v| v.preset_name.clone(),
+                    );
+                (Some(p_name), Some(grouped_model.model_path.clone()))
+            } else if !self.presets.is_empty() {
+                (
+                    Some(self.presets[self.preset_index].0.clone()),
+                    Some(self.presets[self.preset_index].1.clone()),
+                )
+            } else {
+                (None, None)
+            };
         let saved_variant = self.current_variant_key();
 
         crate::config::save_config(&target_path, &current_config)?;
@@ -1560,28 +1990,27 @@ impl AppState {
 
         self.rebuild_grouped_models();
 
-        if let Some(ref model_path) = current_model_path {
-            if let Some(m_idx) = self
+        if let Some(ref model_path) = current_model_path
+            && let Some(m_idx) = self
                 .grouped_models
                 .iter()
                 .position(|m| m.model_path == *model_path)
-            {
-                self.selected_model_index = m_idx;
-                let model = &mut self.grouped_models[m_idx];
-                let v_pos = model
-                    .variants
-                    .iter()
-                    .position(|v| match v.variant {
-                        ModelVariant::Base => saved_variant == "base",
-                        ModelVariant::Draft => saved_variant == "draft",
-                        ModelVariant::Vision => saved_variant == "vision",
-                        ModelVariant::DraftVision => saved_variant == "draft-vision",
-                    })
-                    .unwrap_or(0);
-                model.selected_variant_index = v_pos;
-                if let Some(variant) = model.variants.get(v_pos) {
-                    self.preset_index = variant.preset_index;
-                }
+        {
+            self.selected_model_index = m_idx;
+            let model = &mut self.grouped_models[m_idx];
+            let v_pos = model
+                .variants
+                .iter()
+                .position(|v| match v.variant {
+                    ModelVariant::Base => saved_variant == "base",
+                    ModelVariant::Draft => saved_variant == "draft",
+                    ModelVariant::Vision => saved_variant == "vision",
+                    ModelVariant::DraftVision => saved_variant == "draft-vision",
+                })
+                .unwrap_or(0);
+            model.selected_variant_index = v_pos;
+            if let Some(variant) = model.variants.get(v_pos) {
+                self.preset_index = variant.preset_index;
             }
         }
 
@@ -1598,6 +2027,7 @@ impl AppState {
             mmproj: self.mmproj_list.get(self.mmproj_index).cloned().flatten(),
             draft_model: self.draft_list.get(self.draft_index).cloned().flatten(),
             draft_ngl: self.draft_ngl.clone(),
+            model_alias: Some(self.current_effective_model_name()),
         }
     }
 
@@ -1626,10 +2056,17 @@ impl AppState {
             || self.reasoning != self.original_reasoning
             || self.reasoning_format != self.original_reasoning_format
             || self.reasoning_budget != self.original_reasoning_budget
+            || self.reasoning_effort != self.original_reasoning_effort
+            || self.reasoning_preserve != self.original_reasoning_preserve
             || self.spec_type != self.original_spec_type
             || self.spec_draft_n_max != self.original_spec_draft_n_max
             || self.spec_draft_p_min != self.original_spec_draft_p_min
+            || self.n_cpu_moe != self.original_n_cpu_moe
+            || self.moe_cache_mib != self.original_moe_cache_mib
+            || self.spec_draft_n_ubatch != self.original_spec_draft_n_ubatch
+            || self.spec_draft_sampling != self.original_spec_draft_sampling
             || self.custom_names != self.original_custom_names
+            || self.hidden != self.original_hidden
     }
 
     /// Periodically scans the models directory in the background and invalidates/updates presets when file changes settle.

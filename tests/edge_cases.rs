@@ -99,6 +99,7 @@ fn test_option_injection_prevention() -> Result<(), Box<dyn std::error::Error>> 
         mmproj: None,
         draft_model: None,
         draft_ngl: "".to_owned(),
+        model_alias: None,
     };
 
     let params = build_launch_parameters(

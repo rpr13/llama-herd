@@ -115,6 +115,15 @@ pub fn handle_key_event(
                     state.backup_config = true;
                 }
             }
+            KeyCode::Char('h' | 'H') if state.dashboard_focus == DashboardFocus::Left => {
+                state.toggle_show_hidden();
+            }
+            KeyCode::Char(' ')
+                if state.dashboard_focus == DashboardFocus::Right
+                    && state.dashboard_param_index == 4 =>
+            {
+                state.hidden = !state.hidden;
+            }
             KeyCode::Tab | KeyCode::BackTab => {
                 state.dashboard_focus = match state.dashboard_focus {
                     DashboardFocus::Left => DashboardFocus::Right,
@@ -124,7 +133,7 @@ pub fn handle_key_event(
             KeyCode::Up => {
                 if state.dashboard_focus == DashboardFocus::Right {
                     if state.dashboard_param_index == 0 {
-                        state.dashboard_param_index = 25;
+                        state.dashboard_param_index = 32;
                     } else {
                         state.dashboard_param_index -= 1;
                     }
@@ -165,7 +174,7 @@ pub fn handle_key_event(
             }
             KeyCode::Down => {
                 if state.dashboard_focus == DashboardFocus::Right {
-                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 26;
+                    state.dashboard_param_index = (state.dashboard_param_index + 1) % 33;
                 } else if !state.grouped_models.is_empty() {
                     let target_model_idx =
                         (state.selected_model_index + 1) % state.grouped_models.len();
@@ -302,6 +311,15 @@ pub fn handle_key_event(
             }
             KeyCode::F(5) => {
                 if !state.presets.is_empty() {
+                    let is_hidden = state
+                        .grouped_models
+                        .get(state.selected_model_index)
+                        .is_some_and(|m| m.is_hidden)
+                        || state.hidden;
+                    if is_hidden {
+                        return false;
+                    }
+
                     // Spawns preset server
                     crate::launcher::kill_existing_servers();
                     let (_preset_name, model_path) = &state.presets[state.preset_index];
@@ -332,11 +350,7 @@ pub fn handle_key_event(
                     );
                     state.last_launch_args = launch_args;
                     state.is_router_mode = false;
-                    let model_name = if state.presets.is_empty() {
-                        None
-                    } else {
-                        Some(state.presets[state.preset_index].0.clone())
-                    };
+                    let model_name = settings.model_alias;
 
                     match ActiveServer::spawn(
                         &state.last_launch_args,
@@ -390,100 +404,163 @@ pub fn handle_key_event(
                             .unwrap_or_default();
                     }
                     3 => {
-                        state.screen = AppScreen::EditingVariants;
-                        state.input_buffer = state.variants.clone();
+                        let option_list = vec![
+                            "all".to_owned(),
+                            "base".to_owned(),
+                            "draft".to_owned(),
+                            "vision".to_owned(),
+                            "draft-vision".to_owned(),
+                            "draft, draft-vision".to_owned(),
+                            "base, vision".to_owned(),
+                            "base, draft".to_owned(),
+                            "(Custom / Manual...)".to_owned(),
+                        ];
+                        let val_str = state.variants.trim();
+                        let mut selected_idx = option_list.len() - 1;
+                        for (idx, opt) in option_list.iter().enumerate() {
+                            if opt == val_str {
+                                selected_idx = idx;
+                                break;
+                            }
+                        }
+                        state.option_selector_index = selected_idx;
+                        state.option_selector_list = option_list;
+                        state.screen = AppScreen::SelectingVariants;
                     }
                     4 => {
-                        state.screen = AppScreen::EditingCtx;
-                        state.input_buffer = if state.ctx_str.is_empty() {
-                            state.ctx.to_string()
-                        } else {
-                            state.ctx_str.clone()
-                        };
+                        state.hidden = !state.hidden;
                     }
                     5 => {
+                        let option_list = vec![
+                            "4096 (4k)".to_owned(),
+                            "8192 (8k)".to_owned(),
+                            "16384 (16k)".to_owned(),
+                            "32768 (32k)".to_owned(),
+                            "65536 (64k)".to_owned(),
+                            "131072 (128k)".to_owned(),
+                            "262144 (256k)".to_owned(),
+                            "524288 (512k)".to_owned(),
+                            "(Custom / Manual...)".to_owned(),
+                        ];
+                        let curr_display = crate::config::format_ctx_display(&state.ctx_str);
+                        let mut selected_idx = option_list.len() - 1;
+                        for (idx, opt) in option_list.iter().enumerate() {
+                            if opt == &curr_display {
+                                selected_idx = idx;
+                                break;
+                            }
+                        }
+                        state.option_selector_index = selected_idx;
+                        state.option_selector_list = option_list;
+                        state.screen = AppScreen::SelectingCtx;
+                    }
+                    6 => {
                         state.screen = AppScreen::EditingNgl;
                         state.input_buffer = state.ngl.clone();
                     }
-                    6 => {
+                    7 => {
                         state.mmproj_index_backup = state.mmproj_index;
                         state.screen = AppScreen::SelectingMMProj;
                     }
-                    7 => {
+                    8 => {
+                        state.screen = AppScreen::EditingNCpuMoe;
+                        state.input_buffer = state.n_cpu_moe.clone();
+                    }
+                    9 => {
+                        state.screen = AppScreen::EditingMoeCacheMib;
+                        state.input_buffer = state.moe_cache_mib.clone();
+                    }
+                    10 => {
                         state.screen = AppScreen::EditingTemp;
                         state.input_buffer = state.temp.clone();
                     }
-                    8 => {
+                    11 => {
                         state.screen = AppScreen::EditingTopP;
                         state.input_buffer = state.top_p.clone();
                     }
-                    9 => {
+                    12 => {
                         state.screen = AppScreen::EditingTopK;
                         state.input_buffer = state.top_k.clone();
                     }
-                    10 => {
+                    13 => {
                         state.screen = AppScreen::EditingMinP;
                         state.input_buffer = state.min_p.clone();
                     }
-                    11 => {
+                    14 => {
                         state.screen = AppScreen::EditingRepeatPenalty;
                         state.input_buffer = state.repeat_penalty.clone();
                     }
-                    12 => {
+                    15 => {
                         state.screen = AppScreen::EditingRepeatLastN;
                         state.input_buffer = state.repeat_last_n.clone();
                     }
-                    13 => {
+                    16 => {
                         state.screen = AppScreen::EditingDryMultiplier;
                         state.input_buffer = state.dry_multiplier.clone();
                     }
-                    14 => {
+                    17 => {
                         state.screen = AppScreen::EditingDryBase;
                         state.input_buffer = state.dry_base.clone();
                     }
-                    15 => {
+                    18 => {
                         state.screen = AppScreen::EditingDryAllowedLength;
                         state.input_buffer = state.dry_allowed_length.clone();
                     }
-                    16 => {
+                    19 => {
                         state.screen = AppScreen::EditingDryPenaltyLastN;
                         state.input_buffer = state.dry_penalty_last_n.clone();
                     }
-                    17 => {
+                    20 => {
                         state.screen = AppScreen::EditingDrySequenceBreaker;
                         state.input_buffer = state.dry_sequence_breaker.clone();
                     }
-                    18 => {
+                    21 => {
                         state.reasoning_format_index_backup = state.reasoning_format_index;
                         state.screen = AppScreen::SelectingReasoningFormat;
                     }
-                    19 => {
+                    22 => {
                         state.reasoning_index_backup = state.reasoning_index;
                         state.screen = AppScreen::SelectingReasoning;
                     }
-                    20 => {
+                    23 => {
                         state.screen = AppScreen::EditingReasoningBudget;
                         state.input_buffer = state.reasoning_budget.clone();
                     }
-                    21 => {
+                    24 => {
+                        state.reasoning_effort_index_backup = state.reasoning_effort_index;
+                        state.screen = AppScreen::SelectingReasoningEffort;
+                    }
+                    25 => {
+                        state.reasoning_preserve_index_backup = state.reasoning_preserve_index;
+                        state.screen = AppScreen::SelectingReasoningPreserve;
+                    }
+                    26 => {
                         state.draft_index_backup = state.draft_index;
                         state.screen = AppScreen::SelectingDraftModel;
                     }
-                    22 => {
+                    27 => {
                         state.screen = AppScreen::EditingDraftNgl;
                         state.input_buffer = state.draft_ngl.clone();
                     }
-                    23 => {
+                    28 => {
                         state.spec_type_backup = state.spec_type_index;
                         state.screen = AppScreen::SelectingSpecType;
                     }
-                    24 => {
+                    29 => {
                         state.screen = AppScreen::EditingSpecDraftNMax;
                         state.input_buffer = state.spec_draft_n_max.clone();
                     }
-                    25 => {
+                    30 => {
                         state.screen = AppScreen::EditingSpecDraftPMin;
                         state.input_buffer = state.spec_draft_p_min.clone();
+                    }
+                    31 => {
+                        state.screen = AppScreen::EditingSpecDraftNUbatch;
+                        state.input_buffer = state.spec_draft_n_ubatch.clone();
+                    }
+                    32 => {
+                        state.spec_draft_sampling_backup = state.spec_draft_sampling_index;
+                        state.screen = AppScreen::SelectingSpecDraftSampling;
                     }
                     _ => {}
                 }
@@ -501,9 +578,96 @@ pub fn handle_key_event(
             KeyCode::Down => {
                 state.settings_index = (state.settings_index + 1) % ui::SETTINGS.len();
             }
+            KeyCode::Char(' ') => {
+                let selected_item = &ui::SETTINGS[state.settings_index];
+                if selected_item.key == "theme-transparent" {
+                    state.theme_transparent = !state.theme_transparent;
+                    state.reload_theme();
+                    let default_val = state.theme_preset == theme::ThemePreset::Default;
+                    if state.theme_transparent == default_val {
+                        crate::config::remove_global_config_value(
+                            &mut state.global_config,
+                            "theme-transparent",
+                        );
+                    } else {
+                        crate::config::update_global_config_value(
+                            &mut state.global_config,
+                            "theme-transparent",
+                            serde_json::Value::Bool(state.theme_transparent),
+                        );
+                    }
+                    let _ = crate::config::save_config(&state.config_path, &state.global_config);
+                } else if matches!(
+                    selected_item.key,
+                    "kv-unified" | "metrics" | "ui" | "cache-prompt" | "context-shift"
+                ) {
+                    let default_val =
+                        matches!(selected_item.key, "kv-unified" | "ui" | "cache-prompt");
+                    let current_val = state
+                        .global_config
+                        .get("llama-server-long")
+                        .and_then(|l| l.get(selected_item.key))
+                        .or_else(|| {
+                            state
+                                .global_config
+                                .get("llama-herd")
+                                .and_then(|lh| lh.get(selected_item.key))
+                        })
+                        .or_else(|| state.global_config.get(selected_item.key))
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(default_val);
+                    let next_val = !current_val;
+                    if next_val == default_val {
+                        crate::config::remove_global_config_value(
+                            &mut state.global_config,
+                            selected_item.key,
+                        );
+                    } else {
+                        crate::config::update_global_config_value(
+                            &mut state.global_config,
+                            selected_item.key,
+                            serde_json::Value::Bool(next_val),
+                        );
+                    }
+                    let _ = crate::config::save_config(&state.config_path, &state.global_config);
+                }
+            }
             KeyCode::Enter => {
                 let selected_item = &ui::SETTINGS[state.settings_index];
                 match selected_item.key {
+                    "theme" => {
+                        let presets = theme::ThemePreset::all();
+                        let option_list: Vec<String> = presets
+                            .iter()
+                            .map(|p| p.display_name().to_owned())
+                            .collect();
+                        let selected_idx = presets
+                            .iter()
+                            .position(|p| p == &state.theme_preset)
+                            .unwrap_or(0);
+                        state.option_selector_index = selected_idx;
+                        state.option_selector_list = option_list;
+                        state.screen = AppScreen::SelectingGlobalSettingOption;
+                    }
+                    "theme-transparent" => {
+                        state.theme_transparent = !state.theme_transparent;
+                        state.reload_theme();
+                        let default_val = state.theme_preset == theme::ThemePreset::Default;
+                        if state.theme_transparent == default_val {
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                "theme-transparent",
+                            );
+                        } else {
+                            crate::config::update_global_config_value(
+                                &mut state.global_config,
+                                "theme-transparent",
+                                serde_json::Value::Bool(state.theme_transparent),
+                            );
+                        }
+                        let _ =
+                            crate::config::save_config(&state.config_path, &state.global_config);
+                    }
                     "llama-server" => {
                         state.screen = AppScreen::PickingServerPath;
                         let initial_path = if state.server_exe.as_os_str().is_empty() {
@@ -532,13 +696,45 @@ pub fn handle_key_event(
                         ));
                     }
                     "flash-attn" | "cache-type-k" | "cache-type-v" | "log-verbosity" | "numa"
-                    | "split-mode" => {
-                        // Option selectors for flash-attn, cache-type-k, cache-type-v, log-verbosity, numa, split-mode
+                    | "split-mode" | "load-mode" | "fit" | "tensor-split" | "host" | "port"
+                    | "api-key-file" | "ssl-key-file" | "ssl-cert-file" => {
                         let option_list = match selected_item.key {
                             "flash-attn" => vec![
                                 "auto".to_owned(),
-                                "1".to_owned(),
-                                "0".to_owned(),
+                                "on".to_owned(),
+                                "off".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
+                            ],
+                            "load-mode" => vec![
+                                "auto".to_owned(),
+                                "none".to_owned(),
+                                "mmap".to_owned(),
+                                "mlock".to_owned(),
+                                "mmap+mlock".to_owned(),
+                                "dio".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
+                            ],
+                            "fit" => vec!["on".to_owned(), "off".to_owned()],
+                            "tensor-split" => {
+                                vec!["auto".to_owned(), "(Custom / Manual...)".to_owned()]
+                            }
+                            "host" => vec![
+                                "127.0.0.1".to_owned(),
+                                "0.0.0.0".to_owned(),
+                                "::".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
+                            ],
+                            "port" => vec![
+                                "auto".to_owned(),
+                                "9931".to_owned(),
+                                "8080".to_owned(),
+                                "8000".to_owned(),
+                                "11434".to_owned(),
+                                "(Custom / Manual...)".to_owned(),
+                            ],
+                            "api-key-file" | "ssl-key-file" | "ssl-cert-file" => vec![
+                                "none".to_owned(),
+                                "(Browse File...)".to_owned(),
                                 "(Custom / Manual...)".to_owned(),
                             ],
                             "log-verbosity" => vec![
@@ -565,15 +761,15 @@ pub fn handle_key_event(
                                 "(Custom / Manual...)".to_owned(),
                             ],
                             _ => vec![
-                                "f16".to_owned(),
-                                "q8_0".to_owned(),
-                                "q4_0".to_owned(),
-                                "q4_1".to_owned(),
-                                "iq4_nl".to_owned(),
-                                "q5_0".to_owned(),
-                                "q5_1".to_owned(),
                                 "f32".to_owned(),
+                                "f16".to_owned(),
                                 "bf16".to_owned(),
+                                "q8_0".to_owned(),
+                                "q5_1".to_owned(),
+                                "q5_0".to_owned(),
+                                "q4_1".to_owned(),
+                                "q4_0".to_owned(),
+                                "iq4_nl".to_owned(),
                                 "(Custom / Manual...)".to_owned(),
                             ],
                         };
@@ -596,9 +792,7 @@ pub fn handle_key_event(
                         state.option_selector_list = option_list;
                         state.screen = AppScreen::SelectingGlobalSettingOption;
                     }
-                    "kv-unified" | "metrics" | "ui" | "no-mmap" | "cache-prompt"
-                    | "context-shift" | "mlock" => {
-                        // Toggle boolean flags
+                    "kv-unified" | "metrics" | "ui" | "cache-prompt" | "context-shift" => {
                         let default_val =
                             matches!(selected_item.key, "kv-unified" | "ui" | "cache-prompt");
                         let current_val = state
@@ -646,7 +840,9 @@ pub fn handle_key_event(
             }
             _ => {}
         },
-        AppScreen::PickingServerPath | AppScreen::PickingModelsDir => {
+        AppScreen::PickingServerPath
+        | AppScreen::PickingModelsDir
+        | AppScreen::PickingGlobalSettingFile => {
             if let Some(picker) = &mut state.picker {
                 if let Some(path) = picker.handle_event(key) {
                     if state.screen == AppScreen::PickingServerPath {
@@ -657,7 +853,7 @@ pub fn handle_key_event(
                             "llama-server",
                             serde_json::Value::String(path.to_string_lossy().to_string()),
                         );
-                    } else {
+                    } else if state.screen == AppScreen::PickingModelsDir {
                         state.models_dir = path.clone();
                         if let Ok(mut lock) = state.shared_models_dir.lock() {
                             *lock = path.clone();
@@ -681,6 +877,13 @@ pub fn handle_key_event(
                         state.last_models_dir_state = new_state.clone();
                         state.last_stable_models_dir_state = new_state;
                         state.load_current_preset_settings(None);
+                    } else {
+                        let selected_item = &ui::SETTINGS[state.settings_index];
+                        crate::config::update_global_config_value(
+                            &mut state.global_config,
+                            selected_item.key,
+                            serde_json::Value::String(path.to_string_lossy().to_string()),
+                        );
                     }
 
                     // Save config
@@ -697,6 +900,8 @@ pub fn handle_key_event(
         AppScreen::EditingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
+        | AppScreen::EditingNCpuMoe
+        | AppScreen::EditingMoeCacheMib
         | AppScreen::EditingTemp
         | AppScreen::EditingTopP
         | AppScreen::EditingTopK
@@ -715,7 +920,8 @@ pub fn handle_key_event(
         | AppScreen::EditingDryPenaltyLastN
         | AppScreen::EditingDrySequenceBreaker
         | AppScreen::EditingSpecDraftNMax
-        | AppScreen::EditingSpecDraftPMin => match key.code {
+        | AppScreen::EditingSpecDraftPMin
+        | AppScreen::EditingSpecDraftNUbatch => match key.code {
             KeyCode::Esc => {
                 if state.screen == AppScreen::EditingGlobalSetting {
                     state.screen = AppScreen::Settings;
@@ -769,6 +975,26 @@ pub fn handle_key_event(
                         } else {
                             state.validation_error =
                                 Some("Invalid layers count (e.g. auto, 8, --1)".to_owned());
+                        }
+                    }
+                    AppScreen::EditingNCpuMoe => {
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<usize>().is_ok() {
+                            state.n_cpu_moe = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid N-CPU-MoE layers count (e.g. 0, 12)".to_owned());
+                        }
+                    }
+                    AppScreen::EditingMoeCacheMib => {
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<usize>().is_ok() {
+                            state.moe_cache_mib = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid MoE Cache size in MiB (e.g. 2048)".to_owned());
                         }
                     }
                     AppScreen::EditingTemp => {
@@ -843,6 +1069,16 @@ pub fn handle_key_event(
                             state.validation_error = Some(
                                 "Invalid minimum probability threshold (e.g. 0.85)".to_owned(),
                             );
+                        }
+                    }
+                    AppScreen::EditingSpecDraftNUbatch => {
+                        let val = state.input_buffer.trim();
+                        if val.is_empty() || val.parse::<usize>().is_ok() {
+                            state.spec_draft_n_ubatch = val.to_owned();
+                            state.screen = AppScreen::Dashboard;
+                        } else {
+                            state.validation_error =
+                                Some("Invalid micro-batch size for draft (e.g. 16)".to_owned());
                         }
                     }
                     AppScreen::EditingMinP => {
@@ -943,16 +1179,14 @@ pub fn handle_key_event(
                             | "batch-size"
                             | "ubatch-size"
                             | "models-max"
+                            | "sleep-idle-seconds"
+                            | "models-memory-margin"
                             | "ctx-checkpoints"
                             | "checkpoint-min-step"
                             | "log-verbosity"
                             | "cache-ram"
-                            | "dry-allowed-length"
-                            | "dry-penalty-last-n"
-                            | "spec-draft-n-max" => val_str.parse::<i64>().is_ok(),
-                            "dry-multiplier" | "dry-base" | "spec-draft-p-min" => {
-                                val_str.parse::<f64>().is_ok()
-                            }
+                            | "fitt"
+                            | "moe-cache-mib" => val_str.parse::<i64>().is_ok(),
                             _ => true,
                         };
 
@@ -962,6 +1196,17 @@ pub fn handle_key_event(
                             return false;
                         }
 
+                        if key_to_update == "load-mode" {
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                "mlock",
+                            );
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                "no-mmap",
+                            );
+                        }
+
                         if val_str == selected_item.default_val {
                             crate::config::remove_global_config_value(
                                 &mut state.global_config,
@@ -969,19 +1214,10 @@ pub fn handle_key_event(
                             );
                         } else {
                             match selected_item.key {
-                                "host"
-                                | "flash-attn"
-                                | "cache-type-k"
-                                | "cache-type-v"
-                                | "api-key"
-                                | "device"
-                                | "api-key-file"
-                                | "ssl-key-file"
-                                | "ssl-cert-file"
-                                | "dry-sequence-breaker"
-                                | "split-mode"
-                                | "numa"
-                                | "spec-type" => {
+                                "host" | "flash-attn" | "cache-type-k" | "cache-type-v"
+                                | "api-key" | "device" | "api-key-file" | "ssl-key-file"
+                                | "ssl-cert-file" | "split-mode" | "numa" | "load-mode" | "fit"
+                                | "tensor-split" => {
                                     crate::config::update_global_config_value(
                                         &mut state.global_config,
                                         key_to_update,
@@ -1006,30 +1242,20 @@ pub fn handle_key_event(
                                 | "batch-size"
                                 | "ubatch-size"
                                 | "models-max"
+                                | "sleep-idle-seconds"
+                                | "models-memory-margin"
                                 | "ctx-checkpoints"
                                 | "checkpoint-min-step"
                                 | "log-verbosity"
                                 | "cache-ram"
-                                | "dry-allowed-length"
-                                | "dry-penalty-last-n"
-                                | "spec-draft-n-max" => {
+                                | "fitt"
+                                | "moe-cache-mib" => {
                                     if let Ok(num) = val_str.parse::<i64>() {
                                         crate::config::update_global_config_value(
                                             &mut state.global_config,
                                             key_to_update,
                                             serde_json::Value::Number(num.into()),
                                         );
-                                    }
-                                }
-                                "dry-multiplier" | "dry-base" | "spec-draft-p-min" => {
-                                    if let Ok(num) = val_str.parse::<f64>() {
-                                        if let Some(n) = serde_json::Number::from_f64(num) {
-                                            crate::config::update_global_config_value(
-                                                &mut state.global_config,
-                                                key_to_update,
-                                                serde_json::Value::Number(n),
-                                            );
-                                        }
                                     }
                                 }
                                 _ => {}
@@ -1121,7 +1347,56 @@ pub fn handle_key_event(
                 let selected_item = &ui::SETTINGS[state.settings_index];
                 let key_to_update = selected_item.key;
 
-                if selected_opt == "(Custom / Manual...)" {
+                if key_to_update == "theme" {
+                    if let Some(preset) = theme::ThemePreset::all()
+                        .iter()
+                        .find(|p| p.display_name() == selected_opt)
+                        .copied()
+                    {
+                        state.theme_preset = preset;
+                        let has_explicit_transparency = state
+                            .global_config
+                            .get("llama-herd")
+                            .and_then(|lh| lh.get("theme-transparent"))
+                            .or_else(|| state.global_config.get("theme-transparent"))
+                            .is_some();
+                        if !has_explicit_transparency {
+                            state.theme_transparent = preset == theme::ThemePreset::Default;
+                        }
+                        state.reload_theme();
+                        if preset == theme::ThemePreset::Default {
+                            crate::config::remove_global_config_value(
+                                &mut state.global_config,
+                                "theme",
+                            );
+                        } else {
+                            crate::config::update_global_config_value(
+                                &mut state.global_config,
+                                "theme",
+                                serde_json::Value::String(preset.id().to_owned()),
+                            );
+                        }
+                        let _ =
+                            crate::config::save_config(&state.config_path, &state.global_config);
+                    }
+                    state.screen = AppScreen::Settings;
+                } else if selected_opt == "(Browse File...)" {
+                    let val_str = crate::config::get_global_config_string(
+                        &state.global_config,
+                        key_to_update,
+                        selected_item.default_val,
+                    );
+                    let initial_path = if val_str == "none" || val_str.is_empty() {
+                        state.models_dir.clone()
+                    } else {
+                        PathBuf::from(&val_str)
+                    };
+                    state.screen = AppScreen::PickingGlobalSettingFile;
+                    state.picker = Some(picker::FilePicker::new(
+                        initial_path,
+                        picker::PickerMode::File,
+                    ));
+                } else if selected_opt == "(Custom / Manual...)" {
                     // Transition to manual entry
                     let val_str = crate::config::get_global_config_string(
                         &state.global_config,
@@ -1131,6 +1406,16 @@ pub fn handle_key_event(
                     state.screen = AppScreen::EditingGlobalSetting;
                     state.input_buffer = val_str;
                 } else {
+                    if key_to_update == "load-mode" {
+                        crate::config::remove_global_config_value(
+                            &mut state.global_config,
+                            "mlock",
+                        );
+                        crate::config::remove_global_config_value(
+                            &mut state.global_config,
+                            "no-mmap",
+                        );
+                    }
                     // Selected standard option. Save it!
                     if selected_opt == selected_item.default_val {
                         crate::config::remove_global_config_value(
@@ -1138,7 +1423,7 @@ pub fn handle_key_event(
                             key_to_update,
                         );
                     } else {
-                        let val = if selected_item.key == "log-verbosity" {
+                        let val = if matches!(selected_item.key, "log-verbosity" | "port") {
                             if let Ok(num) = selected_opt.parse::<i64>() {
                                 serde_json::Value::Number(num.into())
                             } else {
@@ -1251,6 +1536,52 @@ pub fn handle_key_event(
             }
             _ => {}
         },
+        AppScreen::SelectingReasoningEffort => match key.code {
+            KeyCode::Esc => {
+                state.reasoning_effort_index = state.reasoning_effort_index_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.reasoning_effort_list.is_empty() => {
+                if state.reasoning_effort_index == 0 {
+                    state.reasoning_effort_index = state.reasoning_effort_list.len() - 1;
+                } else {
+                    state.reasoning_effort_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.reasoning_effort_list.is_empty() => {
+                state.reasoning_effort_index =
+                    (state.reasoning_effort_index + 1) % state.reasoning_effort_list.len();
+            }
+            KeyCode::Enter => {
+                state.reasoning_effort =
+                    state.reasoning_effort_list[state.reasoning_effort_index].clone();
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::SelectingReasoningPreserve => match key.code {
+            KeyCode::Esc => {
+                state.reasoning_preserve_index = state.reasoning_preserve_index_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.reasoning_preserve_list.is_empty() => {
+                if state.reasoning_preserve_index == 0 {
+                    state.reasoning_preserve_index = state.reasoning_preserve_list.len() - 1;
+                } else {
+                    state.reasoning_preserve_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.reasoning_preserve_list.is_empty() => {
+                state.reasoning_preserve_index =
+                    (state.reasoning_preserve_index + 1) % state.reasoning_preserve_list.len();
+            }
+            KeyCode::Enter => {
+                state.reasoning_preserve =
+                    state.reasoning_preserve_list[state.reasoning_preserve_index].clone();
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
         AppScreen::SelectingSpecType => match key.code {
             KeyCode::Esc => {
                 state.spec_type_index = state.spec_type_backup;
@@ -1269,6 +1600,94 @@ pub fn handle_key_event(
             KeyCode::Enter => {
                 state.spec_type = state.spec_type_list[state.spec_type_index].clone();
                 state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::SelectingSpecDraftSampling => match key.code {
+            KeyCode::Esc => {
+                state.spec_draft_sampling_index = state.spec_draft_sampling_backup;
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.spec_draft_sampling_list.is_empty() => {
+                if state.spec_draft_sampling_index == 0 {
+                    state.spec_draft_sampling_index = state.spec_draft_sampling_list.len() - 1;
+                } else {
+                    state.spec_draft_sampling_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.spec_draft_sampling_list.is_empty() => {
+                state.spec_draft_sampling_index =
+                    (state.spec_draft_sampling_index + 1) % state.spec_draft_sampling_list.len();
+            }
+            KeyCode::Enter => {
+                state.spec_draft_sampling =
+                    state.spec_draft_sampling_list[state.spec_draft_sampling_index].clone();
+                state.screen = AppScreen::Dashboard;
+            }
+            _ => {}
+        },
+        AppScreen::SelectingVariants => match key.code {
+            KeyCode::Esc => {
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.option_selector_list.is_empty() => {
+                if state.option_selector_index == 0 {
+                    state.option_selector_index = state.option_selector_list.len() - 1;
+                } else {
+                    state.option_selector_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.option_selector_list.is_empty() => {
+                state.option_selector_index =
+                    (state.option_selector_index + 1) % state.option_selector_list.len();
+            }
+            KeyCode::Enter => {
+                let selected_opt = state.option_selector_list[state.option_selector_index].clone();
+                if selected_opt == "(Custom / Manual...)" {
+                    state.screen = AppScreen::EditingVariants;
+                    state.input_buffer = state.variants.clone();
+                } else {
+                    state.variants = selected_opt;
+                    state.screen = AppScreen::Dashboard;
+                }
+            }
+            _ => {}
+        },
+        AppScreen::SelectingCtx => match key.code {
+            KeyCode::Esc => {
+                state.screen = AppScreen::Dashboard;
+            }
+            KeyCode::Up if !state.option_selector_list.is_empty() => {
+                if state.option_selector_index == 0 {
+                    state.option_selector_index = state.option_selector_list.len() - 1;
+                } else {
+                    state.option_selector_index -= 1;
+                }
+            }
+            KeyCode::Down if !state.option_selector_list.is_empty() => {
+                state.option_selector_index =
+                    (state.option_selector_index + 1) % state.option_selector_list.len();
+            }
+            KeyCode::Enter => {
+                let selected_opt = state.option_selector_list[state.option_selector_index].clone();
+                if selected_opt == "(Custom / Manual...)" {
+                    state.screen = AppScreen::EditingCtx;
+                    state.input_buffer = state.ctx_str.clone();
+                } else {
+                    let raw_ctx = selected_opt
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(&selected_opt);
+                    if let Ok(parsed) = crate::config::parse_ctx_str(raw_ctx) {
+                        state.ctx_str = if parsed > 0 && parsed % 1024 == 0 {
+                            format!("{}k", parsed / 1024)
+                        } else {
+                            parsed.to_string()
+                        };
+                        state.ctx = parsed;
+                        state.screen = AppScreen::Dashboard;
+                    }
+                }
             }
             _ => {}
         },
@@ -1577,12 +1996,22 @@ pub fn run_tui(mut state: AppState) -> io::Result<()> {
 
                     TuiEvent::Tick => {
                         state.tick_count += 1;
-                        if state.tick_count % 4 == 0
+                        if state.tick_count.is_multiple_of(4)
                             && state.models_dir_changed_dirty
                             && !state.has_unsaved_changes()
                         {
                             state.models_dir_changed_dirty = false;
                             state.load_current_preset_settings(None);
+                        }
+
+                        if state.tick_count.is_multiple_of(4)
+                            && state.theme_preset == theme::ThemePreset::Custom
+                        {
+                            let current_mtime =
+                                state.theme_path.metadata().and_then(|m| m.modified()).ok();
+                            if current_mtime != state.theme_mtime {
+                                state.reload_theme();
+                            }
                         }
                     }
                     TuiEvent::ModelsDirChanged(new_state) => {

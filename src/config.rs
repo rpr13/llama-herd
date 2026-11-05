@@ -28,6 +28,8 @@ pub struct UserSettings {
     pub draft_model: Option<PathBuf>,
     /// GPU offload layer specification for the draft model.
     pub draft_ngl: String,
+    /// Optional model alias / display name to pass to llama-server via `--alias`.
+    pub model_alias: Option<String>,
 }
 
 // --- PURE PARSERS & HELPERS ---
@@ -238,6 +240,10 @@ pub const RESTRICTED_LONG: &[&str] = &[
     "context-shift",
     "no-context-shift",
     "mlock",
+    "load-mode",
+    "spec-draft-n-ubatch",
+    "spec-draft-sampling",
+    "moe-cache-mib",
     "numa",
     "split-mode",
     "device",
@@ -249,10 +255,28 @@ pub const RESTRICTED_LONG: &[&str] = &[
     "fitt",
     "variants",
     "is-default",
+    "hidden",
+    "is-hidden",
+    "alias",
+    "sleep-idle-seconds",
+    "n-cpu-moe",
+    "models-memory-margin",
+    "models-dir",
+    "theme",
+    "theme-transparent",
+    "reasoning-effort",
+    "reasoning-preserve",
+    "no-reasoning-preserve",
+    "connect",
+    "connect-code",
 ];
 
+/// Alias for `RESTRICTED_LONG` option keys.
+pub const RESTRICTED_KEYS: &[&str] = RESTRICTED_LONG;
+
 const RESTRICTED_SHORT: &[&str] = &[
-    "c", "ngl", "ngld", "t", "md", "m", "mm", "np", "b", "ub", "fa", "kvu", "h", "lv",
+    "c", "ngl", "ngld", "t", "md", "m", "mm", "np", "b", "ub", "fa", "kvu", "h", "lv", "a", "lm",
+    "ncmoe", "rea", "fit", "fitt",
 ];
 
 fn is_invalid_key(k: &str) -> Option<&'static str> {
@@ -730,7 +754,36 @@ pub fn get_global_config_string<S: std::hash::BuildHasher>(
                 "false".to_owned()
             }
         }
-        _ => default_val.to_owned(),
+        _ => {
+            if key == "load-mode" {
+                let mlock = global_config
+                    .get("llama-server-long")
+                    .and_then(|obj| obj.get("mlock"))
+                    .or_else(|| {
+                        global_config
+                            .get("llama-herd")
+                            .and_then(|obj| obj.get("mlock"))
+                    })
+                    .or_else(|| global_config.get("mlock"))
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                let no_mmap = global_config
+                    .get("llama-server-long")
+                    .and_then(|obj| obj.get("no-mmap"))
+                    .or_else(|| {
+                        global_config
+                            .get("llama-herd")
+                            .and_then(|obj| obj.get("no-mmap"))
+                    })
+                    .or_else(|| global_config.get("no-mmap"))
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                if let Some(resolved) = crate::launcher::resolve_load_mode(None, mlock, no_mmap) {
+                    return resolved;
+                }
+            }
+            default_val.to_owned()
+        }
     }
 }
 

@@ -3,12 +3,9 @@ pub use crate::tui::logs::SupervisorConfig;
 use std::collections::HashMap;
 use std::path::Path;
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex};
 
-fn pids_file_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
+static PIDS_FILE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Appends a new server subprocess PID to the active PIDs tracking file.
 ///
@@ -16,7 +13,7 @@ fn pids_file_lock() -> &'static Mutex<()> {
 ///
 /// Panics if the internal file lock is poisoned.
 pub fn add_active_pid(pid: u32) {
-    let _guard = pids_file_lock().lock().expect("pids lock poisoned");
+    let _guard = PIDS_FILE_LOCK.lock().expect("pids lock poisoned");
     let lh_dir = crate::config::get_llama_herd_dir();
     let _ = std::fs::create_dir_all(&lh_dir);
     let pids_file = lh_dir.join("active_pids.txt");
@@ -36,7 +33,7 @@ pub fn add_active_pid(pid: u32) {
 ///
 /// Panics if the internal file lock is poisoned.
 pub fn remove_active_pid(pid: u32) {
-    let _guard = pids_file_lock().lock().expect("pids lock poisoned");
+    let _guard = PIDS_FILE_LOCK.lock().expect("pids lock poisoned");
     let pids_file = crate::config::get_llama_herd_dir().join("active_pids.txt");
     if !pids_file.exists() {
         return;
@@ -60,26 +57,31 @@ pub fn remove_active_pid(pid: u32) {
 ///
 /// Panics if the internal file lock is poisoned.
 pub fn kill_existing_servers() {
-    let _guard = pids_file_lock().lock().expect("pids lock poisoned");
+    let _guard = PIDS_FILE_LOCK.lock().expect("pids lock poisoned");
     let pids_file = crate::config::get_llama_herd_dir().join("active_pids.txt");
     if !pids_file.exists() {
         return;
     }
     if let Ok(content) = std::fs::read_to_string(&pids_file) {
-        use sysinfo::{Pid, System};
-        let mut sys = System::new();
-        sys.refresh_all();
+        use sysinfo::{Pid, ProcessesToUpdate, RefreshKind, System};
+        let pids: Vec<Pid> = content
+            .lines()
+            .filter_map(|line| line.trim().parse::<u32>().ok().map(Pid::from_u32))
+            .collect();
 
-        for line in content.lines() {
-            if let Ok(pid_val) = line.trim().parse::<u32>() {
-                let pid = Pid::from_u32(pid_val);
+        if !pids.is_empty()
+            && let Ok(mut sys) = System::new_with_specifics(RefreshKind::nothing())
+        {
+            sys.refresh_processes(ProcessesToUpdate::Some(&pids), true);
+
+            for pid in pids {
                 if let Some(process) = sys.process(pid) {
                     let name = process.name().to_string_lossy().to_lowercase();
                     if name.contains("llama-server") {
                         #[cfg(target_os = "windows")]
                         {
                             let _ = std::process::Command::new("taskkill")
-                                .args(["/F", "/PID", &pid_val.to_string(), "/T"])
+                                .args(["/F", "/PID", &pid.as_u32().to_string(), "/T"])
                                 .output();
                         }
                         #[cfg(not(target_os = "windows"))]
@@ -94,6 +96,10 @@ pub fn kill_existing_servers() {
     let _ = std::fs::remove_file(pids_file);
 }
 
+static BUILD_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)(?:\bbuild[:=\s]+b?|\(b)(\d+)\b").expect("invalid build regex")
+});
+
 /// Parses the raw output from `llama-server --version` or `llama-cli --version` to extract the version and build number.
 ///
 /// If both semver and build number are present (e.g. `"version: 0.4.0-dev (build 10894, commit d344123fe)"`),
@@ -104,11 +110,6 @@ pub fn kill_existing_servers() {
 /// Panics if the internal regex pattern fails to compile.
 #[must_use]
 pub fn parse_server_version(raw: &str) -> String {
-    static BUILD_RE: OnceLock<regex::Regex> = OnceLock::new();
-    let build_re = BUILD_RE.get_or_init(|| {
-        regex::Regex::new(r"(?i)(?:\bbuild[:=\s]+b?|\(b)(\d+)\b").expect("invalid build regex")
-    });
-
     for line in raw.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -120,7 +121,7 @@ pub fn parse_server_version(raw: &str) -> String {
             || line.contains("build =");
 
         if is_version_line {
-            let build_num = build_re
+            let build_num = BUILD_RE
                 .captures(line)
                 .and_then(|caps| caps.get(1))
                 .map(|m| format!("b{}", m.as_str()));
@@ -172,7 +173,7 @@ pub fn parse_server_version(raw: &str) -> String {
     }
 
     // Global scan for build number across any line if not found in a specific version line
-    if let Some(caps) = build_re.captures(raw)
+    if let Some(caps) = BUILD_RE.captures(raw)
         && let Some(m) = caps.get(1)
     {
         return format!("b{}", m.as_str());
@@ -234,6 +235,52 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
             .and_then(|l| l.get(key))
             .or_else(|| assets.config.get(key))
     };
+
+    let resolved_alias = settings.model_alias.clone().or_else(|| {
+        let custom_names_val = get_lh_val("custom-name")
+            .or_else(|| get_lh_val("custom-names"))
+            .or_else(|| get_long_val("custom-name"))
+            .or_else(|| get_long_val("custom-names"));
+        let variant_key = match (settings.draft_model.is_some(), settings.mmproj.is_some()) {
+            (true, true) => "draft-vision",
+            (true, false) => "draft",
+            (false, true) => "vision",
+            (false, false) => "base",
+        };
+        let mut custom = None;
+        if let Some(val) = custom_names_val {
+            if let Some(obj) = val.as_object() {
+                if let Some(s) = obj.get(variant_key).and_then(|v| v.as_str()) {
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        custom = Some(trimmed.to_owned());
+                    }
+                }
+            } else if variant_key == "base"
+                && let Some(s) = val.as_str()
+            {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    custom = Some(trimmed.to_owned());
+                }
+            }
+        }
+        custom.or_else(|| {
+            let clean = crate::discovery::clean_model_id(model_path);
+            let name = match variant_key {
+                "draft" => crate::discovery::insert_variant_suffix(&clean, "draft"),
+                "vision" => crate::discovery::insert_variant_suffix(&clean, "vision"),
+                "draft-vision" => crate::discovery::insert_variant_suffix(&clean, "draft-vision"),
+                _ => clean,
+            };
+            Some(name)
+        })
+    });
+
+    if let Some(alias) = resolved_alias {
+        params.push("--alias".to_owned());
+        params.push(alias);
+    }
 
     let host = get_global_long("host")
         .and_then(|v| v.as_str())
@@ -512,10 +559,11 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
                     .or_else(|| draft_assets.config.get(key))
             };
 
+            let default_spec = crate::discovery::default_spec_type_for_draft(draft);
             let spec_type = get_long_val("spec-type")
                 .or_else(|| get_draft_long("spec-type"))
                 .and_then(|v| v.as_str())
-                .unwrap_or("draft-mtp");
+                .unwrap_or(default_spec);
 
             let spec_draft_n_max = get_long_val("spec-draft-n-max")
                 .or_else(|| get_draft_long("spec-draft-n-max"))
@@ -555,6 +603,34 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
             params.push(spec_draft_n_max.to_string());
             params.push("--spec-draft-p-min".to_owned());
             params.push(spec_draft_p_min.to_string());
+
+            let spec_draft_n_ubatch = get_long_val("spec-draft-n-ubatch")
+                .or_else(|| get_draft_long("spec-draft-n-ubatch"))
+                .or_else(|| get_global_long("spec-draft-n-ubatch"))
+                .and_then(|v| {
+                    v.as_str().map_or_else(
+                        || {
+                            v.as_u64().or_else(|| {
+                                #[allow(clippy::cast_sign_loss)]
+                                v.as_i64().map(|i| i as u64)
+                            })
+                        },
+                        |s| s.parse::<u64>().ok(),
+                    )
+                });
+            if let Some(n_ubatch) = spec_draft_n_ubatch {
+                params.push("--spec-draft-n-ubatch".to_owned());
+                params.push(n_ubatch.to_string());
+            }
+
+            let spec_draft_sampling = get_long_val("spec-draft-sampling")
+                .or_else(|| get_draft_long("spec-draft-sampling"))
+                .or_else(|| get_global_long("spec-draft-sampling"))
+                .and_then(|v| v.as_str());
+            if let Some(sampling) = spec_draft_sampling {
+                params.push("--spec-draft-sampling".to_owned());
+                params.push(sampling.to_owned());
+            }
         }
     }
 
@@ -646,13 +722,26 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
         params.push(step.to_string());
     }
 
+    let explicit_load_mode = get_global_long("load-mode")
+        .or_else(|| get_lh_val("load-mode"))
+        .or_else(|| get_long_val("load-mode"))
+        .and_then(|v| v.as_str());
+
+    let mlock = get_global_long("mlock")
+        .or_else(|| get_lh_val("mlock"))
+        .or_else(|| get_long_val("mlock"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
     let no_mmap = get_global_long("no-mmap")
         .or_else(|| get_lh_val("no-mmap"))
         .or_else(|| get_long_val("no-mmap"))
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    if no_mmap {
-        params.push("--no-mmap".to_owned());
+
+    if let Some(load_mode) = resolve_load_mode(explicit_load_mode, mlock, no_mmap) {
+        params.push("--load-mode".to_owned());
+        params.push(load_mode);
     }
 
     if let Some(ref template) = assets.jinja_template {
@@ -676,11 +765,58 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
         params.push("--context-shift".to_owned());
     }
 
-    let mlock = get_global_long("mlock")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    if mlock {
-        params.push("--mlock".to_owned());
+    let sleep_idle_seconds = get_long_val("sleep-idle-seconds")
+        .or_else(|| get_lh_val("sleep-idle-seconds"))
+        .or_else(|| get_global_long("sleep-idle-seconds"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    #[allow(clippy::cast_possible_wrap)]
+                    v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                },
+                |s| s.parse::<i64>().ok(),
+            )
+        });
+    if let Some(secs) = sleep_idle_seconds {
+        params.push("--sleep-idle-seconds".to_owned());
+        params.push(secs.to_string());
+    }
+
+    let moe_cache_mib = get_lh_val("moe-cache-mib")
+        .or_else(|| get_long_val("moe-cache-mib"))
+        .or_else(|| get_global_long("moe-cache-mib"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    v.as_u64().or_else(|| {
+                        #[allow(clippy::cast_sign_loss)]
+                        v.as_i64().map(|i| i as u64)
+                    })
+                },
+                |s| s.parse::<u64>().ok(),
+            )
+        });
+    if let Some(mib) = moe_cache_mib {
+        params.push("--moe-cache-mib".to_owned());
+        params.push(mib.to_string());
+    }
+
+    let n_cpu_moe = get_lh_val("n-cpu-moe")
+        .or_else(|| get_long_val("n-cpu-moe"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    v.as_u64().or_else(|| {
+                        #[allow(clippy::cast_sign_loss)]
+                        v.as_i64().map(|i| i as u64)
+                    })
+                },
+                |s| s.parse::<u64>().ok(),
+            )
+        });
+    if let Some(ncmoe) = n_cpu_moe {
+        params.push("--n-cpu-moe".to_owned());
+        params.push(ncmoe.to_string());
     }
 
     let numa = get_global_long("numa")
@@ -903,10 +1039,39 @@ pub fn build_launch_parameters<S: std::hash::BuildHasher>(
         params.push(rb.to_string());
     }
 
+    let reasoning_effort = get_lh_val("reasoning-effort")
+        .or_else(|| get_long_val("reasoning-effort"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty());
+    if let Some(re) = reasoning_effort {
+        params.push("--reasoning-effort".to_owned());
+        params.push(re);
+    }
+
+    if let Some(rp_val) =
+        get_lh_val("reasoning-preserve").or_else(|| get_long_val("reasoning-preserve"))
+    {
+        if let Some(b) = rp_val.as_bool() {
+            params.push(if b {
+                "--reasoning-preserve".to_owned()
+            } else {
+                "--no-reasoning-preserve".to_owned()
+            });
+        } else if let Some(s) = rp_val.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+            match s.to_lowercase().as_str() {
+                "true" | "on" | "1" => params.push("--reasoning-preserve".to_owned()),
+                "false" | "off" | "0" => params.push("--no-reasoning-preserve".to_owned()),
+                _ => {}
+            }
+        }
+    }
+
     let config_ts = get_lh_val("tensor-split")
         .or_else(|| get_long_val("tensor-split"))
         .or_else(|| get_global_long("tensor-split"))
-        .and_then(|v| v.as_str().map(ToOwned::to_owned));
+        .and_then(|v| v.as_str().map(|s| s.trim().to_owned()))
+        .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("auto"));
 
     let tensor_split = config_ts.or_else(|| {
         let gpus = crate::discovery::scan_gpu_topology();
@@ -1044,6 +1209,24 @@ pub fn build_router_launch_parameters<S: std::hash::BuildHasher>(
     params.push("--models-max".to_owned());
     params.push(models_max);
 
+    let models_memory_margin = get_global_long("models-memory-margin")
+        .or_else(|| get_global_lh("models-memory-margin"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    #[allow(clippy::cast_possible_wrap)]
+                    v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                },
+                |s| s.parse::<i64>().ok(),
+            )
+        });
+    if let Some(margin) = models_memory_margin
+        && margin > 0
+    {
+        params.push("--models-memory-margin".to_owned());
+        params.push(margin.to_string());
+    }
+
     let np = get_global_long("np")
         .and_then(|v| v.as_i64().map(|i| i.to_string()))
         .unwrap_or_else(|| "-1".to_owned());
@@ -1126,11 +1309,51 @@ pub fn build_router_launch_parameters<S: std::hash::BuildHasher>(
         params.push("--context-shift".to_owned());
     }
 
+    let sleep_idle_seconds = get_global_long("sleep-idle-seconds")
+        .or_else(|| get_global_lh("sleep-idle-seconds"))
+        .and_then(|v| {
+            v.as_str().map_or_else(
+                || {
+                    #[allow(clippy::cast_possible_wrap)]
+                    v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                },
+                |s| s.parse::<i64>().ok(),
+            )
+        });
+    if let Some(secs) = sleep_idle_seconds {
+        params.push("--sleep-idle-seconds".to_owned());
+        params.push(secs.to_string());
+    }
+
+    let explicit_load_mode = get_global_long("load-mode").and_then(|v| v.as_str());
+
     let mlock = get_global_long("mlock")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    if mlock {
-        params.push("--mlock".to_owned());
+
+    let no_mmap = get_global_long("no-mmap")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    if let Some(load_mode) = resolve_load_mode(explicit_load_mode, mlock, no_mmap) {
+        params.push("--load-mode".to_owned());
+        params.push(load_mode);
+    }
+
+    let moe_cache_mib = get_global_long("moe-cache-mib").and_then(|v| {
+        v.as_str().map_or_else(
+            || {
+                v.as_u64().or_else(|| {
+                    #[allow(clippy::cast_sign_loss)]
+                    v.as_i64().map(|i| i as u64)
+                })
+            },
+            |s| s.parse::<u64>().ok(),
+        )
+    });
+    if let Some(mib) = moe_cache_mib {
+        params.push("--moe-cache-mib".to_owned());
+        params.push(mib.to_string());
     }
 
     let numa = get_global_long("numa")
@@ -1252,7 +1475,8 @@ pub fn build_router_launch_parameters<S: std::hash::BuildHasher>(
 
     let config_ts = get_global_lh("tensor-split")
         .or_else(|| get_global_long("tensor-split"))
-        .and_then(|v| v.as_str().map(ToOwned::to_owned));
+        .and_then(|v| v.as_str().map(|s| s.trim().to_owned()))
+        .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("auto"));
 
     let tensor_split = config_ts.or_else(|| {
         let gpus = crate::discovery::scan_gpu_topology();
@@ -1371,5 +1595,30 @@ pub fn resolve_port(port_str: &str) -> Result<u16, std::io::Error> {
                 ),
             ))
         }
+    }
+}
+
+/// Resolves the effective `--load-mode` value for `llama-server`.
+///
+/// Upstream `llama.cpp` deprecated and removed `--mlock`, `--mmap`, and `--no-mmap`
+/// in favor of `-lm, --load-mode <auto|none|mmap|mlock|mmap+mlock|dio>`.
+/// This helper respects explicit `load-mode` settings and translates legacy `mlock`
+/// and `no-mmap` settings safely without passing invalid flags.
+#[must_use]
+pub fn resolve_load_mode(
+    explicit_load_mode: Option<&str>,
+    mlock: bool,
+    no_mmap: bool,
+) -> Option<String> {
+    if let Some(mode) = explicit_load_mode {
+        let trimmed = mode.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_owned());
+        }
+    }
+    match (mlock, no_mmap) {
+        (true, _) => Some("mlock".to_owned()),
+        (false, true) => Some("none".to_owned()),
+        (false, false) => None,
     }
 }

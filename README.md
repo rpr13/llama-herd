@@ -33,6 +33,7 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 ### Key Capabilities
 
 - 🛠️ **Auto-Discovery & Pairing**: Instantly pairs base models with compatible speculative drafts or vision projectors using filename heuristics, with variant filtering (`variants = ["base", "draft-vision"]`), custom preset naming (`[llama-herd.custom-name]`), and interactive variant badge cycling (`[B]`, `[D]`, `[V]`, `[DV]`) directly on the Dashboard.
+- 👁️ **Model Hiding & Visibility Toggle**: Flag models with `hidden = true` (or `is-hidden = true`) in model TOML configs to exclude them from `models-preset.ini` generation, Router Mode serving, and the primary dashboard list. Toggle visibility in the Left Panel with `H` (showing `[H]` badges) and toggle hidden status directly at parameter index 4.
 - 🖲️ **Hardware Topology Scanner & Multi-GPU Allocator**: Scans NVIDIA CUDA (`nvidia-smi`), AMD ROCm (`rocm-smi`), and Windows WDDM. Auto-calculates ratio-based `--tensor-split` with a 12% safety headroom buffer and injects `--fit-on` / `-fitt 1024` parameters for multi-GPU systems.
 - 🛡️ **Subprocess Supervisor & Auto-Recovery**: Supervises `llama-server` lifecycle, captures immutable launch configurations (`SupervisorConfig`), and automatically respawns crashed instances upon failure or OOM without parameter drift.
 - 🩺 **Health Monitoring & Generation Cancellation**: Non-blocking REST polling against `/health` tracking `HealthState` badges (`HEALTHY`, `LOADING`, `UNHEALTHY`, `RECOVERING`). Allows immediate inference generation cancellation with `F4` via `POST /v1/chat/completions/control`.
@@ -40,7 +41,7 @@ Running local LLMs via raw `llama-server` command lines is often brittle and man
 - ⚙️ **Robust Process Orchestration**: Spawns and monitors `llama-server` subprocesses, tracking active PIDs in `active_pids.txt` and terminating orphaned or zombie instances cleanly across Windows (`taskkill`) and Unix (`process.kill()`).
 - 🖥️ **Interactive Control Center**: Provides a rich Ratatui TUI dashboard showing real-time PID, active port, model name, low-frequency RAM/VRAM utilization bars, health status badges, and editable preset parameters (including Custom Name, Context Size, GPU Offload, Samplers, and Speculative Decoding).
 - 🎨 **ANSI Log Parser**: Streams subprocess logs directly into terminal frames, parsing graphic coloring codes into styled spans with autoscroll (`A` / `Space`), pause (`P`), line wrapping (`W`), and clipboard export (`C`).
-- 🎨 **Customizable TUI Theme System**: Features a hybrid functional palette and procedural UI behavior system for a personalized dashboard experience.
+- 🎨 **Customizable TUI Theme System & Live Presets**: Features 8 built-in programmer themes (Gruvbox Dark, VS Code Dark+, IntelliJ Dark, Catppuccin Mocha, Tokyo Night, Nord, One Dark, and Default), independent background transparency toggle, instant in-memory theme switching, and automatic live hot-reloading for custom `theme.toml`.
 - 🔀 **Dynamic Preset Routing**: Coordinates on-demand model loading and routing configurations (governed by generated `models-preset.ini` files).
 - 🔄 **Dynamic Hot Reloading**: Automatically scans the models directory at runtime with active-writes stability checks (deferring updates during downloads) and alerts users with TUI warning bars when edits are unsaved.
 
@@ -85,6 +86,7 @@ Llama-Herd reads custom parameters from `.toml` files matching your `.gguf` mode
 [llama-herd]
 draft = "Qwen2.5-1.5B-Instruct.gguf"
 variants = "draft-vision" # or: ["base", "draft-vision"]
+hidden = false # or: is-hidden = true (excludes from presets & router, hidden in list)
 
 # Optional custom preset naming per variant (or shorthand `custom-name = "my-preset"` under [llama-herd]):
 [llama-herd.custom-name]
@@ -105,6 +107,8 @@ repeat-last-n = 64
 reasoning = "on"
 reasoning-format = "deepseek"
 reasoning-budget = 1024
+reasoning-effort = "high"
+reasoning-preserve = true
 
 # llama-server short option parameters (e.g. -sps 0.6)
 [llama-server-short]
@@ -123,15 +127,20 @@ sps = 0.6
 | `F2` | Global | Global Settings & Hardware Allocation |
 | `F3` | Global | Real-Time Log Viewer & Stream Monitor |
 | `F4` | Global | **Cancel active inference generation** via REST control signal |
-| `F5` | Global | **Start selected preset model** |
-| `F6` | Global | **Start Router Mode** server |
+| `F5` | Global | **Start selected preset model** (guarded: cannot start hidden models) |
+| `F6` | Global | **Start Router Mode** server (hidden models excluded from presets) |
 | `F7` | Global | **Restart running server** |
 | `F8` | Global | **Stop / kill running server** |
 | `↑` / `↓` | Dashboard (Left Panel) | Navigate between base models in list |
 | `←` / `→` | Dashboard (Left Panel) | Cycle between available variants for selected model (`[B]`, `[D]`, `[V]`, `[DV]`) |
+| `H` | Dashboard (Left Panel) | Toggle showing/hiding hidden models in list (`[H]` badge) |
 | `Tab` | Dashboard | Toggle focus between Models (Left) and Preset Details & Parameters (Right) |
-| `Enter` | Dashboard | Focus parameter editing (Left panel) or edit selected parameter (Right panel) |
+| `Enter` | Dashboard | Focus parameter editing (Left panel) or edit parameter / toggle boolean (Right panel) |
+| `Space` | Dashboard (Right Panel) | Toggle boolean parameter value (e.g., `Hidden` toggle at index 4) |
 | `Esc` | Dashboard | Return focus to Models list (from Right panel) |
+| `↑` / `↓` | Settings (`F2`) | Navigate global settings rows |
+| `Space` | Settings (`F2`) | Toggle boolean setting (e.g., `Transparent Background`, `Web UI`, `Prompt Caching`) |
+| `Enter` | Settings (`F2`) | Open option selector modal (`Theme Preset`, `Port`, `Host`, `Load Mode`) or file picker |
 | `A` / `Space` | Logs (`F3`) | Toggle autoscroll (jump to bottom when active) |
 | `P` | Logs (`F3`) | Pause / resume real-time log ingestion |
 | `W` | Logs (`F3`) | Toggle line wrapping |

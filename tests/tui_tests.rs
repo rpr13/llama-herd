@@ -172,8 +172,9 @@ mod tests {
             Theme::default(),
         );
         state.ctx = 123;
+        state.ctx_str = "123".to_owned();
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 4; // Context Size
+        state.dashboard_param_index = 5; // Context Size
         let key = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -181,6 +182,9 @@ mod tests {
             state: KeyEventState::empty(),
         };
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+        handle_key_event(&mut state, key, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingCtx);
+        state.option_selector_index = state.option_selector_list.len() - 1; // (Custom / Manual...)
         handle_key_event(&mut state, key, &tx);
         assert_eq!(state.screen, AppScreen::EditingCtx);
         assert_eq!(state.input_buffer, "123");
@@ -247,7 +251,7 @@ mod tests {
         state.spec_draft_p_min = "0.0".to_owned();
 
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 24; // Spec Draft N Max
+        state.dashboard_param_index = 29; // Spec Draft N Max
 
         let key_enter = KeyEvent {
             code: KeyCode::Enter,
@@ -268,8 +272,8 @@ mod tests {
         assert_eq!(state.screen, AppScreen::Dashboard);
         assert_eq!(state.spec_draft_n_max, "8");
 
-        // Go to spec-draft-p-min edit screen (index 25)
-        state.dashboard_param_index = 25;
+        // Go to spec-draft-p-min edit screen (index 30)
+        state.dashboard_param_index = 30;
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::EditingSpecDraftPMin);
         assert_eq!(state.input_buffer, "0.0");
@@ -315,7 +319,7 @@ mod tests {
         assert_eq!(state.screen, AppScreen::SelectingGlobalSettingOption);
         assert_eq!(state.option_selector_list.len(), 4);
         assert_eq!(state.option_selector_list[0], "auto");
-        assert_eq!(state.option_selector_list[1], "1");
+        assert_eq!(state.option_selector_list[1], "on");
 
         // 2. Down key -> moves selector to the next item
         let key_down = KeyEvent {
@@ -325,7 +329,7 @@ mod tests {
             state: KeyEventState::empty(),
         };
         handle_key_event(&mut state, key_down, &tx);
-        assert_eq!(state.option_selector_index, 1); // Selected "1"
+        assert_eq!(state.option_selector_index, 1); // Selected "on"
 
         // 3. Enter key -> saves standard option and returns to Settings
         handle_key_event(&mut state, key_enter, &tx);
@@ -337,7 +341,7 @@ mod tests {
                 .unwrap()
                 .as_str()
                 .unwrap(),
-            "1"
+            "on"
         );
 
         // 4. Open option list again
@@ -350,7 +354,7 @@ mod tests {
         // 6. Enter key -> transitions to text entry
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::EditingGlobalSetting);
-        assert_eq!(state.input_buffer, "1");
+        assert_eq!(state.input_buffer, "on");
     }
 
     #[test]
@@ -369,12 +373,12 @@ mod tests {
         state.config_path = config_path;
         state.screen = AppScreen::EditingGlobalSetting;
 
-        let dry_mult_idx = llama_herd::tui::ui::SETTINGS
+        let fitt_idx = llama_herd::tui::ui::SETTINGS
             .iter()
-            .position(|item| item.key == "dry-multiplier")
+            .position(|item| item.key == "fitt")
             .unwrap();
-        state.settings_index = dry_mult_idx;
-        state.input_buffer = "1.5".to_owned();
+        state.settings_index = fitt_idx;
+        state.input_buffer = "2048".to_owned();
 
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
         let key_enter = KeyEvent {
@@ -389,10 +393,10 @@ mod tests {
 
         let saved_val = state
             .global_config
-            .get("dry-multiplier")
-            .and_then(|v| v.as_f64())
+            .get("fitt")
+            .and_then(|v| v.as_i64())
             .unwrap();
-        assert_eq!(saved_val, 1.5);
+        assert_eq!(saved_val, 2048);
     }
 
     #[test]
@@ -417,7 +421,7 @@ mod tests {
 
         // 1. Enter key -> enters MMProj selection popup
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 6; // MMProj
+        state.dashboard_param_index = 7; // MMProj
         let key_v = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -488,7 +492,7 @@ mod tests {
 
         // 1. Enter key -> enters Draft model selection popup
         state.dashboard_focus = DashboardFocus::Right;
-        state.dashboard_param_index = 21; // Draft Model
+        state.dashboard_param_index = 26; // Draft Model
         let key_d = KeyEvent {
             code: KeyCode::Enter,
             modifiers: KeyModifiers::empty(),
@@ -609,12 +613,24 @@ temp = 0.7
             .as_object()
             .unwrap();
         assert_eq!(long_opts.get("temp").unwrap().as_f64().unwrap(), 0.9);
-        assert_eq!(long_opts.get("ctx-size").unwrap().as_i64().unwrap(), 8192);
+        assert_eq!(long_opts.get("ctx-size").unwrap().as_str().unwrap(), "8k");
         assert_eq!(long_opts.get("top-p").unwrap().as_f64().unwrap(), 0.99);
 
-        // 4. Modify temp again and save with backup enabled to test backup generation
+        // 4. Modify temp and non-1024 ctx_str and save with backup enabled to test backup generation
         state.temp = "0.95".to_owned();
+        state.ctx_str = "5000".to_owned();
         state.save_current_preset_config(true).unwrap();
+
+        let updated_config = llama_herd::config::load_toml_silent(&new_toml);
+        let updated_long_opts = updated_config
+            .get("llama-server-long")
+            .unwrap()
+            .as_object()
+            .unwrap();
+        assert_eq!(
+            updated_long_opts.get("ctx-size").unwrap().as_i64().unwrap(),
+            5000
+        );
 
         // Verify that a backup file with suffix .bak.<timestamp> was created
         let backup_files: Vec<_> = std::fs::read_dir(&models_dir)
@@ -1753,7 +1769,10 @@ model = model2.gguf
         };
         let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
 
-        // 1. Enter key -> opens EditingVariants screen
+        // 1. Enter key -> opens SelectingVariants screen
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingVariants);
+        state.option_selector_index = state.option_selector_list.len() - 1; // (Custom / Manual...)
         handle_key_event(&mut state, key_enter, &tx);
         assert_eq!(state.screen, AppScreen::EditingVariants);
         assert_eq!(state.input_buffer, "all");
@@ -1943,11 +1962,11 @@ draft = "my-model-draft.gguf"
             state: KeyEventState::empty(),
         };
 
-        // 1. Up from 0 wraps to 25
+        // 1. Up from 0 wraps to 32
         handle_key_event(&mut state, key_up, &tx);
-        assert_eq!(state.dashboard_param_index, 25);
+        assert_eq!(state.dashboard_param_index, 32);
 
-        // 2. Down from 25 wraps to 0
+        // 2. Down from 32 wraps to 0
         handle_key_event(&mut state, key_down, &tx);
         assert_eq!(state.dashboard_param_index, 0);
 
@@ -1975,10 +1994,523 @@ draft = "my-model-draft.gguf"
         assert_eq!(state.screen, AppScreen::EditingTotalLayers);
         handle_key_event(&mut state, key_esc, &tx);
 
-        // 6. Index 3 opens EditingVariants
+        // 6. Index 3 opens SelectingVariants
         state.dashboard_param_index = 3;
         handle_key_event(&mut state, key_enter, &tx);
-        assert_eq!(state.screen, AppScreen::EditingVariants);
+        assert_eq!(state.screen, AppScreen::SelectingVariants);
         handle_key_event(&mut state, key_esc, &tx);
+
+        // 7. Index 5 opens SelectingCtx and selecting "32768 (32k)" sets ctx_str="32k", ctx=32768
+        state.dashboard_param_index = 5;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingCtx);
+        state.option_selector_index = state
+            .option_selector_list
+            .iter()
+            .position(|o| o == "32768 (32k)")
+            .unwrap();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::Dashboard);
+        assert_eq!(state.ctx_str, "32k");
+        assert_eq!(state.ctx, 32768);
+
+        // 8. Index 8 opens EditingNCpuMoe, Index 9 opens EditingMoeCacheMib
+        state.dashboard_param_index = 8;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingNCpuMoe);
+        state.input_buffer = "12".to_owned();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.n_cpu_moe, "12");
+
+        state.dashboard_param_index = 9;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingMoeCacheMib);
+        state.input_buffer = "2048".to_owned();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.moe_cache_mib, "2048");
+
+        // 9. Index 24 opens SelectingReasoningEffort, Index 25 opens SelectingReasoningPreserve
+        state.dashboard_param_index = 24;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingReasoningEffort);
+        handle_key_event(&mut state, key_down, &tx);
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.reasoning_effort, "default");
+
+        state.dashboard_param_index = 25;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingReasoningPreserve);
+        handle_key_event(&mut state, key_down, &tx);
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.reasoning_preserve, "true");
+
+        // 10. Index 31 opens EditingSpecDraftNUbatch, Index 32 opens SelectingSpecDraftSampling
+        state.dashboard_param_index = 31;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::EditingSpecDraftNUbatch);
+        state.input_buffer = "16".to_owned();
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.spec_draft_n_ubatch, "16");
+
+        state.dashboard_param_index = 32;
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingSpecDraftSampling);
+        handle_key_event(&mut state, key_down, &tx);
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.spec_draft_sampling, "greedy");
+    }
+
+    #[test]
+    fn test_h_key_toggles_show_hidden_in_left_panel() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.dashboard_focus = DashboardFocus::Left;
+        assert!(!state.show_hidden);
+
+        let key_h = KeyEvent {
+            code: KeyCode::Char('h'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        handle_key_event(&mut state, key_h, &tx);
+        assert!(state.show_hidden);
+
+        let key_upper_h = KeyEvent {
+            code: KeyCode::Char('H'),
+            modifiers: KeyModifiers::SHIFT,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_upper_h, &tx);
+        assert!(!state.show_hidden);
+
+        // Right panel focus should NOT toggle show_hidden
+        state.dashboard_focus = DashboardFocus::Right;
+        handle_key_event(&mut state, key_h, &tx);
+        assert!(!state.show_hidden);
+    }
+
+    #[test]
+    fn test_hidden_param_toggle_at_index_4() {
+        let mut state = AppState::new(
+            vec![],
+            PathBuf::from("."),
+            PathBuf::from("."),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.dashboard_focus = DashboardFocus::Right;
+        state.dashboard_param_index = 4;
+        state.hidden = false;
+        state.original_hidden = false;
+        assert!(!state.has_unsaved_changes());
+
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // Enter toggles hidden to true
+        handle_key_event(&mut state, key_enter, &tx);
+        assert!(state.hidden);
+        assert!(state.has_unsaved_changes());
+
+        // Space toggles hidden back to false
+        let key_space = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_space, &tx);
+        assert!(!state.hidden);
+        assert!(!state.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_f5_launch_guard_blocks_hidden_model() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        let mut state = AppState::new(
+            vec![(
+                "hidden-model".to_owned(),
+                PathBuf::from("hidden-model.gguf"),
+            )],
+            models_dir,
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("llama-server.exe"),
+            Theme::default(),
+        );
+        // Case A: state.hidden is true
+        state.hidden = true;
+        assert!(state.active_server.is_none());
+
+        let key_f5 = KeyEvent {
+            code: KeyCode::F(5),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        let handled = handle_key_event(&mut state, key_f5, &tx);
+        assert!(!handled);
+        assert!(state.active_server.is_none());
+
+        // Case B: selected model in grouped_models has is_hidden = true
+        state.hidden = false;
+        if !state.grouped_models.is_empty() {
+            state.grouped_models[state.selected_model_index].is_hidden = true;
+        }
+        let handled = handle_key_event(&mut state, key_f5, &tx);
+        assert!(!handled);
+        assert!(state.active_server.is_none());
+    }
+
+    #[test]
+    fn test_ui_renders_hidden_model_badge_and_param_row() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        let model1_path = models_dir.join("model-visible.gguf");
+        let model2_path = models_dir.join("model-hidden.gguf");
+        std::fs::write(&model1_path, b"").unwrap();
+        std::fs::write(&model2_path, b"").unwrap();
+
+        let hidden_toml = models_dir.join("model-hidden.toml");
+        std::fs::write(&hidden_toml, b"[llama-herd]\nhidden = true\n").unwrap();
+
+        let _ =
+            llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let presets = llama_herd::discovery::discover_presets_from_ini(&preset_path);
+
+        let mut state = AppState::new(
+            presets,
+            models_dir,
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("llama-server.exe"),
+            Theme::default(),
+        );
+        state.screen = AppScreen::Dashboard;
+        state.show_hidden = true;
+        state.rebuild_grouped_models();
+
+        let backend = TestBackend::new(140, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                llama_herd::tui::ui::draw(f, &mut state);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut full_text = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                full_text.push(buffer[(x, y)].symbol().chars().next().unwrap_or(' '));
+            }
+            full_text.push('\n');
+        }
+
+        assert!(
+            full_text.contains("[H]"),
+            "Buffer should contain [H] badge for hidden model"
+        );
+        assert!(
+            full_text.contains("Hidden"),
+            "Buffer should contain Hidden parameter row"
+        );
+        assert!(
+            full_text.contains("(H: Hide Hidden)"),
+            "Buffer should contain (H: Hide Hidden) in left panel title when focused and show_hidden is true"
+        );
+
+        // Case 2: Left panel focused, show_hidden = false
+        state.show_hidden = false;
+        terminal
+            .draw(|f| {
+                llama_herd::tui::ui::draw(f, &mut state);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut text_case2 = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                text_case2.push(buffer[(x, y)].symbol().chars().next().unwrap_or(' '));
+            }
+            text_case2.push('\n');
+        }
+        assert!(
+            text_case2.contains("(H: Show Hidden)"),
+            "Buffer should contain (H: Show Hidden) when focused and show_hidden is false"
+        );
+
+        // Case 3: Right panel focused (unfocused left), show_hidden = false
+        state.dashboard_focus = DashboardFocus::Right;
+        terminal
+            .draw(|f| {
+                llama_herd::tui::ui::draw(f, &mut state);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut text_case3 = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                text_case3.push(buffer[(x, y)].symbol().chars().next().unwrap_or(' '));
+            }
+            text_case3.push('\n');
+        }
+        assert!(
+            text_case3.contains("Models (Tab/Esc: Focus)"),
+            "Buffer should contain Models (Tab/Esc: Focus) when unfocused and show_hidden is false"
+        );
+
+        // Case 4: Right panel focused (unfocused left), show_hidden = true
+        state.show_hidden = true;
+        terminal
+            .draw(|f| {
+                llama_herd::tui::ui::draw(f, &mut state);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut text_case4 = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                text_case4.push(buffer[(x, y)].symbol().chars().next().unwrap_or(' '));
+            }
+            text_case4.push('\n');
+        }
+        assert!(
+            text_case4.contains("Models [All incl. Hidden] (Tab/Esc: Focus)"),
+            "Buffer should contain Models [All incl. Hidden] (Tab/Esc: Focus) when unfocused and show_hidden is true"
+        );
+    }
+
+    #[test]
+    fn test_f5_launch_passes_effective_model_alias() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        let model_file = models_dir.join("my-cool-model.gguf");
+        std::fs::write(&model_file, b"").unwrap();
+
+        std::fs::write(
+            &preset_path,
+            r#"
+[my-cool-model]
+model = my-cool-model.gguf
+"#,
+        )
+        .unwrap();
+
+        let mut state = AppState::new(
+            vec![("my-cool-model".to_owned(), model_file)],
+            models_dir,
+            preset_path,
+            HashMap::new(),
+            PathBuf::from("llama-server.exe"),
+            Theme::default(),
+        );
+
+        let key_f5 = KeyEvent {
+            code: KeyCode::F(5),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Without custom name: passes auto-generated alias
+        handle_key_event(&mut state, key_f5, &tx);
+        let alias_pos = state
+            .last_launch_args
+            .iter()
+            .position(|r| r == "--alias")
+            .expect("--alias must be present in launch args");
+        assert_eq!(state.last_launch_args[alias_pos + 1], "my-cool-model");
+
+        // 2. With custom name: passes custom name as alias
+        state.screen = AppScreen::Dashboard;
+        state.set_current_custom_name("My Super Custom Name".to_string());
+        handle_key_event(&mut state, key_f5, &tx);
+        let alias_pos2 = state
+            .last_launch_args
+            .iter()
+            .position(|r| r == "--alias")
+            .expect("--alias must be present in launch args");
+        assert_eq!(
+            state.last_launch_args[alias_pos2 + 1],
+            "My Super Custom Name"
+        );
+    }
+
+    #[test]
+    fn test_dspark_draft_sidecar_and_new_reasoning_params() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let models_dir = temp_dir.path().to_path_buf();
+        let preset_path = models_dir.join("models-preset.ini");
+
+        let main_model = models_dir.join("Qwen3-8B-Q4_K_M.gguf");
+        let dspark_draft = models_dir.join("dspark-Qwen3-8B-LiliCorr-Q8_0.gguf");
+        std::fs::write(&main_model, b"").unwrap();
+        std::fs::write(&dspark_draft, b"").unwrap();
+
+        let main_toml = models_dir.join("Qwen3-8B-Q4_K_M.toml");
+        std::fs::write(
+            &main_toml,
+            r#"
+[llama-server-long]
+reasoning-effort = "high"
+reasoning-preserve = true
+"#,
+        )
+        .unwrap();
+
+        let _ =
+            llama_herd::discovery::generate_presets_ini(&models_dir, &preset_path, &HashMap::new());
+        let ini_content = std::fs::read_to_string(&preset_path).unwrap();
+        assert!(ini_content.contains("model-draft = "));
+        assert!(ini_content.contains("dspark-Qwen3-8B-LiliCorr-Q8_0.gguf"));
+        assert!(ini_content.contains("spec-type = draft-dspark"));
+        assert!(ini_content.contains("reasoning-effort = high"));
+        assert!(ini_content.contains("reasoning-preserve = true"));
+
+        let mut global_config = HashMap::new();
+        global_config.insert(
+            "models-memory-margin".to_owned(),
+            serde_json::Value::Number(1024.into()),
+        );
+        let router_args = llama_herd::launcher::build_router_launch_parameters(
+            &models_dir,
+            &preset_path,
+            &global_config,
+            9931,
+        );
+        let mm_pos = router_args
+            .iter()
+            .position(|a| a == "--models-memory-margin")
+            .expect("--models-memory-margin must be present");
+        assert_eq!(router_args[mm_pos + 1], "1024");
+    }
+
+    #[test]
+    fn test_interactive_theme_preset_selection_and_transparency_toggle() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        use ratatui::style::Color;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_file = temp_dir.path().join("config.toml");
+
+        let mut state = AppState::new(
+            vec![],
+            temp_dir.path().to_path_buf(),
+            temp_dir.path().join("models-preset.ini"),
+            HashMap::new(),
+            PathBuf::from("."),
+            Theme::default(),
+        );
+        state.config_path = config_file;
+        state.screen = AppScreen::Settings;
+
+        let (tx, _) = std::sync::mpsc::channel::<TuiEvent>();
+
+        // 1. Locate "theme" in SETTINGS
+        let theme_setting_idx = llama_herd::tui::ui::SETTINGS
+            .iter()
+            .position(|s| s.key == "theme")
+            .expect("theme setting must exist");
+        state.settings_index = theme_setting_idx;
+
+        // 2. Press Enter to open theme selection popup
+        let key_enter = KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_enter, &tx);
+        assert_eq!(state.screen, AppScreen::SelectingGlobalSettingOption);
+        assert!(
+            state
+                .option_selector_list
+                .contains(&"Gruvbox Dark".to_owned())
+        );
+
+        // 3. Select "Gruvbox Dark" and press Enter
+        let gruvbox_opt_idx = state
+            .option_selector_list
+            .iter()
+            .position(|opt| opt == "Gruvbox Dark")
+            .expect("Gruvbox Dark option must exist");
+        state.option_selector_index = gruvbox_opt_idx;
+        handle_key_event(&mut state, key_enter, &tx);
+
+        assert_eq!(state.screen, AppScreen::Settings);
+        assert_eq!(
+            state.theme_preset,
+            llama_herd::tui::theme::ThemePreset::GruvboxDark
+        );
+        assert_eq!(state.theme.bg, Color::Rgb(0x28, 0x28, 0x28));
+        assert_eq!(
+            state.global_config.get("theme").unwrap().as_str().unwrap(),
+            "gruvbox-dark"
+        );
+
+        // 4. Locate "theme-transparent" in SETTINGS
+        let trans_setting_idx = llama_herd::tui::ui::SETTINGS
+            .iter()
+            .position(|s| s.key == "theme-transparent")
+            .expect("theme-transparent setting must exist");
+        state.settings_index = trans_setting_idx;
+
+        // 5. Press Space to toggle transparent background ON
+        let key_space = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        handle_key_event(&mut state, key_space, &tx);
+        assert!(state.theme_transparent);
+        assert_eq!(state.theme.bg, Color::Reset);
+        assert_eq!(
+            state
+                .global_config
+                .get("theme-transparent")
+                .unwrap()
+                .as_bool()
+                .unwrap(),
+            true
+        );
+
+        // 6. Press Space again to toggle OFF -> restores authentic Gruvbox dark background
+        handle_key_event(&mut state, key_space, &tx);
+        assert!(!state.theme_transparent);
+        assert_eq!(state.theme.bg, Color::Rgb(0x28, 0x28, 0x28));
+
+        // 7. Press Enter on theme-transparent -> toggles ON again
+        handle_key_event(&mut state, key_enter, &tx);
+        assert!(state.theme_transparent);
+        assert_eq!(state.theme.bg, Color::Reset);
     }
 }

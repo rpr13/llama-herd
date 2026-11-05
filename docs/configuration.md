@@ -30,6 +30,8 @@ Placed inside the platform-specific global configuration directory to define glo
 | `checkpoint-min-step` | `256`      | Integer    | Minimum spacing between context checkpoints in tokens (0 = no minimum).                                                                                                                                                                                                |
 | `no-mmap`         | `false`       | Boolean    | Disable memory-mapping for model files, loading everything directly into physical RAM.                                                                                                                                                                                |
 | `models-max`   | `1`           | Integer    | Max loaded models concurrently hosted in Router Mode.                                                                                                                                                                                                                   |
+| `sleep-idle-seconds` | `-1`    | Integer    | Number of seconds of idle time before `llama-server` unloads models to sleep (`-1` = disabled).                                                                                                                                                                        |
+| `models-memory-margin` | `0`   | Integer    | Device memory margin in MiB required before loading a new model in Router Mode, triggering LRU eviction (`0` = disabled).                                                                                                                                              |
 | `batch-size`   | `2048`        | Integer    | Processing batch size (`-b`).                                                                                                                                                                                                                                                                          |
 | `ubatch-size`  | `512`         | Integer    | Processing micro-batch size (`-ub`).                                                                                                                                                                                                                                                                   |
 | `threads`      | `"-1"`        | String/Int | Thread count allocation (`-t`). Defaults to `-1` (auto-detect threads).                                                                                                                                                                                                                                |
@@ -47,11 +49,13 @@ Placed inside the platform-specific global configuration directory to define glo
 | `api-key-file` | `"none"`      | String     | The path to a file containing authorized API keys, one per line.                                                                                                                                                                                                                                       |
 | `ssl-key-file` | `"none"`      | String     | Path to a PEM-encoded private key file to enable secure HTTPS communication.                                                                                                                                                                                                                          |
 | `ssl-cert-file`| `"none"`      | String     | Path to a PEM-encoded SSL certificate file to enable secure HTTPS communication.                                                                                                                                                                                                                       |
+| `theme`        | `"default"`   | String     | Active theme preset (`default`, `gruvbox-dark`, `vscode-dark`, `intellij-dark`, `catppuccin-mocha`, `tokyo-night`, `nord`, `one-dark`, `custom`).                                                                                                                      |
+| `theme-transparent` | `false`  | Boolean    | Enable terminal background transparency (`Color::Reset` for `bg`, `header-bg`, `footer-bg`). Defaults to `true` for `default` theme and `false` for authentic solid preset backgrounds.                                                                                 |
 
 ### Visual Settings Grouping (Settings Tab)
 
 Global settings are visually categorized in the Settings Tab (Tab 2) using styled headers:
-- **llama herd**: Unique orchestrator settings (`llama-server` path, `models-dir` path, and `models-max` active models).
+- **llama herd**: Unique orchestrator settings (`llama-server` path, `models-dir` path, `Theme Preset`, `Transparent Background`, and `models-max` active models).
 - **Common params**: Standard connection and performance parameters (`host`, `port`, `threads`, cache sizes, offload options, memory locking, and SSL certificates).
 - **Server-specific params**: Metrics endpoints, prompt caching toggles, and Web UI enablement.
 
@@ -96,6 +100,7 @@ Inside the TUI, you can edit and save the target TOML filename. Selecting the ta
 | `mmproj`                     | `none`  | String       | Explicit vision projector filename to couple with this model.                        |
 | `total-layers`               | `none`  | Integer      | Total structural layers of the neural network (used to resolve `"auto"` offloading). |
 | `variants`                   | `"all"` | String/Array | Controls which preset variants are generated (`"base"`, `"draft"`, `"vision"`, `"draft-vision"`, or `"all"`). Accepts a single string or array of strings. |
+| `hidden` / `is-hidden`       | `false` | Boolean      | Excludes model from `models-preset.ini` generation, Router Mode serving, and the primary dashboard list unless toggled with `H`. |
 
 ##### Custom Preset Naming (`custom-name`)
 
@@ -132,6 +137,16 @@ variants = "draft-vision"
 
 If a configured variant is unavailable (for example, `"draft-vision"` is requested but no draft model or vision projector exists), LlamaHerd automatically falls back to generating the `"base"` model preset.
 
+##### Model Hiding (`hidden` / `is-hidden`)
+
+The `hidden` (or `is-hidden`) option allows excluding auxiliary, test, or inactive models from dynamic preset generation and the main dashboard view:
+
+- **Preset & Router Exclusion**: Hidden models are completely omitted from `models-preset.ini`. Consequently, Router Mode (`F6` or `--cli`) will never load or route requests to a hidden model.
+- **Dashboard Visibility Toggle**: In the Dashboard (`F1`) left panel, hidden models are filtered out by default to keep the list clean. Pressing `H` toggles visibility of hidden models, rendering them with a `[H]` badge.
+- **Parameter Override Toggle**: On the right panel, parameter index 4 (`Hidden`) displays the model's current hiding state. Pressing `Enter` or `Space` toggles the value between `true` and `false`. Changes can then be persisted to the model's TOML config via `Ctrl+S`.
+- **F5 Launch Guard**: LlamaHerd enforces a launch guard preventing accidental execution of hidden models. Pressing `F5` on a hidden model is ignored until the model is unhidden.
+- **Fallback Discovery**: If all models in the models directory are hidden, LlamaHerd automatically falls back to discovering hidden presets (`discover_hidden_presets`) so you can inspect and configure models without being blocked by an empty list error.
+
 > [!NOTE]
 > **Draft & Multimodal Projector Discovery Heuristics**:
 > When scanning for matching vision projectors (`mmproj`) or draft models, LlamaHerd cleans filenames by ignoring size tokens (`12b`, `26b`), quantization tags (`q8_0`, `q4_k_m`), and precision markers (`f32`, `fp32`, `bf16`, `f16`). This ensures projectors like `gemma-4-12b-it-mmproj-F32.gguf` cleanly match complex model names like `gemma-4-12B-it-heretic.Q8_0.gguf`. Furthermore, when saving variants configuration or switching models, your selected variant (`[B]`, `[D]`, `[V]`, `[DV]`) is preserved.
@@ -160,21 +175,27 @@ If a configured variant is unavailable (for example, `"draft-vision"` is request
 | `repeat-last-n`    | `none`       | Integer    | Number of previous tokens to penalize for repeating.                                                         |
 | `reasoning-format` | `"auto"`     | String     | Format for reasoning extraction (auto, none, deepseek, deepseek-legacy).                                      |
 | `reasoning-budget` | `none`       | Integer    | Reasoning budget in tokens for reasoning/thinking models.                                                     |
-| `spec-type`        | `none`       | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`).                               |
+| `reasoning-effort` | `none`       | String     | Default reasoning effort level (`"default"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`). |
+| `reasoning-preserve` | `none`     | Boolean    | Preserve reasoning content across conversation turns (`--reasoning-preserve` / `--no-reasoning-preserve`).    |
+| `load-mode`        | `"auto"`     | String     | Memory loading mode (`-lm`, `--load-mode`): `auto`, `none`, `mmap`, `mlock`, `mmap+mlock`, or `dio`.         |
+| `spec-type`        | `none`       | String     | Speculative decoding mode (`"draft-mtp"`, `"draft-simple"`, `"draft-eagle3"`, `"draft-dflash"`, `"draft-dspark"`). |
 | `spec-draft-n-max` | `4`          | Integer    | Max speculative draft token predictions per slots.                                                           |
 | `spec-draft-p-min` | `0.0`        | Float      | Minimum probability threshold for speculative tokens.                                                        |
+| `spec-draft-n-ubatch` | `none`    | Integer    | Physical micro-batch size for the draft model context to spare VRAM (e.g., `8` or `16`).                     |
+| `spec-draft-sampling` | `"greedy"`| String     | Speculative draft sampling strategy: `"greedy"` or `"probabilistic"` (with target rejection sampling).     |
+| `moe-cache-mib`    | `none`       | Integer    | GPU cache size in MiB for MoE experts offloaded to CPU memory (`--moe-cache-mib`).                          |
 | `tensor-split`     | `none`       | String     | Proportion of model to offload to each GPU (e.g., `"3,1"` or `"1,1"`). Auto-calculated when multi-GPU is detected. |
 | `fit` / `fit-on`   | `on`         | String     | Fit model layers into available VRAM automatically across detected GPUs.                                     |
 | `fitt`             | `1024`       | Integer    | Target context tokens reserved when fitting layers into available VRAM.                                      |
 
 ### Visual Parameters Grouping (Dashboard Tab)
 
-Model preset parameters are visually grouped in the Preset Details & Parameters panel on Tab 1 (Dashboard) using styled headers:
-- **llama herd**: Unique orchestrator parameters (Preset Name, Model File, Target Config File, and Total Layers) placed on top.
-- **Common params**: Main options (Context Size with human-readable k-approximation, GPU Layers, and MMProj vision projector).
-- **Draft params**: Speculative decoding parameters (Draft Model, Draft NGL Layers, Speculative Type, Max Speculative Predictions, and Min Probability Threshold).
-- **Sampling params**: Sampling hyper-parameters (Temperature, Top P, Top K, Min P, Repeat Penalty, and Repeat Last N).
-- **Server-specific params**: Reasoning format extraction, Reasoning Mode, and Reasoning Budget settings.
+Model preset parameters are visually grouped in the Preset Details & Parameters panel on Tab 1 (Dashboard) using styled headers (total 33 parameters: indices 0..=32):
+- **llama herd**: Unique orchestrator parameters: Preset Name (read-only), Custom Name (index 0), Model File (read-only), Target Config File (index 1), Total Layers (index 2), Variants (index 3), and Hidden (index 4).
+- **Common params**: Main options: Context Size with human-readable k-approximation (index 5), GPU Layers (index 6), MMProj vision projector (index 7), N-CPU-MoE Layers (index 8), and MoE Cache in MiB (index 9).
+- **Sampling params**: Sampling hyper-parameters: Temperature (index 10), Top P (index 11), Top K (index 12), Min P (index 13), Repeat Penalty (index 14), Repeat Last N (index 15), and DRY sampler parameters (indices 16-20).
+- **Server-specific params**: Reasoning Format (index 21), Reasoning Mode (index 22), Reasoning Budget (index 23), Reasoning Effort (index 24), and Reasoning Preserve (index 25).
+- **Draft params**: Speculative decoding parameters: Draft Model (index 26), Draft NGL Layers (index 27), Speculative Type (index 28), Max Speculative Predictions (index 29), Min Probability Threshold (index 30), Spec Draft N Ubatch (index 31), and Spec Draft Sampling (index 32).
 
 ### Model Grouping & Variant Badges (Dashboard Left Panel)
 
@@ -184,8 +205,9 @@ In the Dashboard (Tab 1) left panel, models are grouped by their base model name
 - `[D]`: Speculative draft paired variant.
 - `[V]`: Multimodal vision projector paired variant.
 - `[DV]`: Combined speculative draft and vision projector variant.
+- `[H]`: Hidden model (omitted from `models-preset.ini` and router serving; revealed by pressing `H`).
 
-Use `↑` / `↓` to navigate between base models in the list, and `←` / `→` to cycle between available variants for the selected model. The right panel dynamically updates to show the selected variant's parameters and configuration.
+Use `↑` / `↓` to navigate between base models in the list, `←` / `→` to cycle between available variants for the selected model, and `H` to toggle showing or hiding models flagged as hidden. The right panel dynamically updates to show the selected variant's parameters and configuration.
 
 ---
 
@@ -367,8 +389,8 @@ Llama-Herd acts as a fault-tolerant process supervisor for `llama-server`:
 | `F2` | Global | Switch to Tab 2 (Global Settings) |
 | `F3` | Global | Switch to Tab 3 (Logs Viewer) |
 | `F4` | Global | Cancel active generation via REST control signal |
-| `F5` | Global | Start selected preset model |
-| `F6` | Global | Start Router Mode server |
+| `F5` | Global | Start selected preset model (guarded: cannot start hidden models) |
+| `F6` | Global | Start Router Mode server (hidden models are excluded from router presets) |
 | `F7` | Global | Restart currently running server |
 | `F8` | Global | Stop / terminate running server |
 | `A` / `Space` | Logs Tab | Toggle log autoscroll (scrolls to bottom when enabled) |
@@ -377,9 +399,11 @@ Llama-Herd acts as a fault-tolerant process supervisor for `llama-server`:
 | `C` | Logs Tab | Copy full raw log buffer to system clipboard |
 | `Up` / `Down` | Dashboard / All Screens | Navigate between base models (Left panel), list items, fields, or scroll logs |
 | `Left` / `Right` | Dashboard (Left panel) | Cycle between available variants for selected model (`[B]`, `[D]`, `[V]`, `[DV]`) |
+| `H` | Dashboard (Left panel) | Toggle showing/hiding hidden models in the base models list (`[H]` badge) |
 | `Tab` | Dashboard | Toggle focus between Models (Left) and Preset Details & Parameters (Right) |
 | `PageUp` / `PageDown` | Logs Tab | Fast scroll logs up / down |
 | `Home` / `End` | Logs Tab | Jump to top / bottom of log stream |
 | `Esc` | Dashboard / Modals | Return to Models list (Right panel) or close modal dialog |
 | `Enter` | Dashboard / Modals / Inputs | Focus parameters (Left panel) / edit selected parameter (Right panel) / confirm selection |
+| `Space` | Dashboard (Right panel) | Toggle boolean parameter value (e.g., `Hidden` toggle at index 4) |
 | `Ctrl+C` | Global | Clean shutdown and exit Llama-Herd |

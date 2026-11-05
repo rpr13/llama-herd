@@ -9,8 +9,8 @@
 )]
 
 use llama_herd::discovery::{
-    clean_model_id, discover_presets_from_ini, find_matching_draft, find_matching_mmproj,
-    generate_presets_ini, insert_variant_suffix,
+    clean_model_id, discover_hidden_presets, discover_presets_from_ini, find_matching_draft,
+    find_matching_mmproj, generate_presets_ini, insert_variant_suffix,
 };
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -47,6 +47,48 @@ fn test_clean_model_id_formatting() -> TestResult {
     assert_eq!(
         clean_model_id(&PathBuf::from("my--model---name.gguf")),
         "my-model-name"
+    );
+
+    // 4. Models with E2B and E4B sizes must not be split into E-2B or E-4B
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-E2B-it.gguf")),
+        "gemma-4-E2B-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-E4B-it.gguf")),
+        "gemma-4-E4B-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-E-2B-it.gguf")),
+        "gemma-4-E2B-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-E-4B-it.gguf")),
+        "gemma-4-E4B-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-e2b-it.gguf")),
+        "gemma-4-e2b-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-e4b-it.gguf")),
+        "gemma-4-e4b-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-e-2b-it.gguf")),
+        "gemma-4-e2b-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-e-4b-it.gguf")),
+        "gemma-4-e4b-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-E.2B-it.gguf")),
+        "gemma-4-E2B-it"
+    );
+    assert_eq!(
+        clean_model_id(&PathBuf::from("gemma-4-E.4B-it.gguf")),
+        "gemma-4-E4B-it"
     );
 
     Ok(())
@@ -102,7 +144,13 @@ fn test_find_matching_mmproj_heuristics() -> TestResult {
     let matched_single = find_matching_mmproj(&PathBuf::from("gemma-2-9b-it.gguf"), &single_list);
     assert_eq!(matched_single, None);
 
-    // 4. Empty list returns None
+    // 4. E2B model matches mmproj when size token is stripped
+    let mmproj_e = PathBuf::from("gemma-4-mmproj-F16.gguf");
+    let e_list = vec![mmproj_e.clone()];
+    let matched_e = find_matching_mmproj(&PathBuf::from("gemma-4-E2B-it.gguf"), &e_list);
+    assert_eq!(matched_e, Some(mmproj_e));
+
+    // 5. Empty list returns None
     let empty_list = vec![];
     let matched_none = find_matching_mmproj(&PathBuf::from("gemma-2-9b-it.gguf"), &empty_list);
     assert_eq!(matched_none, None);
@@ -624,4 +672,170 @@ custom-name = "Shorthand-Base"
 
     assert!(content.contains("[Shorthand-Base]"));
     assert!(!content.contains("[default]"));
+}
+
+#[test]
+fn test_generate_presets_ini_excludes_hidden_models() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+    let gguf_active = models_dir.join("active-model.gguf");
+    let toml_active = models_dir.join("active-model.toml");
+    let gguf_hidden = models_dir.join("hidden-model.gguf");
+    let toml_hidden = models_dir.join("hidden-model.toml");
+
+    std::fs::write(&gguf_active, b"fake gguf").unwrap();
+    std::fs::write(&toml_active, b"[llama-herd]\nhidden = false\n").unwrap();
+    std::fs::write(&gguf_hidden, b"fake gguf").unwrap();
+    std::fs::write(&toml_hidden, b"[llama-herd]\nhidden = true\n").unwrap();
+
+    let output_ini = models_dir.join("models-preset.ini");
+    let global_config = std::collections::HashMap::new();
+    let _ = generate_presets_ini(models_dir, &output_ini, &global_config).unwrap();
+
+    let ini_content = std::fs::read_to_string(&output_ini).unwrap();
+    assert!(ini_content.contains("active-model"));
+    assert!(!ini_content.contains("hidden-model"));
+
+    let hidden_presets = discover_hidden_presets(models_dir);
+    assert_eq!(hidden_presets.len(), 1);
+    assert_eq!(hidden_presets[0].1, gguf_hidden);
+}
+
+#[test]
+fn test_discover_hidden_presets_respects_aliases_and_root_keys() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+
+    // 1. [llama-herd] is-hidden = true
+    let m1 = models_dir.join("model-lh-ishidden.gguf");
+    std::fs::write(&m1, b"dummy").unwrap();
+    std::fs::write(
+        models_dir.join("model-lh-ishidden.toml"),
+        b"[llama-herd]\nis-hidden = true\n",
+    )
+    .unwrap();
+
+    // 2. root hidden = true
+    let m2 = models_dir.join("model-root-hidden.gguf");
+    std::fs::write(&m2, b"dummy").unwrap();
+    std::fs::write(
+        models_dir.join("model-root-hidden.toml"),
+        b"hidden = true\n",
+    )
+    .unwrap();
+
+    // 3. root is-hidden = true
+    let m3 = models_dir.join("model-root-ishidden.gguf");
+    std::fs::write(&m3, b"dummy").unwrap();
+    std::fs::write(
+        models_dir.join("model-root-ishidden.toml"),
+        b"is-hidden = true\n",
+    )
+    .unwrap();
+
+    // 4. visible model
+    let m4 = models_dir.join("model-visible.gguf");
+    std::fs::write(&m4, b"dummy").unwrap();
+
+    let output_ini = models_dir.join("models-preset.ini");
+    let global_config = std::collections::HashMap::new();
+    let _ = generate_presets_ini(models_dir, &output_ini, &global_config).unwrap();
+
+    let ini_content = std::fs::read_to_string(&output_ini).unwrap();
+    assert!(ini_content.contains("model-visible"));
+    assert!(!ini_content.contains("model-lh-ishidden"));
+    assert!(!ini_content.contains("model-root-hidden"));
+    assert!(!ini_content.contains("model-root-ishidden"));
+
+    let hidden_presets = discover_hidden_presets(models_dir);
+    assert_eq!(hidden_presets.len(), 3);
+    let hidden_paths: Vec<_> = hidden_presets.into_iter().map(|(_, p)| p).collect();
+    assert!(hidden_paths.contains(&m1));
+    assert!(hidden_paths.contains(&m2));
+    assert!(hidden_paths.contains(&m3));
+    assert!(!hidden_paths.contains(&m4));
+}
+
+#[test]
+fn test_discover_hidden_presets_skips_drafts_and_mmproj() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+
+    // Hidden draft model: should be skipped from hidden presets
+    let draft_gguf = models_dir.join("draft-model.gguf");
+    std::fs::write(&draft_gguf, b"dummy").unwrap();
+    std::fs::write(
+        models_dir.join("draft-model.toml"),
+        b"[llama-herd]\nhidden = true\nis-draft = true\n",
+    )
+    .unwrap();
+
+    // Hidden mmproj model: should be skipped from hidden presets
+    let mmproj_gguf = models_dir.join("model-mmproj-f16.gguf");
+    std::fs::write(&mmproj_gguf, b"dummy").unwrap();
+    std::fs::write(
+        models_dir.join("model-mmproj-f16.toml"),
+        b"[llama-herd]\nhidden = true\n",
+    )
+    .unwrap();
+
+    // Regular hidden model
+    let hidden_gguf = models_dir.join("regular-hidden.gguf");
+    std::fs::write(&hidden_gguf, b"dummy").unwrap();
+    std::fs::write(
+        models_dir.join("regular-hidden.toml"),
+        b"[llama-herd]\nhidden = true\n",
+    )
+    .unwrap();
+
+    let hidden_presets = discover_hidden_presets(models_dir);
+    assert_eq!(hidden_presets.len(), 1);
+    assert_eq!(hidden_presets[0].1, hidden_gguf);
+}
+
+#[test]
+fn test_generate_presets_ini_with_load_mode_moe_and_spec_options() {
+    let temp_dir = tempdir().unwrap();
+    let models_dir = temp_dir.path();
+
+    let main_gguf = models_dir.join("main-model.gguf");
+    fs::write(&main_gguf, b"dummy main").unwrap();
+    fs::write(
+        models_dir.join("main-model.toml"),
+        r#"
+[llama-server-long]
+load-mode = "mmap+mlock"
+moe-cache-mib = 1024
+"#,
+    )
+    .unwrap();
+
+    let draft_gguf = models_dir.join("main-model-draft.gguf");
+    fs::write(&draft_gguf, b"dummy draft").unwrap();
+    fs::write(
+        models_dir.join("main-model-draft.toml"),
+        r#"
+[llama-herd]
+is-draft = true
+total-layers = 16
+
+[llama-server-long]
+spec-type = "draft-mtp"
+spec-draft-n-max = 5
+spec-draft-p-min = 0.85
+spec-draft-n-ubatch = 16
+spec-draft-sampling = "probabilistic"
+"#,
+    )
+    .unwrap();
+
+    let ini_path = models_dir.join("models-preset.ini");
+    let res = generate_presets_ini(models_dir, &ini_path, &HashMap::new());
+    assert!(res.is_ok());
+
+    let content = fs::read_to_string(&ini_path).unwrap();
+    assert!(content.contains("load-mode = mmap+mlock"));
+    assert!(content.contains("moe-cache-mib = 1024"));
+    assert!(content.contains("spec-draft-n-ubatch = 16"));
+    assert!(content.contains("spec-draft-sampling = probabilistic"));
 }

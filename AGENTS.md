@@ -31,7 +31,7 @@ This document defines architectural boundaries, coding standards, quality gates,
 | `src/tui/logs.rs` | Concurrent stdout/stderr log consumer, ANSI SGR sequence parser, log ring buffer, and subprocess supervisor thread. |
 | `src/tui/app.rs` | Application state machine, model selection, parameter override state, and models folder watcher. |
 | `src/tui/ui.rs` | Ratatui rendering engine, layout management, status badge styling, and dialogs. |
-| `src/tui/theme.rs`| Hybrid Theme System (Functional Palette + Procedural UI). |
+| `src/tui/theme.rs`| Hybrid Theme System (Functional Palette + Procedural UI + 8 Built-in Presets + Transparency Override). |
 | `src/tui/picker.rs`| Interactive file and directory picker modal. |
 
 ---
@@ -50,7 +50,7 @@ This document defines architectural boundaries, coding standards, quality gates,
 - **No Underscores or Leading Dashes**: Keys in model TOML configs must not contain underscores (`_`) or start with a dash (`-`). Violating keys must be rejected/ignored at load time.
 - **Injection Guard**: Option values must not start with `--` or `-` followed by alphabetic characters, and must not contain shell metacharacters (`;`, `&`, `|`).
 - **Context Size Parsing**: Suffixes for `ctx-size` are strictly restricted to `'k'`/`'K'` (multiplying by 1024). Other suffixes (`'M'`, `'G'`) or non-numeric/negative values must be rejected.
-- **Restricted Keys**: Any parameter managed by LlamaHerd (including `custom-name`, `custom-names`, `variants`, orchestrator settings, and server options; `is-default` is no longer supported) is strictly restricted from arbitrary passthrough to prevent duplicate/conflicting flags.
+- **Restricted Keys**: Any parameter managed by LlamaHerd (including `custom-name`, `custom-names`, `variants`, `hidden`, `is-hidden`, `alias`, `models-dir`, `theme`, `theme-transparent`, orchestrator settings, and server options; `is-default` is no longer supported) is strictly restricted from arbitrary passthrough to prevent duplicate/conflicting flags.
 
 ### Rule 4: Windows & Cross-Platform Compatibility
 - When querying process status or health endpoints, always account for Windows socket behaviors:
@@ -63,22 +63,24 @@ This document defines architectural boundaries, coding standards, quality gates,
 - **Model selection & variant cycling**:
   - `↑` / `↓` (Left panel): Navigate between base models.
   - `←` / `→` (Left panel): Cycle between available variants for selected model (`[B]`, `[D]`, `[V]`, `[DV]`).
+  - `H` (Left panel): Toggle showing/hiding hidden models in the base models list (displays `[H]` badge on hidden models).
   - `Tab` / `Enter`: Switch focus to Preset Details & Parameters editing (`Esc` to return to Models).
 - **Server operations**:
   - `F4`: Cancel active inference generation via REST control signal.
-  - `F5`: Start selected preset model.
-  - `F6`: Start router mode server.
+  - `F5`: Start selected preset model (guarded against launching hidden models).
+  - `F6`: Start router mode server (hidden models are excluded from router presets).
   - `F7`: Restart active server process.
   - `F8`: Stop running server.
 - **Log viewer controls**: `A` / `Space` (auto-scroll toggle), `P` (pause), `W` (wrap toggle), `C` (copy to clipboard).
+- **Settings navigation (Tab 2)**: `↑` / `↓` (navigate rows), `Space` (toggle boolean parameters such as `Transparent Background`, `Prompt Caching`, `Web UI`), `Enter` (open option dropdown modal for `Theme Preset`, `Port`, `Host`, `Load Mode`, etc., or file picker for `llama-server` / `models-dir`).
 
 ### Rule 6: Dashboard Parameters & Grouping Hierarchy
-- Parameters on the Dashboard (Tab 1, right panel) must follow the established visual grouping:
-  - **llama herd**: `Preset Name` (read-only), `Custom Name` (editable parameter at index 0), `Model File` (read-only), `Target Config File` (index 1), `Total Layers` (index 2), `Variants` (index 3).
-  - **Common params**: `Context Size` (index 4), `N-GPU-Layers` (index 5), `MMProj (Vision)` (index 6).
-  - **Sampling params**: `Temperature` (index 7), `Top P` (index 8), `Top K` (index 9), `Min P` (index 10), `Repeat Penalty` (index 11), `Repeat Last N` (index 12), DRY parameters (indexes 13-17).
-  - **Server-specific params**: Reasoning/Thinking configurations (indexes 18-20).
-  - **Draft params**: Speculative decoding configurations (indexes 21-25).
+- Parameters on the Dashboard (Tab 1, right panel) must follow the established visual grouping (total 33 parameters: indices 0..=32):
+  - **llama herd**: `Preset Name` (read-only), `Custom Name` (editable parameter at index 0), `Model File` (read-only), `Target Config File` (index 1), `Total Layers` (index 2), `Variants` (index 3), `Hidden` (index 4).
+  - **Common params**: `Context Size` (index 5), `N-GPU-Layers` (index 6), `MMProj (Vision)` (index 7), `N-CPU-MoE Layers` (index 8), `MoE Cache (MiB)` (index 9).
+  - **Sampling params**: `Temperature` (index 10), `Top P` (index 11), `Top K` (index 12), `Min P` (index 13), `Repeat Penalty` (index 14), `Repeat Last N` (index 15), DRY parameters (indexes 16-20).
+  - **Server-specific params**: Reasoning/Thinking configurations (indexes 21-25: format, mode, budget, effort, preserve).
+  - **Draft params**: Speculative decoding configurations (indexes 26-32).
 - Whenever adding, removing, or reordering parameters in `src/tui/ui.rs`, ensure prompt navigation indices and `app.rs` field mappings match exactly.
 
 ---

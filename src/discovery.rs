@@ -6,12 +6,15 @@ use std::sync::LazyLock;
 static MODEL_ID_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"([b-zB-Z])(\d+)([a-zA-Z])").expect("Static regex is valid")
 });
+static E_SIZE_HYPHEN_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?i)\b(e)-(2|4)(b)\b").expect("Static regex is valid"));
 static MULTIPLE_DASHES_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"-+").expect("Static regex is valid"));
 static VARIANT_SUFFIX_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"-([a-zA-Z0-9_]+)$").expect("Static regex is valid"));
 static SIZE_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(r"\b\d+(?:\.\d+)?(?:x\d+)?[bm]\b").expect("Static regex is valid")
+    regex::Regex::new(r"(?i)\b(?:e[24]b|\d+(?:\.\d+)?(?:x\d+)?[bm])\b")
+        .expect("Static regex is valid")
 });
 static QUANT_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
     regex::Regex::new(r"\b(?:q\d+(?:_?[k\d](?:_[sml])?)?|f16|fp16|bf16|f32|fp32)\b")
@@ -26,8 +29,21 @@ pub fn clean_model_id(path: &Path) -> String {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     let with_hyphens = stem.replace('.', "-");
 
-    let formatted = MODEL_ID_RE.replace_all(&with_hyphens, "$1-$2$3");
-    MULTIPLE_DASHES_RE.replace_all(&formatted, "-").into_owned()
+    let formatted = MODEL_ID_RE.replace_all(&with_hyphens, |caps: &regex::Captures| {
+        let p1 = &caps[1];
+        let p2 = &caps[2];
+        let p3 = &caps[3];
+        if p1.eq_ignore_ascii_case("e") && (p2 == "2" || p2 == "4") && p3.eq_ignore_ascii_case("b")
+        {
+            format!("{p1}{p2}{p3}")
+        } else {
+            format!("{p1}-{p2}{p3}")
+        }
+    });
+    let normalized = E_SIZE_HYPHEN_RE.replace_all(&formatted, "$1$2$3");
+    MULTIPLE_DASHES_RE
+        .replace_all(&normalized, "-")
+        .into_owned()
 }
 
 /// Inserts a suffix (like 'vision' or 'draft') into a model ID before its final segment.
@@ -99,6 +115,10 @@ pub fn find_matching_draft(model_path: &Path, draft_files: &[PathBuf]) -> Option
             "assistant",
             "draft",
             "mtp",
+            "dspark",
+            "dflash",
+            "eagle3",
+            "lilicorr",
             "gguf",
             "it",
             "chat",
@@ -158,6 +178,143 @@ pub fn discover_presets_from_ini(preset_path: &Path) -> Vec<(String, PathBuf)> {
     Vec::new()
 }
 
+/// Discovers model presets for all hidden models in the models directory.
+/// Excludes vision projectors (`mmproj`) and speculative draft models.
+#[must_use]
+pub fn discover_hidden_presets(models_dir: &Path) -> Vec<(String, PathBuf)> {
+    let mut all_ggufs = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("gguf")
+                && !path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .contains("mmproj")
+            {
+                all_ggufs.push(path);
+            }
+        }
+    }
+    all_ggufs.sort();
+
+    let mut toml_files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("toml") {
+                toml_files.push(path);
+            }
+        }
+    }
+    toml_files.sort_by_key(|a| std::cmp::Reverse(a.file_name().unwrap_or_default().len()));
+
+    let mut hidden_presets = Vec::new();
+    for model in &all_ggufs {
+        let stem = model
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let cfg = get_model_toml_config(&stem, &toml_files);
+        let is_draft = cfg.as_ref().is_some_and(is_model_draft) || is_draft_sidecar_filename(&stem);
+        let is_hidden = cfg.as_ref().is_some_and(is_model_hidden);
+
+        if !is_draft && is_hidden {
+            hidden_presets.push((clean_model_id(model), model.clone()));
+        }
+    }
+
+    hidden_presets
+}
+
+/// Checks if a model filename stem matches standard `llama.cpp` draft sidecar prefixes
+/// (`mtp-`, `dspark-`, `dflash-`, `eagle3-`).
+#[must_use]
+pub fn is_draft_sidecar_filename(stem_lower: &str) -> bool {
+    stem_lower.starts_with("mtp-")
+        || stem_lower.starts_with("dspark-")
+        || stem_lower.starts_with("dflash-")
+        || stem_lower.starts_with("eagle3-")
+}
+
+/// Infers the default `--spec-type` for a draft model file based on its filename stem.
+#[must_use]
+pub fn default_spec_type_for_draft(draft_path: &Path) -> &'static str {
+    let stem = draft_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if stem.starts_with("dspark-") || stem.contains("-dspark") || stem.contains("_dspark") {
+        "draft-dspark"
+    } else if stem.starts_with("dflash-")
+        || stem.contains("-dflash")
+        || stem.contains("_dflash")
+        || stem.contains("lilicorr")
+    {
+        "draft-dflash"
+    } else if stem.starts_with("eagle3-") || stem.contains("eagle3") {
+        "draft-eagle3"
+    } else {
+        "draft-mtp"
+    }
+}
+
+fn get_model_toml_config(
+    model_stem: &str,
+    toml_files: &[PathBuf],
+) -> Option<HashMap<String, serde_json::Value>> {
+    for js in toml_files {
+        let js_stem = js
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if model_stem.starts_with(&js_stem) {
+            return Some(crate::config::load_toml_silent(js));
+        }
+    }
+    None
+}
+
+fn is_model_draft<S: std::hash::BuildHasher>(
+    config: &HashMap<String, serde_json::Value, S>,
+) -> bool {
+    let check_val = |val: Option<&serde_json::Value>| -> bool {
+        val.is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"))
+    };
+
+    if let Some(lh) = config.get("llama-herd")
+        && (check_val(lh.get("is-draft")) || check_val(lh.get("is-draft-only")))
+    {
+        return true;
+    }
+
+    check_val(config.get("is-draft")) || check_val(config.get("is-draft-only"))
+}
+
+/// Checks if a model configuration has `hidden = true` or `is-hidden = true`
+/// either under `[llama-herd]` or at the root level.
+#[must_use]
+pub fn is_model_hidden<S: std::hash::BuildHasher>(
+    config: &HashMap<String, serde_json::Value, S>,
+) -> bool {
+    let check_val = |val: Option<&serde_json::Value>| -> bool {
+        val.is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"))
+    };
+
+    if let Some(lh) = config.get("llama-herd")
+        && (check_val(lh.get("hidden")) || check_val(lh.get("is-hidden")))
+    {
+        return true;
+    }
+
+    check_val(config.get("hidden")) || check_val(config.get("is-hidden"))
+}
+
 /// Generates a `models-preset.ini` file dynamically by scanning the models directory.
 ///
 /// # Errors
@@ -207,29 +364,14 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
-        let mut is_draft = false;
-
-        for js in &toml_files {
-            let js_stem = js
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if stem.starts_with(&js_stem) {
-                let cfg = crate::config::load_toml_silent(js);
-                if let Some(lh) = cfg.get("llama-herd")
-                    && (lh.get("is-draft").and_then(serde_json::Value::as_bool) == Some(true)
-                        || lh.get("is-draft-only").and_then(serde_json::Value::as_bool)
-                            == Some(true))
-                {
-                    is_draft = true;
-                }
-                break;
-            }
-        }
+        let cfg = get_model_toml_config(&stem, &toml_files);
+        let is_draft = cfg.as_ref().is_some_and(is_model_draft) || is_draft_sidecar_filename(&stem);
+        let is_hidden = cfg.as_ref().is_some_and(is_model_hidden);
 
         if is_draft {
             draft_files.push(model.clone());
+        } else if is_hidden {
+            // Hidden models are omitted from models-preset.ini
         } else {
             main_models.push(model.clone());
         }
@@ -292,6 +434,18 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
         )
     });
 
+    let flash_attn = get_global_long("flash-attn")
+        .and_then(|v| v.as_str())
+        .unwrap_or("auto");
+
+    let kv_unified = get_global_long("kv-unified")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+
+    let global_load_mode = get_global_long("load-mode").and_then(|v| v.as_str());
+    let global_mlock = get_global_long("mlock")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     let no_mmap = get_global_long("no-mmap")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
@@ -300,19 +454,19 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
     lines.push("version = 1".to_owned());
     lines.push("; Global settings shared across all presets".to_owned());
     lines.push("[*]".to_owned());
-    lines.push("flash-attn = auto".to_owned());
+    lines.push(format!("flash-attn = {flash_attn}"));
     lines.push("jinja = true".to_owned());
     lines.push(format!("cache-type-k = {cache_type_k}"));
     lines.push(format!("cache-type-v = {cache_type_v}"));
-    lines.push("kv-unified = true".to_owned());
+    lines.push(format!("kv-unified = {kv_unified}"));
     if let Some(checkpoints) = ctx_checkpoints {
         lines.push(format!("ctx-checkpoints = {checkpoints}"));
     }
     if let Some(step) = checkpoint_min_step {
         lines.push(format!("checkpoint-min-step = {step}"));
     }
-    if no_mmap {
-        lines.push("no-mmap = true".to_owned());
+    if let Some(lm) = crate::launcher::resolve_load_mode(global_load_mode, global_mlock, no_mmap) {
+        lines.push(format!("load-mode = {lm}"));
     }
     lines.push(String::new());
 
@@ -399,10 +553,6 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                 )
             });
 
-        let model_no_mmap = get_lh_val("no-mmap")
-            .or_else(|| get_long_val("no-mmap"))
-            .and_then(serde_json::Value::as_bool);
-
         let mut mmproj_file = None;
         if let Some(mmproj_cfg) = get_lh_val("mmproj")
             .or_else(|| get_long_val("mmproj"))
@@ -483,12 +633,12 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                             return Some(trimmed.to_owned());
                         }
                     }
-                } else if variant_id == "base" {
-                    if let Some(s) = val.as_str() {
-                        let trimmed = s.trim();
-                        if !trimmed.is_empty() {
-                            return Some(trimmed.to_owned());
-                        }
+                } else if variant_id == "base"
+                    && let Some(s) = val.as_str()
+                {
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_owned());
                     }
                 }
             }
@@ -567,51 +717,137 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
             if let Some(step) = model_checkpoint_min_step {
                 current_preset.push(format!("checkpoint-min-step = {step}"));
             }
-            if let Some(mmap) = model_no_mmap {
-                current_preset.push(format!("no-mmap = {mmap}"));
+
+            for float_key in ["min-p", "repeat-penalty", "dry-multiplier", "dry-base"] {
+                if let Some(val) = get_lh_val(float_key)
+                    .or_else(|| get_long_val(float_key))
+                    .and_then(|v| {
+                        v.as_str().map_or_else(
+                            || {
+                                v.as_f64().or_else(|| {
+                                    #[allow(clippy::cast_precision_loss)]
+                                    v.as_i64().map(|i| i as f64)
+                                })
+                            },
+                            |s| s.parse::<f64>().ok(),
+                        )
+                    })
+                {
+                    current_preset.push(format!("{float_key} = {val}"));
+                }
+            }
+
+            for int_key in [
+                "repeat-last-n",
+                "dry-allowed-length",
+                "dry-penalty-last-n",
+                "reasoning-budget",
+            ] {
+                if let Some(val) = get_lh_val(int_key)
+                    .or_else(|| get_long_val(int_key))
+                    .and_then(|v| {
+                        v.as_str().map_or_else(
+                            || {
+                                #[allow(clippy::cast_possible_wrap)]
+                                v.as_u64().map(|n| n as i64).or_else(|| v.as_i64())
+                            },
+                            |s| s.parse::<i64>().ok(),
+                        )
+                    })
+                {
+                    current_preset.push(format!("{int_key} = {val}"));
+                }
+            }
+
+            if let Some(dsb) = get_lh_val("dry-sequence-breaker")
+                .or_else(|| get_long_val("dry-sequence-breaker"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().replace(['\n', '\r'], " "))
+                .filter(|s| !s.is_empty())
+            {
+                current_preset.push(format!("dry-sequence-breaker = {dsb}"));
             }
 
             let config_ts = get_lh_val("tensor-split")
                 .or_else(|| get_long_val("tensor-split"))
-                .and_then(|v| v.as_str().map(ToOwned::to_owned));
+                .or_else(|| get_global_long("tensor-split"))
+                .and_then(|v| v.as_str().map(|s| s.trim().to_owned()))
+                .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("auto"));
             let tensor_split = config_ts.or_else(|| auto_tensor_split.clone());
 
-            if let Some(ref ts) = tensor_split {
-                if !ts.is_empty() && ts != "none" {
-                    current_preset.push(format!("tensor-split = {ts}"));
+            if let Some(ref ts) = tensor_split
+                && !ts.is_empty()
+                && ts != "none"
+            {
+                current_preset.push(format!("tensor-split = {ts}"));
 
-                    let fit_val = get_lh_val("fit")
-                        .or_else(|| get_long_val("fit"))
-                        .and_then(|v| {
-                            v.as_str().map_or_else(
-                                || {
-                                    v.as_bool()
-                                        .map(|b| if b { "on".to_owned() } else { "off".to_owned() })
-                                },
-                                |s| Some(s.to_owned()),
-                            )
-                        })
-                        .unwrap_or_else(|| "on".to_owned());
+                let fit_val = get_lh_val("fit")
+                    .or_else(|| get_long_val("fit"))
+                    .or_else(|| get_global_long("fit"))
+                    .and_then(|v| {
+                        v.as_str().map_or_else(
+                            || {
+                                v.as_bool()
+                                    .map(|b| if b { "on".to_owned() } else { "off".to_owned() })
+                            },
+                            |s| Some(s.to_owned()),
+                        )
+                    })
+                    .unwrap_or_else(|| "on".to_owned());
 
-                    let fitt_target = get_lh_val("fitt")
-                        .or_else(|| get_long_val("fitt"))
-                        .and_then(|v| {
-                            v.as_str().map_or_else(
-                                || v.as_i64().map(|i| i.to_string()),
-                                |s| Some(s.to_owned()),
-                            )
-                        })
-                        .unwrap_or_else(|| "1024".to_owned());
+                let fitt_target = get_lh_val("fitt")
+                    .or_else(|| get_long_val("fitt"))
+                    .or_else(|| get_global_long("fitt"))
+                    .and_then(|v| {
+                        v.as_str().map_or_else(
+                            || v.as_i64().map(|i| i.to_string()),
+                            |s| Some(s.to_owned()),
+                        )
+                    })
+                    .unwrap_or_else(|| "1024".to_owned());
 
-                    current_preset.push(format!("fit = {fit_val}"));
-                    current_preset.push(format!("fitt = {fitt_target}"));
-                }
+                current_preset.push(format!("fit = {fit_val}"));
+                current_preset.push(format!("fitt = {fitt_target}"));
             }
+
+            let explicit_reasoning_format = get_lh_val("reasoning-format")
+                .or_else(|| get_long_val("reasoning-format"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty());
 
             if reasoning != "auto" {
                 current_preset.push(format!("reasoning = {reasoning}"));
-                if reasoning == "on" {
-                    current_preset.push("reasoning-format = deepseek".to_owned());
+            }
+            if let Some(rf) = explicit_reasoning_format {
+                current_preset.push(format!("reasoning-format = {rf}"));
+            } else if reasoning == "on" {
+                current_preset.push("reasoning-format = deepseek".to_owned());
+            }
+
+            if let Some(re) = get_lh_val("reasoning-effort")
+                .or_else(|| get_long_val("reasoning-effort"))
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                current_preset.push(format!("reasoning-effort = {re}"));
+            }
+
+            if let Some(rp_val) =
+                get_lh_val("reasoning-preserve").or_else(|| get_long_val("reasoning-preserve"))
+            {
+                if let Some(b) = rp_val.as_bool() {
+                    current_preset.push(format!("reasoning-preserve = {b}"));
+                } else if let Some(s) = rp_val.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    let normalized = match s.to_lowercase().as_str() {
+                        "true" | "on" | "1" => Some("true"),
+                        "false" | "off" | "0" => Some("false"),
+                        _ => None,
+                    };
+                    if let Some(norm) = normalized {
+                        current_preset.push(format!("reasoning-preserve = {norm}"));
+                    }
                 }
             }
 
@@ -689,6 +925,57 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                 }
             }
 
+            let model_load_mode = get_lh_val("load-mode")
+                .or_else(|| get_long_val("load-mode"))
+                .and_then(|v| v.as_str());
+            let model_mlock = get_lh_val("mlock")
+                .or_else(|| get_long_val("mlock"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            let model_no_mmap = get_lh_val("no-mmap")
+                .or_else(|| get_long_val("no-mmap"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            if let Some(lm) =
+                crate::launcher::resolve_load_mode(model_load_mode, model_mlock, model_no_mmap)
+            {
+                current_preset.push(format!("load-mode = {lm}"));
+            }
+
+            let model_moe_cache = get_lh_val("moe-cache-mib")
+                .or_else(|| get_long_val("moe-cache-mib"))
+                .and_then(|v| {
+                    v.as_str().map_or_else(
+                        || {
+                            v.as_u64().or_else(|| {
+                                #[allow(clippy::cast_sign_loss)]
+                                v.as_i64().map(|i| i as u64)
+                            })
+                        },
+                        |s| s.parse::<u64>().ok(),
+                    )
+                });
+            if let Some(moe_mib) = model_moe_cache {
+                current_preset.push(format!("moe-cache-mib = {moe_mib}"));
+            }
+
+            let model_n_cpu_moe = get_lh_val("n-cpu-moe")
+                .or_else(|| get_long_val("n-cpu-moe"))
+                .and_then(|v| {
+                    v.as_str().map_or_else(
+                        || {
+                            v.as_u64().or_else(|| {
+                                #[allow(clippy::cast_sign_loss)]
+                                v.as_i64().map(|i| i as u64)
+                            })
+                        },
+                        |s| s.parse::<u64>().ok(),
+                    )
+                });
+            if let Some(ncmoe) = model_n_cpu_moe {
+                current_preset.push(format!("n-cpu-moe = {ncmoe}"));
+            }
+
             if use_vision && let Some(ref mm) = mmproj_file {
                 current_preset.push(format!(
                     "mmproj = {}",
@@ -717,6 +1004,9 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                     }
                 }
 
+                let get_draft_lh = |key: &str| -> Option<&serde_json::Value> {
+                    draft_config.get("llama-herd").and_then(|lh| lh.get(key))
+                };
                 let get_draft_long = |key: &str| -> Option<&serde_json::Value> {
                     draft_config
                         .get("llama-server-long")
@@ -724,37 +1014,58 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                         .or_else(|| draft_config.get(key))
                 };
 
-                let mut spec_type = get_draft_long("spec-type")
+                let default_spec = default_spec_type_for_draft(df);
+                let mut spec_type = get_lh_val("spec-type")
+                    .or_else(|| get_long_val("spec-type"))
+                    .or_else(|| get_draft_lh("spec-type"))
+                    .or_else(|| get_draft_long("spec-type"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or("draft-mtp");
+                    .unwrap_or(default_spec);
                 if spec_type == "mtp" {
                     spec_type = "draft-mtp";
                 }
 
-                let spec_draft_n_max = get_draft_long("spec-draft-n-max")
-                    .and_then(serde_json::Value::as_u64)
+                let spec_draft_n_max = get_lh_val("spec-draft-n-max")
+                    .or_else(|| get_long_val("spec-draft-n-max"))
+                    .or_else(|| get_draft_lh("spec-draft-n-max"))
+                    .or_else(|| get_draft_long("spec-draft-n-max"))
+                    .and_then(|v| {
+                        v.as_str().map_or_else(
+                            || {
+                                v.as_u64().or_else(|| {
+                                    #[allow(clippy::cast_sign_loss)]
+                                    v.as_i64().map(|i| i as u64)
+                                })
+                            },
+                            |s| s.parse::<u64>().ok(),
+                        )
+                    })
                     .unwrap_or(4);
-                let spec_draft_p_min = get_draft_long("spec-draft-p-min")
-                    .and_then(serde_json::Value::as_f64)
+                let spec_draft_p_min = get_lh_val("spec-draft-p-min")
+                    .or_else(|| get_long_val("spec-draft-p-min"))
+                    .or_else(|| get_draft_lh("spec-draft-p-min"))
+                    .or_else(|| get_draft_long("spec-draft-p-min"))
+                    .and_then(|v| {
+                        v.as_str().map_or_else(
+                            || {
+                                v.as_f64().or_else(|| {
+                                    #[allow(clippy::cast_precision_loss)]
+                                    v.as_i64().map(|i| i as f64)
+                                })
+                            },
+                            |s| s.parse::<f64>().ok(),
+                        )
+                    })
                     .unwrap_or(0.0);
-                let get_draft_lh = |key: &str| -> Option<&serde_json::Value> {
-                    draft_config.get("llama-herd").and_then(|lh| lh.get(key))
-                };
-                let get_draft_long_val = |key: &str| -> Option<&serde_json::Value> {
-                    draft_config
-                        .get("llama-server-long")
-                        .and_then(|l| l.get(key))
-                        .or_else(|| draft_config.get(key))
-                };
 
                 let draft_ngl_val = get_draft_lh("gpu-layers-draft")
-                    .or_else(|| get_draft_long_val("gpu-layers-draft"))
+                    .or_else(|| get_draft_long("gpu-layers-draft"))
                     .or_else(|| get_draft_lh("ngld"))
-                    .or_else(|| get_draft_long_val("ngld"))
+                    .or_else(|| get_draft_long("ngld"))
                     .or_else(|| get_draft_lh("n-gpu-layers"))
-                    .or_else(|| get_draft_long_val("n-gpu-layers"))
+                    .or_else(|| get_draft_long("n-gpu-layers"))
                     .or_else(|| get_draft_lh("ngl"))
-                    .or_else(|| get_draft_long_val("ngl"))
+                    .or_else(|| get_draft_long("ngl"))
                     .and_then(|v| {
                         v.as_str()
                             .map(ToOwned::to_owned)
@@ -762,7 +1073,7 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                     });
 
                 let draft_total_layers = get_draft_lh("total-layers")
-                    .or_else(|| get_draft_long_val("total-layers"))
+                    .or_else(|| get_draft_long("total-layers"))
                     .and_then(|v| v.as_u64().and_then(|i| usize::try_from(i).ok()));
 
                 let mut d_ngl = draft_ngl_val.as_ref().map_or_else(
@@ -784,6 +1095,34 @@ pub fn generate_presets_ini<S: std::hash::BuildHasher + Default>(
                 current_preset.push(format!("spec-type = {spec_type}"));
                 current_preset.push(format!("spec-draft-n-max = {spec_draft_n_max}"));
                 current_preset.push(format!("spec-draft-p-min = {spec_draft_p_min}"));
+                if let Some(n_ubatch) = get_lh_val("spec-draft-n-ubatch")
+                    .or_else(|| get_long_val("spec-draft-n-ubatch"))
+                    .or_else(|| get_draft_lh("spec-draft-n-ubatch"))
+                    .or_else(|| get_draft_long("spec-draft-n-ubatch"))
+                    .and_then(|v| {
+                        v.as_str().map_or_else(
+                            || {
+                                v.as_u64().or_else(|| {
+                                    #[allow(clippy::cast_sign_loss)]
+                                    v.as_i64().map(|i| i as u64)
+                                })
+                            },
+                            |s| s.parse::<u64>().ok(),
+                        )
+                    })
+                {
+                    current_preset.push(format!("spec-draft-n-ubatch = {n_ubatch}"));
+                }
+                if let Some(sampling) = get_lh_val("spec-draft-sampling")
+                    .or_else(|| get_long_val("spec-draft-sampling"))
+                    .or_else(|| get_draft_lh("spec-draft-sampling"))
+                    .or_else(|| get_draft_long("spec-draft-sampling"))
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    current_preset.push(format!("spec-draft-sampling = {sampling}"));
+                }
                 current_preset.push(format!("gpu-layers-draft = {d_ngl}"));
             }
 
@@ -1179,45 +1518,41 @@ pub fn scan_gpu_topology() -> Vec<GpuDevice> {
             "--format=csv,noheader,nounits",
         ])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let devices = parse_nvidia_smi_output(&stdout);
-            if !devices.is_empty() {
-                return devices;
-            }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let devices = parse_nvidia_smi_output(&stdout);
+        if !devices.is_empty() {
+            return devices;
         }
     }
 
     if let Ok(output) = std::process::Command::new("rocm-smi")
         .args(["--showid", "--showmeminfo"])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let devices = parse_rocm_smi_output(&stdout);
-            if !devices.is_empty() {
-                return devices;
-            }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let devices = parse_rocm_smi_output(&stdout);
+        if !devices.is_empty() {
+            return devices;
         }
     }
 
-    if cfg!(target_os = "windows") {
-        if let Ok(output) = std::process::Command::new("powershell")
+    if cfg!(target_os = "windows")
+        && let Ok(output) = std::process::Command::new("powershell")
             .args([
                 "-NoProfile",
                 "-Command",
                 "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Csv -NoTypeInformation",
             ])
             .output()
-        {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let devices = parse_wddm_output(&stdout);
-                if !devices.is_empty() {
-                    return devices;
-                }
-            }
+        && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let devices = parse_wddm_output(&stdout);
+        if !devices.is_empty() {
+            return devices;
         }
     }
 

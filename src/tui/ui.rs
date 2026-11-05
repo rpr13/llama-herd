@@ -54,6 +54,38 @@ pub const SETTINGS: &[SettingItem] = &[
         description: "The maximum number of active models loaded concurrently when running in Router Mode.",
         group: "llama herd",
     },
+    SettingItem {
+        label: "Sleep Idle Seconds",
+        key: "sleep-idle-seconds",
+        default_val: "-1",
+        emoji: "💤",
+        description: "Number of seconds of idle time before llama-server unloads models to sleep (-1 = disabled).",
+        group: "llama herd",
+    },
+    SettingItem {
+        label: "Models Memory Margin (MiB)",
+        key: "models-memory-margin",
+        default_val: "0",
+        emoji: "🧹",
+        description: "Device memory margin in MiB required before loading a new model in Router Mode, triggering LRU eviction (--models-memory-margin, 0 = disabled).",
+        group: "llama herd",
+    },
+    SettingItem {
+        label: "Theme Preset",
+        key: "theme",
+        default_val: "default",
+        emoji: "🎨",
+        description: "Color palette theme for the TUI interface. Choose between authentic developer IDE themes (Gruvbox Dark, VS Code Dark+, IntelliJ Dark, Catppuccin Mocha, Tokyo Night, Nord, One Dark) or custom theme.toml.",
+        group: "llama herd",
+    },
+    SettingItem {
+        label: "Transparent Background",
+        key: "theme-transparent",
+        default_val: "false",
+        emoji: "🪟",
+        description: "Enable native terminal background transparency for the active theme (sets background to Color::Reset). When disabled, themes use their authentic solid dark background colors.",
+        group: "llama herd",
+    },
     // Group: Common params
     SettingItem {
         label: "Server Host IP",
@@ -84,7 +116,7 @@ pub const SETTINGS: &[SettingItem] = &[
         key: "flash-attn",
         default_val: "auto",
         emoji: "⚡",
-        description: "Enable flash attention for faster inference. Options: 'auto', '1' (enable), '0' (disable).",
+        description: "Enable Flash Attention for faster inference. Options: 'auto', 'on', 'off'.",
         group: "Common params",
     },
     SettingItem {
@@ -92,7 +124,7 @@ pub const SETTINGS: &[SettingItem] = &[
         key: "cache-type-k",
         default_val: "f16",
         emoji: "🔑",
-        description: "Quantization format for the KV cache keys (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
+        description: "Quantization format for the KV cache keys (e.g. 'f16', 'bf16', 'q8_0', 'q4_0'). Lower values save VRAM.",
         group: "Common params",
     },
     SettingItem {
@@ -100,7 +132,7 @@ pub const SETTINGS: &[SettingItem] = &[
         key: "cache-type-v",
         default_val: "f16",
         emoji: "📦",
-        description: "Quantization format for the KV cache values (e.g. 'f16', 'q8_0', 'q4_0'). Lower values save VRAM.",
+        description: "Quantization format for the KV cache values (e.g. 'f16', 'bf16', 'q8_0', 'q4_0'). Lower values save VRAM.",
         group: "Common params",
     },
     SettingItem {
@@ -108,39 +140,47 @@ pub const SETTINGS: &[SettingItem] = &[
         key: "kv-unified",
         default_val: "true",
         emoji: "🔗",
-        description: "Enable unified KV cache for keys and values. Maps to llama-server --kv-unified flag.",
+        description: "Enable unified KV cache buffer shared across all sequences. Maps to llama-server --kv-unified flag.",
         group: "Common params",
     },
     SettingItem {
-        label: "Speculative Type (spec-type)",
-        key: "spec-type",
-        default_val: "draft-mtp",
-        emoji: "🔮",
-        description: "The speculative decoding type to use (e.g. none, draft, draft-mtp, draft-eagle3).",
-        group: "Common params",
-    },
-    SettingItem {
-        label: "Spec Draft N Max (spec-draft-n-max)",
-        key: "spec-draft-n-max",
-        default_val: "4",
-        emoji: "📈",
-        description: "Max speculative draft token predictions per slot.",
-        group: "Common params",
-    },
-    SettingItem {
-        label: "Spec Draft P Min (spec-draft-p-min)",
-        key: "spec-draft-p-min",
-        default_val: "0.0",
-        emoji: "📉",
-        description: "Minimum probability threshold for speculative tokens.",
-        group: "Common params",
-    },
-    SettingItem {
-        label: "Disable Memory Map (no-mmap)",
-        key: "no-mmap",
-        default_val: "false",
+        label: "Load Mode (load-mode)",
+        key: "load-mode",
+        default_val: "auto",
         emoji: "💾",
-        description: "Disable memory-mapping (mmap) for model loading, loading everything directly into physical RAM. Helps stabilize memory allocation issues.",
+        description: "How to load model weights into memory ('auto', 'none', 'mmap', 'mlock', 'mmap+mlock', 'dio'). Replaces legacy --no-mmap and --mlock flags.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Auto-Fit VRAM (fit)",
+        key: "fit",
+        default_val: "on",
+        emoji: "📐",
+        description: "Automatically adjust offload and context parameters to fit available device VRAM ('on' or 'off'). Maps to -fit.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Fit Target Margin (fitt)",
+        key: "fitt",
+        default_val: "1024",
+        emoji: "🎯",
+        description: "Target free VRAM margin in MiB per device when auto-fitting (-fitt). Defaults to 1024 MiB.",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "Tensor Split",
+        key: "tensor-split",
+        default_val: "auto",
+        emoji: "⚖️",
+        description: "How to split model tensors across multiple GPUs ('auto' = auto-detect topology, 'none' = single GPU, or comma-separated ratios like '3,1').",
+        group: "Common params",
+    },
+    SettingItem {
+        label: "MoE Cache Size (MiB)",
+        key: "moe-cache-mib",
+        default_val: "0",
+        emoji: "⚡",
+        description: "GPU cache size in MiB for CPU MoE experts (--moe-cache-mib). Set to 0 to disable.",
         group: "Common params",
     },
     SettingItem {
@@ -181,14 +221,6 @@ pub const SETTINGS: &[SettingItem] = &[
         default_val: "3",
         emoji: "📢",
         description: "Set the verbosity threshold. Messages with a higher verbosity will be ignored. Values: 0 (generic output), 1 (error), 2 (warning), 3 (info), 4 (trace / more info), 5 (debug).",
-        group: "Common params",
-    },
-    SettingItem {
-        label: "Memory Lock (mlock)",
-        key: "mlock",
-        default_val: "false",
-        emoji: "🔒",
-        description: "Force system to lock model weights in physical RAM to prevent swapping/paging memory to disk.",
         group: "Common params",
     },
     SettingItem {
@@ -251,9 +283,9 @@ pub const SETTINGS: &[SettingItem] = &[
     SettingItem {
         label: "Checkpoint Min Step",
         key: "checkpoint-min-step",
-        default_val: "256",
+        default_val: "8192",
         emoji: "📏",
-        description: "Minimum spacing between context checkpoints in tokens. Defaults to 256. Lower values speed up cache matching but use more system RAM.",
+        description: "Minimum spacing between context checkpoints in tokens. Defaults to 8192. Lower values speed up cache matching but use more system RAM.",
         group: "Server-specific params",
     },
     SettingItem {
@@ -294,46 +326,6 @@ pub const SETTINGS: &[SettingItem] = &[
         default_val: "false",
         emoji: "⏩",
         description: "Use context shift to automatically slide context window on infinite text generation.",
-        group: "Server-specific params",
-    },
-    SettingItem {
-        label: "DRY Multiplier",
-        key: "dry-multiplier",
-        default_val: "0.00",
-        emoji: "✖️",
-        description: "Set DRY sampling multiplier (0.0 = disabled).",
-        group: "Server-specific params",
-    },
-    SettingItem {
-        label: "DRY Base",
-        key: "dry-base",
-        default_val: "1.75",
-        emoji: "📐",
-        description: "Set DRY sampling base value.",
-        group: "Server-specific params",
-    },
-    SettingItem {
-        label: "DRY Allowed Length",
-        key: "dry-allowed-length",
-        default_val: "2",
-        emoji: "📏",
-        description: "Set allowed sequence length for DRY sampling.",
-        group: "Server-specific params",
-    },
-    SettingItem {
-        label: "DRY Penalty Last N",
-        key: "dry-penalty-last-n",
-        default_val: "-1",
-        emoji: "⏳",
-        description: "Set DRY penalty for the last n tokens (-1 = context size, 0 = disable).",
-        group: "Server-specific params",
-    },
-    SettingItem {
-        label: "DRY Sequence Breaker",
-        key: "dry-sequence-breaker",
-        default_val: "none",
-        emoji: "🛑",
-        description: "Add sequence breaker for DRY sampling. Use 'none' to not use any sequence breakers.",
         group: "Server-specific params",
     },
 ];
@@ -385,6 +377,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
     match state.screen {
         AppScreen::Dashboard
         | AppScreen::EditingCtx
+        | AppScreen::SelectingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
         | AppScreen::SelectingMMProj
@@ -394,6 +387,9 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingTopK
         | AppScreen::EditingTotalLayers
         | AppScreen::EditingVariants
+        | AppScreen::SelectingVariants
+        | AppScreen::EditingNCpuMoe
+        | AppScreen::EditingMoeCacheMib
         | AppScreen::EditingConfigFileName
         | AppScreen::EditingCustomName
         | AppScreen::ConfirmSaveConfig
@@ -404,6 +400,8 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::SelectingReasoningFormat
         | AppScreen::SelectingReasoning
         | AppScreen::EditingReasoningBudget
+        | AppScreen::SelectingReasoningEffort
+        | AppScreen::SelectingReasoningPreserve
         | AppScreen::SelectingSpecType
         | AppScreen::EditingDryMultiplier
         | AppScreen::EditingDryBase
@@ -411,12 +409,15 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingDryPenaltyLastN
         | AppScreen::EditingDrySequenceBreaker
         | AppScreen::EditingSpecDraftNMax
-        | AppScreen::EditingSpecDraftPMin => {
+        | AppScreen::EditingSpecDraftPMin
+        | AppScreen::EditingSpecDraftNUbatch
+        | AppScreen::SelectingSpecDraftSampling => {
             render_dashboard(f, state, main_layout[1]);
         }
         AppScreen::Settings
         | AppScreen::PickingServerPath
         | AppScreen::PickingModelsDir
+        | AppScreen::PickingGlobalSettingFile
         | AppScreen::EditingGlobalSetting
         | AppScreen::SelectingGlobalSettingOption => {
             render_settings_tab(f, state, main_layout[1]);
@@ -430,17 +431,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
     let theme = &state.theme;
     let footer_text = match state.screen {
         AppScreen::Dashboard => {
-            let config_changed = state.ctx_str != state.original_ctx_str
-                || state.ngl != state.original_ngl
-                || state.mmproj_index != state.original_mmproj_index
-                || state.draft_index != state.original_draft_index
-                || state.draft_ngl != state.original_draft_ngl
-                || state.temp != state.original_temp
-                || state.top_p != state.original_top_p
-                || state.top_k != state.original_top_k
-                || state.total_layers != state.original_total_layers
-                || state.variants != state.original_variants
-                || state.config_file_name != state.original_config_file_name;
+            let config_changed = state.has_unsaved_changes();
 
             let mut second_line_spans = vec![];
 
@@ -593,7 +584,9 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
                 Span::styled(" Quit", Style::default().fg(theme.fg)),
             ])]
         }
-        AppScreen::PickingServerPath | AppScreen::PickingModelsDir => {
+        AppScreen::PickingServerPath
+        | AppScreen::PickingModelsDir
+        | AppScreen::PickingGlobalSettingFile => {
             vec![Line::from(vec![
                 Span::styled(
                     " [Up/Down]",
@@ -624,6 +617,7 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
             ])]
         }
         AppScreen::EditingCtx
+        | AppScreen::SelectingCtx
         | AppScreen::EditingNgl
         | AppScreen::EditingDraftNgl
         | AppScreen::EditingTemp
@@ -631,6 +625,9 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingTopK
         | AppScreen::EditingTotalLayers
         | AppScreen::EditingVariants
+        | AppScreen::SelectingVariants
+        | AppScreen::EditingNCpuMoe
+        | AppScreen::EditingMoeCacheMib
         | AppScreen::EditingConfigFileName
         | AppScreen::EditingCustomName
         | AppScreen::EditingGlobalSetting
@@ -643,6 +640,8 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::SelectingReasoningFormat
         | AppScreen::SelectingReasoning
         | AppScreen::EditingReasoningBudget
+        | AppScreen::SelectingReasoningEffort
+        | AppScreen::SelectingReasoningPreserve
         | AppScreen::SelectingSpecType
         | AppScreen::EditingDryMultiplier
         | AppScreen::EditingDryBase
@@ -650,7 +649,9 @@ pub fn draw(f: &mut Frame<'_>, state: &mut AppState) {
         | AppScreen::EditingDryPenaltyLastN
         | AppScreen::EditingDrySequenceBreaker
         | AppScreen::EditingSpecDraftNMax
-        | AppScreen::EditingSpecDraftPMin => {
+        | AppScreen::EditingSpecDraftPMin
+        | AppScreen::EditingSpecDraftNUbatch
+        | AppScreen::SelectingSpecDraftSampling => {
             vec![Line::from(vec![
                 Span::styled(
                     " [Enter]",
@@ -1185,6 +1186,14 @@ fn render_settings_tab(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         let val_str = match item.key {
             "llama-server" => state.server_exe.to_string_lossy().to_string(),
             "models-dir" => state.models_dir.to_string_lossy().to_string(),
+            "theme" => state.theme_preset.display_name().to_owned(),
+            "theme-transparent" => {
+                if state.theme_transparent {
+                    "true (transparent)".to_owned()
+                } else {
+                    "false (solid)".to_owned()
+                }
+            }
             _ => crate::config::get_global_config_string(
                 &state.global_config,
                 item.key,
@@ -1249,6 +1258,18 @@ fn render_settings_tab(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let selected_val = match selected_item.key {
         "llama-server" => state.server_exe.to_string_lossy().to_string(),
         "models-dir" => state.models_dir.to_string_lossy().to_string(),
+        "theme" => format!(
+            "{} [{}]",
+            state.theme_preset.display_name(),
+            state.theme_preset.license()
+        ),
+        "theme-transparent" => {
+            if state.theme_transparent {
+                "true (transparent)".to_owned()
+            } else {
+                "false (solid)".to_owned()
+            }
+        }
         _ => crate::config::get_global_config_string(
             &state.global_config,
             selected_item.key,
@@ -1320,16 +1341,106 @@ fn render_settings_tab(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     ]);
     f.render_widget(Paragraph::new(val_line), detail_layout[4]);
 
-    let desc_para = Paragraph::new(selected_item.description)
-        .style(Style::default().fg(theme.fg))
-        .wrap(Wrap { trim: true })
-        .block(
-            Block::default()
-                .borders(Borders::TOP)
-                .title(" Description ")
-                .border_style(Style::default().fg(theme.secondary))
-                .border_type(theme.border_type),
-        );
+    let desc_lines = match selected_item.key {
+        "theme" => {
+            let p = state.theme_preset;
+            vec![
+                Line::from(vec![
+                    Span::styled("Active Preset: ", Style::default().fg(theme.secondary)),
+                    Span::styled(
+                        p.display_name(),
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("  [{}]", p.license()),
+                        Style::default().fg(theme.accent),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled(p.description(), Style::default().fg(theme.fg))),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "── Palette Swatches ──",
+                    Style::default().fg(theme.secondary),
+                )),
+                Line::from(vec![
+                    Span::styled(
+                        "■ Primary ",
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("■ Secondary ", Style::default().fg(theme.secondary)),
+                    Span::styled("■ Accent ", Style::default().fg(theme.accent)),
+                    Span::styled("■ Success ", Style::default().fg(theme.success)),
+                ]),
+                Line::from(vec![
+                    Span::styled("■ Error   ", Style::default().fg(theme.error)),
+                    Span::styled("■ Selection ", Style::default().fg(theme.selection)),
+                    Span::styled(
+                        if state.theme_transparent {
+                            "■ BG: Trans "
+                        } else {
+                            "■ BG: Solid "
+                        },
+                        Style::default().fg(theme.secondary),
+                    ),
+                    Span::styled("■ Text", Style::default().fg(theme.fg)),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "💡 Press [Enter] to browse and select theme presets.",
+                    Style::default().fg(theme.accent),
+                )),
+            ]
+        }
+        "theme-transparent" => {
+            let status_str = if state.theme_transparent {
+                "ON (Color::Reset — Native Terminal Transparency)"
+            } else {
+                "OFF (Solid Authentic Palette Background)"
+            };
+            vec![
+                Line::from(vec![
+                    Span::styled("Status: ", Style::default().fg(theme.secondary)),
+                    Span::styled(
+                        status_str,
+                        Style::default()
+                            .fg(if state.theme_transparent {
+                                theme.success
+                            } else {
+                                theme.accent
+                            })
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled(
+                    selected_item.description,
+                    Style::default().fg(theme.fg),
+                )),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "💡 Press [Space] or [Enter] to toggle transparency on/off.",
+                    Style::default().fg(theme.accent),
+                )),
+            ]
+        }
+        _ => vec![Line::from(Span::styled(
+            selected_item.description,
+            Style::default().fg(theme.fg),
+        ))],
+    };
+
+    let desc_para = Paragraph::new(desc_lines).wrap(Wrap { trim: true }).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .title(" Description ")
+            .border_style(Style::default().fg(theme.secondary))
+            .border_type(theme.border_type),
+    );
     f.render_widget(desc_para, detail_layout[6]);
 
     // Render Picker Modal if active
@@ -1454,7 +1565,7 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         .map(|(idx, model)| {
             let is_selected = idx == state.selected_model_index;
 
-            let mut badge_spans = Vec::with_capacity(model.variants.len());
+            let mut badge_spans = Vec::with_capacity(model.variants.len() + 1);
             let mut badges_char_len = 0;
             for (v_idx, v) in model.variants.iter().enumerate() {
                 let badge_str = if v_idx == model.selected_variant_index {
@@ -1483,6 +1594,19 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 badge_spans.push(Span::styled(badge_str, badge_style));
             }
 
+            if model.is_hidden {
+                let h_badge_str = " [H]";
+                badges_char_len += h_badge_str.chars().count();
+                let h_badge_style = if is_selected {
+                    Style::default()
+                        .fg(theme.selection)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme.secondary)
+                };
+                badge_spans.push(Span::styled(h_badge_str, h_badge_style));
+            }
+
             let available_name_width = list_val_width.saturating_sub(badges_char_len);
             let display_name = truncate_middle(&model.base_name, available_name_width);
 
@@ -1502,6 +1626,11 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     )
                 }
+            } else if model.is_hidden {
+                Span::styled(
+                    format!("   {display_name}"),
+                    Style::default().fg(theme.secondary),
+                )
             } else {
                 Span::styled(format!("   {display_name}"), Style::default().fg(theme.fg))
             };
@@ -1527,8 +1656,14 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         theme.secondary
     };
 
-    let presets_title = if state.dashboard_focus == DashboardFocus::Left {
-        " Models [Active] "
+    let presets_title = if is_left_focused {
+        if state.show_hidden {
+            " Models [Active] (H: Hide Hidden) "
+        } else {
+            " Models [Active] (H: Show Hidden) "
+        }
+    } else if state.show_hidden {
+        " Models [All incl. Hidden] (Tab/Esc: Focus) "
     } else {
         " Models (Tab/Esc: Focus) "
     };
@@ -1618,28 +1753,7 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         );
 
     let val_width = content_layout[1].width.saturating_sub(26) as usize;
-    let active_variant = state
-        .grouped_models
-        .get(state.selected_model_index)
-        .and_then(|m| m.variants.get(m.selected_variant_index))
-        .map_or(crate::tui::app::ModelVariant::Base, |v| v.variant);
-    let clean_name = if state.presets.is_empty() {
-        "None".to_owned()
-    } else {
-        crate::discovery::clean_model_id(&state.presets[state.preset_index].1)
-    };
-    let auto_preset_name = match active_variant {
-        crate::tui::app::ModelVariant::Base => clean_name,
-        crate::tui::app::ModelVariant::Draft => {
-            crate::discovery::insert_variant_suffix(&clean_name, "draft")
-        }
-        crate::tui::app::ModelVariant::Vision => {
-            crate::discovery::insert_variant_suffix(&clean_name, "vision")
-        }
-        crate::tui::app::ModelVariant::DraftVision => {
-            crate::discovery::insert_variant_suffix(&clean_name, "draft-vision")
-        }
-    };
+    let auto_preset_name = state.current_auto_preset_name();
     let display_preset_name = truncate_middle(&auto_preset_name, val_width);
     let display_model_name = truncate_middle(&model_name, val_width);
 
@@ -1726,30 +1840,37 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     let (f_prompt, f_label) = make_param_cells(1, "Target Config File");
     let (l_prompt, l_label) = make_param_cells(2, "Total Layers");
     let (variants_prompt, variants_label) = make_param_cells(3, "Variants");
-    let (c_prompt, c_label) = make_param_cells(4, "Context Size");
-    let (n_prompt, n_label) = make_param_cells(5, "N-GPU-Layers");
-    let (v_prompt, v_label) = make_param_cells(6, "MMProj (Vision)");
-    let (t_prompt, t_label) = make_param_cells(7, "Temperature");
-    let (p_prompt, p_label) = make_param_cells(8, "Top P");
-    let (k_prompt, k_label) = make_param_cells(9, "Top K");
-    let (m_prompt, m_label) = make_param_cells(10, "Min P");
-    let (e_prompt, e_label) = make_param_cells(11, "Repeat Penalty");
-    let (a_prompt, a_label) = make_param_cells(12, "Repeat Last N");
-    let (dry_mult_prompt, dry_mult_label) = make_param_cells(13, "DRY Multiplier");
-    let (dry_base_prompt, dry_base_label) = make_param_cells(14, "DRY Base");
+    let (hidden_prompt, hidden_label) = make_param_cells(4, "Hidden");
+    let (c_prompt, c_label) = make_param_cells(5, "Context Size");
+    let (n_prompt, n_label) = make_param_cells(6, "N-GPU-Layers");
+    let (v_prompt, v_label) = make_param_cells(7, "MMProj (Vision)");
+    let (ncmoe_prompt, ncmoe_label) = make_param_cells(8, "N-CPU-MoE Layers");
+    let (moe_cache_prompt, moe_cache_label) = make_param_cells(9, "MoE Cache (MiB)");
+    let (t_prompt, t_label) = make_param_cells(10, "Temperature");
+    let (p_prompt, p_label) = make_param_cells(11, "Top P");
+    let (k_prompt, k_label) = make_param_cells(12, "Top K");
+    let (m_prompt, m_label) = make_param_cells(13, "Min P");
+    let (e_prompt, e_label) = make_param_cells(14, "Repeat Penalty");
+    let (a_prompt, a_label) = make_param_cells(15, "Repeat Last N");
+    let (dry_mult_prompt, dry_mult_label) = make_param_cells(16, "DRY Multiplier");
+    let (dry_base_prompt, dry_base_label) = make_param_cells(17, "DRY Base");
     let (dry_allowed_len_prompt, dry_allowed_len_label) =
-        make_param_cells(15, "DRY Allowed Length");
-    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(16, "DRY Penalty Last N");
-    let (dry_seq_prompt, dry_seq_label) = make_param_cells(17, "DRY Seq Breaker");
-    let (o_prompt, o_label) = make_param_cells(18, "Reasoning Format");
-    let (u_prompt, u_label) = make_param_cells(19, "Reasoning Mode");
-    let (b_prompt, b_label) = make_param_cells(20, "Reasoning Budget");
-    let (d_prompt, d_label) = make_param_cells(21, "Draft Model");
-    let (g_prompt, g_label) = make_param_cells(22, "Draft GPU Layers");
-    let (y_prompt, y_label) = make_param_cells(23, "Speculative Type (spec-type)");
+        make_param_cells(18, "DRY Allowed Length");
+    let (dry_penalty_prompt, dry_penalty_label) = make_param_cells(19, "DRY Penalty Last N");
+    let (dry_seq_prompt, dry_seq_label) = make_param_cells(20, "DRY Seq Breaker");
+    let (o_prompt, o_label) = make_param_cells(21, "Reasoning Format");
+    let (u_prompt, u_label) = make_param_cells(22, "Reasoning Mode");
+    let (b_prompt, b_label) = make_param_cells(23, "Reasoning Budget");
+    let (effort_prompt, effort_label) = make_param_cells(24, "Reasoning Effort");
+    let (preserve_prompt, preserve_label) = make_param_cells(25, "Reasoning Preserve");
+    let (d_prompt, d_label) = make_param_cells(26, "Draft Model");
+    let (g_prompt, g_label) = make_param_cells(27, "Draft GPU Layers");
+    let (y_prompt, y_label) = make_param_cells(28, "Speculative Type (spec-type)");
     let (draft_max_tokens_prompt, draft_max_tokens_label) =
-        make_param_cells(24, "Spec Draft N Max");
-    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(25, "Spec Draft P Min");
+        make_param_cells(29, "Spec Draft N Max");
+    let (draft_min_prob_prompt, draft_min_prob_label) = make_param_cells(30, "Spec Draft P Min");
+    let (draft_ubatch_prompt, draft_ubatch_label) = make_param_cells(31, "Spec Draft N Ubatch");
+    let (draft_sampling_prompt, draft_sampling_label) = make_param_cells(32, "Spec Draft Sampling");
 
     let custom_val = state.current_custom_name();
     let original_custom_val = state
@@ -1831,6 +1952,19 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 Style::default().fg(theme.primary),
             ),
         ]),
+        Row::new(vec![
+            hidden_prompt,
+            hidden_label,
+            make_val_cell(
+                if state.original_hidden {
+                    "true"
+                } else {
+                    "false"
+                },
+                if state.hidden { "true" } else { "false" },
+                Style::default().fg(theme.primary),
+            ),
+        ]),
         // GROUP HEADER: Common params
         Row::new(vec![
             Cell::from(""),
@@ -1867,6 +2001,24 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 &original_mmproj_val,
                 &mmproj_val,
                 Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            ncmoe_prompt,
+            ncmoe_label,
+            make_val_cell(
+                &state.original_n_cpu_moe,
+                &state.n_cpu_moe,
+                Style::default().fg(theme.success),
+            ),
+        ]),
+        Row::new(vec![
+            moe_cache_prompt,
+            moe_cache_label,
+            make_val_cell(
+                &state.original_moe_cache_mib,
+                &state.moe_cache_mib,
+                Style::default().fg(theme.success),
             ),
         ]),
         // GROUP HEADER: Sampling params
@@ -2033,6 +2185,40 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 Style::default().fg(theme.success),
             ),
         ]),
+        Row::new(vec![
+            effort_prompt,
+            effort_label,
+            make_val_cell(
+                if state.original_reasoning_effort.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.original_reasoning_effort
+                },
+                if state.reasoning_effort.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.reasoning_effort
+                },
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            preserve_prompt,
+            preserve_label,
+            make_val_cell(
+                if state.original_reasoning_preserve.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.original_reasoning_preserve
+                },
+                if state.reasoning_preserve.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.reasoning_preserve
+                },
+                Style::default().fg(theme.accent),
+            ),
+        ]),
         // LINE BREAK (blank row)
         Row::new(vec![Cell::from(""), Cell::from(""), Cell::from("")]),
         // GROUP HEADER: Draft params
@@ -2112,6 +2298,32 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 Style::default().fg(theme.accent),
             ),
         ]),
+        Row::new(vec![
+            draft_ubatch_prompt,
+            draft_ubatch_label,
+            make_val_cell(
+                &state.original_spec_draft_n_ubatch,
+                &state.spec_draft_n_ubatch,
+                Style::default().fg(theme.accent),
+            ),
+        ]),
+        Row::new(vec![
+            draft_sampling_prompt,
+            draft_sampling_label,
+            make_val_cell(
+                if state.original_spec_draft_sampling.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.original_spec_draft_sampling
+                },
+                if state.spec_draft_sampling.is_empty() {
+                    "Omit (Default)"
+                } else {
+                    &state.spec_draft_sampling
+                },
+                Style::default().fg(theme.accent),
+            ),
+        ]),
     ];
 
     let table = Table::new(
@@ -2128,28 +2340,35 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         1 => 4,   // Target Config File
         2 => 5,   // Total Layers
         3 => 6,   // Variants
-        4 => 8,   // Context Size
-        5 => 9,   // N-GPU-Layers
-        6 => 10,  // Vision Projector
-        7 => 12,  // Temperature
-        8 => 13,  // Top P
-        9 => 14,  // Top K
-        10 => 15, // Min P
-        11 => 16, // Repeat Penalty
-        12 => 17, // Repeat Last N
-        13 => 18, // DRY Multiplier
-        14 => 19, // DRY Base
-        15 => 20, // DRY Allowed Length
-        16 => 21, // DRY Penalty Last N
-        17 => 22, // DRY Seq Breaker
-        18 => 24, // Reasoning Format
-        19 => 25, // Reasoning Mode
-        20 => 26, // Reasoning Budget
-        21 => 29, // Speculative Draft Model
-        22 => 30, // Draft GPU Layers
-        23 => 32, // Speculative Decoding Type
-        24 => 33, // Max Speculative Predictions
-        25 => 34, // Min Speculative Probability
+        4 => 7,   // Hidden
+        5 => 9,   // Context Size
+        6 => 10,  // N-GPU-Layers
+        7 => 11,  // Vision Projector
+        8 => 12,  // N-CPU-MoE Layers
+        9 => 13,  // MoE Cache (MiB)
+        10 => 15, // Temperature
+        11 => 16, // Top P
+        12 => 17, // Top K
+        13 => 18, // Min P
+        14 => 19, // Repeat Penalty
+        15 => 20, // Repeat Last N
+        16 => 21, // DRY Multiplier
+        17 => 22, // DRY Base
+        18 => 23, // DRY Allowed Length
+        19 => 24, // DRY Penalty Last N
+        20 => 25, // DRY Seq Breaker
+        21 => 27, // Reasoning Format
+        22 => 28, // Reasoning Mode
+        23 => 29, // Reasoning Budget
+        24 => 30, // Reasoning Effort
+        25 => 31, // Reasoning Preserve
+        26 => 34, // Speculative Draft Model
+        27 => 35, // Draft GPU Layers
+        28 => 37, // Speculative Decoding Type
+        29 => 38, // Max Speculative Predictions
+        30 => 39, // Min Speculative Probability
+        31 => 40, // Spec Draft N Ubatch
+        32 => 41, // Spec Draft Sampling
         _ => 0,
     };
     let mut table_state = TableState::default();
@@ -2164,11 +2383,16 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     if state.screen != AppScreen::Dashboard
         && state.screen != AppScreen::ConfirmSaveConfig
         && state.screen != AppScreen::WarnDiscardChanges
+        && state.screen != AppScreen::SelectingVariants
+        && state.screen != AppScreen::SelectingCtx
         && state.screen != AppScreen::SelectingMMProj
         && state.screen != AppScreen::SelectingDraftModel
         && state.screen != AppScreen::SelectingReasoning
         && state.screen != AppScreen::SelectingReasoningFormat
+        && state.screen != AppScreen::SelectingReasoningEffort
+        && state.screen != AppScreen::SelectingReasoningPreserve
         && state.screen != AppScreen::SelectingSpecType
+        && state.screen != AppScreen::SelectingSpecDraftSampling
     {
         let (title, prompt) = match state.screen {
             AppScreen::EditingCustomName => (
@@ -2190,6 +2414,14 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             AppScreen::EditingDraftNgl => (
                 " Edit Draft GPU Layers ",
                 "Enter draft N-GPU-layers (e.g. auto, 0, 8):",
+            ),
+            AppScreen::EditingNCpuMoe => (
+                " Edit N-CPU-MoE Layers ",
+                "Enter number of MoE layers to keep on CPU (e.g. 0, 12,leave blank to clear):",
+            ),
+            AppScreen::EditingMoeCacheMib => (
+                " Edit MoE Cache (MiB) ",
+                "Enter GPU expert cache capacity in MiB (e.g. 2048, leave blank to clear):",
             ),
             AppScreen::EditingTemp => (
                 " Edit Temperature ",
@@ -2249,6 +2481,10 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             AppScreen::EditingSpecDraftPMin => (
                 " Edit Spec Draft P Min ",
                 "Enter minimum probability threshold for speculative tokens (e.g. 0.85):",
+            ),
+            AppScreen::EditingSpecDraftNUbatch => (
+                " Edit Spec Draft N Ubatch ",
+                "Enter micro-batch size for draft prefill (e.g. 16, leave blank to clear):",
             ),
             _ => ("", ""),
         };
@@ -2334,13 +2570,30 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         f.render_widget(popup_para, popup_area);
     }
 
-    if state.screen == AppScreen::SelectingMMProj
+    if state.screen == AppScreen::SelectingVariants
+        || state.screen == AppScreen::SelectingCtx
+        || state.screen == AppScreen::SelectingMMProj
         || state.screen == AppScreen::SelectingDraftModel
         || state.screen == AppScreen::SelectingReasoning
         || state.screen == AppScreen::SelectingReasoningFormat
+        || state.screen == AppScreen::SelectingReasoningEffort
+        || state.screen == AppScreen::SelectingReasoningPreserve
         || state.screen == AppScreen::SelectingSpecType
+        || state.screen == AppScreen::SelectingSpecDraftSampling
     {
-        let (title, options_list, current_idx) = if state.screen == AppScreen::SelectingMMProj {
+        let (title, options_list, current_idx) = if state.screen == AppScreen::SelectingVariants {
+            (
+                " Select Model Variants ",
+                state.option_selector_list.clone(),
+                state.option_selector_index,
+            )
+        } else if state.screen == AppScreen::SelectingCtx {
+            (
+                " Select Context Size ",
+                state.option_selector_list.clone(),
+                state.option_selector_index,
+            )
+        } else if state.screen == AppScreen::SelectingMMProj {
             let opts: Vec<String> = state
                 .mmproj_list
                 .iter()
@@ -2404,6 +2657,57 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 opts,
                 state.reasoning_format_index,
             )
+        } else if state.screen == AppScreen::SelectingReasoningEffort {
+            let opts: Vec<String> = state
+                .reasoning_effort_list
+                .iter()
+                .map(|opt| {
+                    if opt.is_empty() {
+                        "Omit (Default)".to_owned()
+                    } else {
+                        opt.clone()
+                    }
+                })
+                .collect();
+            (
+                " Select Reasoning Effort ",
+                opts,
+                state.reasoning_effort_index,
+            )
+        } else if state.screen == AppScreen::SelectingReasoningPreserve {
+            let opts: Vec<String> = state
+                .reasoning_preserve_list
+                .iter()
+                .map(|opt| {
+                    if opt.is_empty() {
+                        "Omit (Default)".to_owned()
+                    } else {
+                        opt.clone()
+                    }
+                })
+                .collect();
+            (
+                " Select Reasoning Preserve ",
+                opts,
+                state.reasoning_preserve_index,
+            )
+        } else if state.screen == AppScreen::SelectingSpecDraftSampling {
+            let opts: Vec<String> = state
+                .spec_draft_sampling_list
+                .iter()
+                .map(|opt| {
+                    if opt.is_empty() {
+                        "Omit (Default)".to_owned()
+                    } else {
+                        opt.clone()
+                    }
+                })
+                .collect();
+            (
+                " Select Spec Draft Sampling ",
+                opts,
+                state.spec_draft_sampling_index,
+            )
         } else {
             let opts: Vec<String> = state
                 .spec_type_list
@@ -2419,7 +2723,7 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
             (" Select Speculative Type ", opts, state.spec_type_index)
         };
 
-        let popup_area = centered_rect(50, 40, area);
+        let popup_area = centered_rect(50, 45, area);
         f.render_widget(Clear, popup_area);
 
         let popup_block = Block::default()
@@ -2527,6 +2831,20 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
         if mmproj_val != original_mmproj_val {
             changes.push(("MMProj (Vision)", original_mmproj_val, mmproj_val));
         }
+        if state.n_cpu_moe != state.original_n_cpu_moe {
+            changes.push((
+                "N-CPU-MoE Layers",
+                state.original_n_cpu_moe.clone(),
+                state.n_cpu_moe.clone(),
+            ));
+        }
+        if state.moe_cache_mib != state.original_moe_cache_mib {
+            changes.push((
+                "MoE Cache (MiB)",
+                state.original_moe_cache_mib.clone(),
+                state.moe_cache_mib.clone(),
+            ));
+        }
         if draft_val != original_draft_val {
             changes.push(("Draft Model", original_draft_val, draft_val));
         }
@@ -2617,6 +2935,52 @@ fn render_dashboard(f: &mut Frame<'_>, state: &AppState, area: Rect) {
                 state.original_reasoning_budget.clone(),
                 state.reasoning_budget.clone(),
             ));
+        }
+        if state.reasoning_effort != state.original_reasoning_effort {
+            let orig = if state.original_reasoning_effort.is_empty() {
+                "Omit (Default)".to_owned()
+            } else {
+                state.original_reasoning_effort.clone()
+            };
+            let curr = if state.reasoning_effort.is_empty() {
+                "Omit (Default)".to_owned()
+            } else {
+                state.reasoning_effort.clone()
+            };
+            changes.push(("Reasoning Effort", orig, curr));
+        }
+        if state.reasoning_preserve != state.original_reasoning_preserve {
+            let orig = if state.original_reasoning_preserve.is_empty() {
+                "Omit (Default)".to_owned()
+            } else {
+                state.original_reasoning_preserve.clone()
+            };
+            let curr = if state.reasoning_preserve.is_empty() {
+                "Omit (Default)".to_owned()
+            } else {
+                state.reasoning_preserve.clone()
+            };
+            changes.push(("Reasoning Preserve", orig, curr));
+        }
+        if state.spec_draft_n_ubatch != state.original_spec_draft_n_ubatch {
+            changes.push((
+                "Spec Draft N Ubatch",
+                state.original_spec_draft_n_ubatch.clone(),
+                state.spec_draft_n_ubatch.clone(),
+            ));
+        }
+        if state.spec_draft_sampling != state.original_spec_draft_sampling {
+            let orig = if state.original_spec_draft_sampling.is_empty() {
+                "Omit (Default)".to_owned()
+            } else {
+                state.original_spec_draft_sampling.clone()
+            };
+            let curr = if state.spec_draft_sampling.is_empty() {
+                "Omit (Default)".to_owned()
+            } else {
+                state.spec_draft_sampling.clone()
+            };
+            changes.push(("Spec Draft Sampling", orig, curr));
         }
 
         let mut text_lines = Vec::new();

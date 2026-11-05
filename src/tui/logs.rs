@@ -37,10 +37,11 @@ impl SupervisorConfig {
         while idx < params.len() {
             if params[idx] == "--host" && idx + 1 < params.len() {
                 host.clone_from(&params[idx + 1]);
-            } else if params[idx] == "--port" && idx + 1 < params.len() {
-                if let Ok(p) = params[idx + 1].parse::<u16>() {
-                    port = p;
-                }
+            } else if params[idx] == "--port"
+                && idx + 1 < params.len()
+                && let Ok(p) = params[idx + 1].parse::<u16>()
+            {
+                port = p;
             }
             idx += 1;
         }
@@ -291,7 +292,7 @@ impl ActiveServer {
         raw_history: &Arc<Mutex<VecDeque<String>>>,
         event_tx: Option<std::sync::mpsc::Sender<crate::tui::TuiEvent>>,
     ) {
-        let mut sys = sysinfo::System::new();
+        let mut sys = sysinfo::System::new_with_specifics(sysinfo::RefreshKind::nothing()).ok();
         let mut vram_counter = 0u64;
 
         while *is_running.lock().expect("is_running lock poisoned") {
@@ -443,38 +444,41 @@ impl ActiveServer {
             let health = crate::health::check_health(&config.host, config.port);
             // Guard against race: kill() may have set is_running=false and status="STOPPED"
             // while check_health() was blocking. Do not overwrite "STOPPED" in that case.
-            if *is_running.lock().expect("is_running lock poisoned") {
-                if let Ok(mut m_lock) = metrics.lock() {
-                    match health {
-                        crate::health::HealthState::Healthy => {
-                            "HEALTHY".clone_into(&mut m_lock.status);
+            if *is_running.lock().expect("is_running lock poisoned")
+                && let Ok(mut m_lock) = metrics.lock()
+            {
+                match health {
+                    crate::health::HealthState::Healthy => {
+                        "HEALTHY".clone_into(&mut m_lock.status);
+                    }
+                    crate::health::HealthState::Loading => {
+                        "LOADING".clone_into(&mut m_lock.status);
+                    }
+                    crate::health::HealthState::Unhealthy => {
+                        if m_lock.status != "LOADING"
+                            && m_lock.status != "RECOVERING"
+                            && m_lock.status != "HEALTHY"
+                        {
+                            "UNHEALTHY".clone_into(&mut m_lock.status);
                         }
-                        crate::health::HealthState::Loading => {
-                            "LOADING".clone_into(&mut m_lock.status);
-                        }
-                        crate::health::HealthState::Unhealthy => {
-                            if m_lock.status != "LOADING"
-                                && m_lock.status != "RECOVERING"
-                                && m_lock.status != "HEALTHY"
-                            {
-                                "UNHEALTHY".clone_into(&mut m_lock.status);
-                            }
-                        }
-                        crate::health::HealthState::Recovering => {
-                            "RECOVERING".clone_into(&mut m_lock.status);
-                        }
+                    }
+                    crate::health::HealthState::Recovering => {
+                        "RECOVERING".clone_into(&mut m_lock.status);
                     }
                 }
             }
 
             // Query RAM and VRAM usage every 2 seconds
-            if vram_counter % 2 == 0 {
-                sys.refresh_memory();
-                let total_ram = sys.total_memory() / 1024 / 1024;
-                let used_ram = sys.used_memory() / 1024 / 1024;
+            if vram_counter.is_multiple_of(2) {
+                let ram_usage = sys.as_mut().map(|s| {
+                    s.refresh_memory();
+                    let total_ram = s.total_memory() / 1024 / 1024;
+                    let used_ram = s.used_memory() / 1024 / 1024;
+                    (used_ram, total_ram)
+                });
                 let vram = query_vram();
                 if let Ok(mut m_lock) = metrics.lock() {
-                    m_lock.ram_usage = Some((used_ram, total_ram));
+                    m_lock.ram_usage = ram_usage;
                     m_lock.vram_usage = vram;
                 }
             }

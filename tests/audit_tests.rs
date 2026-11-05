@@ -274,3 +274,17 @@ fn test_tui_input_handling_bounds() {
     assert!(state.validation_error.is_some());
     assert_eq!(state.total_layers, Some(32)); // Value unchanged
 }
+
+#[test]
+fn test_settings_contains_theme_entries() {
+    assert!(
+        llama_herd::tui::ui::SETTINGS
+            .iter()
+            .any(|s| s.key == "theme")
+    );
+    assert!(
+        llama_herd::tui::ui::SETTINGS
+            .iter()
+            .any(|s| s.key == "theme-transparent")
+    );
+}

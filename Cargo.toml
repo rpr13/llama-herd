@@ -1,10 +1,10 @@
 [package]
 name = "llama-herd"
-version = "1.0.21"
+version = "1.0.22"
 keywords = ["llama", "tui", "cli", "llama-server", "orchestrator"]
 categories = ["command-line-utilities", "development-tools"]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.99"
 description = "A native Rust TUI and CLI companion for orchestrating, pairing, and routing local LLM services driven by llama.cpp's llama-server."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/rpr13/llama-herd"
@@ -23,10 +23,10 @@ ratatui = "0.30.2"
 crossterm = "0.29.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-arboard = "3.6.1"
+arboard = "3.7.0"
 regex = "1.13.1"
-toml = "1.1.6"
-sysinfo = "0.39.6"
+toml = "1.2.0"
+sysinfo = "0.40.1"
 thiserror = "2"
 
 [dev-dependencies]
@@ -43,7 +43,7 @@ opt-level = 3
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true

@@ -15,6 +15,7 @@ LlamaHerd is a high-performance, native Rust TUI designed as a self-contained mu
   - Generates a `models-preset.ini` dynamically if it does not exist.
   - Implements heuristics for auto-pairing main models with compatible draft models or `mmproj` vision projectors (robustly token-cleaning size, quantization, and precision tags like `F32`, `FP32`, `BF16`, `F16`).
   - Supports model variant filtering (`variants = "base"` / `"draft"` / `"vision"` / `"draft-vision"` / `"all"`) with graceful fallback and preserves active variant selection across hot-reloads and config saves.
+  - Supports model hiding (`hidden` / `is-hidden` TOML flags), excluding hidden models from `models-preset.ini` and Router Mode while discovering them for direct inspection via `discover_hidden_presets`.
   - **Hardware Topology Scanner & Multi-GPU Allocator**: Scans system GPUs across CUDA (`nvidia-smi`), ROCm (`rocm-smi` / sysfs), and WDDM. Calculates ratio-based `--tensor-split` with a 10-15% (default 12%) safety headroom buffer and injects `--fit-on` / `-fitt 1024` flags.
 - **Health Monitoring Engine (`src/health.rs`)**:
   - Polls `GET /health` on `llama-server` every 1s, tracking `HealthState` (`Healthy`, `Loading`, `Unhealthy`, `Recovering`).
@@ -64,6 +65,8 @@ The `llama-server` executable path and the `models-dir` (where your models are l
 - `api-key-file` (default: `"none"`) - Path to file containing API keys
 - `ssl-key-file` (default: `"none"`) - Path to SSL private key PEM file
 - `ssl-cert-file` (default: `"none"`) - Path to SSL certificate PEM file
+- `theme` (default: `"default"`) - Active theme preset (`default`, `gruvbox-dark`, `vscode-dark`, `intellij-dark`, `catppuccin-mocha`, `tokyo-night`, `nord`, `one-dark`, `custom`)
+- `theme-transparent` (default: `true` for `default`, `false` for presets) - Independent terminal background transparency toggle
 
 ### 2. Model-Specific Configurations (`<model-name>.toml`)
 
@@ -91,6 +94,7 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
   - `total-layers`: Total number of layers for layers-based computations.
   - `variants`: Filter preset variants to generate (`"base"`, `"draft"`, `"vision"`, `"draft-vision"`, or `"all"`, accepting a single string or array of strings).
   - `custom-name` / `custom-names`: Override generated preset section header names either as a shorthand string or a mapping table (`[llama-herd.custom-name]`) specifying per-variant names (`base`, `draft`, `vision`, `draft-vision`).
+  - `hidden` / `is-hidden`: Flag this model as hidden (excludes from `models-preset.ini` and Router Mode, hidden from the main list unless toggled with `H`).
 
 ### 3. Dynamic Configuration Scanning & Active Writes Settling
 
@@ -103,27 +107,39 @@ Configured next to a `.gguf` file (e.g. `Qwen2.5-7B.toml` for `Qwen2.5-7B.gguf`)
 
 To enhance visual organization, parameters on both TUI screens are categorized and separated using styled headers:
 
-- **Dashboard Tab (Tab 1) - Preset Details & Parameters**:
-  - **llama herd**: Contains orchestrator settings like Preset Name (read-only), Custom Name (editable text at parameter index 0), Model File (read-only), Target Config File, Total Layers, and Variants. Placed at the top of the dashboard.
-  - **Common params**: Contains context size (displaying token count and k-approximation, e.g. `131072 (128k)`), GPU offload layers, and vision projector.
-  - **Draft params**: Contains speculative draft models, draft GPU offload layers, speculative decoding type, max speculative predictions, and min probability threshold.
-  - **Sampling params**: Contains temperature, Top P, Top K, Min P, repetition penalties, and DRY sampler parameters (`dry-multiplier`, `dry-base`, `dry-allowed-length`, `dry-penalty-last-n`, `dry-sequence-breaker`).
-  - **Server-specific params**: Contains reasoning/thinking configurations (mode, format, budget).
+- **Dashboard Tab (Tab 1) - Preset Details & Parameters** (total 33 parameters: indices 0..=32):
+  - **llama herd**: Contains orchestrator settings like Preset Name (read-only), Custom Name (editable text at parameter index 0), Model File (read-only), Target Config File (index 1), Total Layers (index 2), Variants (index 3), and Hidden (boolean toggle at index 4). Placed at the top of the dashboard.
+  - **Common params**: Contains context size (displaying token count and k-approximation, e.g. `131072 (128k)` at index 5, saved with `k` suffix when divisible by 1024), GPU offload layers (index 6), vision projector (index 7), N-CPU-MoE layers (index 8), and MoE Cache in MiB (index 9).
+  - **Sampling params**: Contains temperature (index 10), Top P (index 11), Top K (index 12), Min P (index 13), repetition penalties (indices 14-15), and DRY sampler parameters (indices 16-20).
+  - **Server-specific params**: Contains reasoning/thinking configurations (indices 21-25: format, mode, budget, effort, preserve).
+  - **Draft params**: Contains speculative draft models (index 26), draft GPU offload layers (index 27), speculative decoding type (index 28), max speculative predictions (index 29), min probability threshold (index 30), micro-batch size for draft (index 31), and draft sampling algorithm (index 32).
 - **Settings Tab (Tab 2) - Global Settings**:
-  - **llama herd**: Orchestration parameters (`llama-server`, `models-dir`) and concurrency limits (`models-max`).
-  - **Common params**: Global host, port, threads, cache sizes, memory lock, devices, and security certificates.
+  - **llama herd**: Orchestration parameters (`llama-server`, `models-dir`), theme customization (`Theme Preset`, `Transparent Background`), concurrency limits (`models-max`), idle unload timeout (`sleep-idle-seconds`), and router memory margin (`models-memory-margin`).
+  - **Common params**: Global host, port, threads, cache sizes, load mode (`load-mode`: `auto`, `mmap`, `mlock`, `no-mmap`), memory fitting (`fit`, `fitt`), multi-GPU tensor split (`tensor-split`), MoE cache (`moe-cache-mib`), devices, and security certificates.
   - **Server-specific params**: Prometheus metrics, Web UI toggle, and prompt caching.
 
 ---
 
-## Theme System (`theme.toml`)
+## Theme System & Presets (`theme.toml`)
 
-The TUI utilizes a Hybrid Theme System (Functional Palette + Procedural UI). It is fully customizable via a `theme.toml` file in the global configuration directory.
+The TUI utilizes a Hybrid Theme System (Functional Palette + Procedural UI) with 8 built-in, permissively-licensed (MIT / Apache 2.0) programmer presets, an independent transparent background toggle, and dynamic live hot-reloading:
 
+- **Built-in Presets**:
+  - `Default` (Borderless Simple, MIT)
+  - `Gruvbox Dark` (Community Retro Groove, MIT)
+  - `VS Code Dark+` (Microsoft Visual Studio Code Dark+, MIT)
+  - `IntelliJ Dark` (JetBrains Darcula / IntelliJ Dark, Apache 2.0)
+  - `Catppuccin Mocha` (Soothing Pastel Dark, MIT)
+  - `Tokyo Night` (Clean Dark Aesthetic, MIT)
+  - `Nord` (Arctic North-bluish, MIT)
+  - `One Dark` (Atom One Dark, MIT)
+  - `Custom` (Loads from local `theme.toml`)
+- **Transparent Background (`theme-transparent`)**: Preserves theme palette while resetting `bg`, `header-bg`, and `footer-bg` to `Color::Reset` for native terminal transparency.
+- **Live Hot-Reloading**: Switching presets in Settings immediately updates memory and saves to `config.toml`. When `Custom` is active, modifications to `theme.toml` are monitored and reloaded every second without restarting.
 - **Functional Palette**: Uses semantic keys (`primary`, `selection`, `accent`, `success`, `error`, etc.) to map colors across the entire UI.
 - **Procedural UI**: Controls aesthetic behaviors like `show-emojis` and `border-type`.
 
-If `theme.toml` is missing, LlamaHerd defaults to an internal **"Borderless Simple"** skin.
+If `theme.toml` is missing and no preset is selected, LlamaHerd defaults to the internal **"Borderless Simple"** skin.
 
 See `docs/theming.md` for the full schema, design principles, and examples.
 
@@ -147,8 +163,8 @@ Every UI component in LlamaHerd **must** use the theme system.
 
 To prevent conflicts with managed options, any key (long, short, prefixed with `s-`, or unprefixed) matching a managed parameter is **restricted** and ignored during the passthrough stage.
 
-- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `spec-type`, `spec-draft-n-max`, `spec-draft-p-min`, `is-draft`, `is-draft-only`, `custom-name`, `custom-names`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `ctx-checkpoints`, `checkpoint-min-step`, `no-mmap`, `log-verbosity`, `verbosity`, `lv`, `min-p`, `repeat-penalty`, `repeat-last-n`, `dry-multiplier`, `dry-base`, `dry-allowed-length`, `dry-penalty-last-n`, `dry-sequence-breaker`, `reasoning-budget`, `cache-prompt`, `no-cache-prompt`, `context-shift`, `no-context-shift`, `mlock`, `numa`, `split-mode`, `device`, `api-key-file`, `ssl-key-file`, `ssl-cert-file`, `tensor-split`, `fit`, `fitt`, `variants`.
-- **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`, `lv`, `fit`, `fitt`.
+- **Restricted Long Option Keys**: `ctx-size`, `total-layers`, `n-gpu-layers`, `n-cpu-moe`, `kv-quant`, `kv-unified`, `cache-type-k`, `cache-type-v`, `ngl`, `threads`, `ngld`, `gpu-layers-draft`, `spec-draft-ngl`, `model-draft`, `spec-draft-model`, `spec-type`, `spec-draft-n-max`, `spec-draft-p-min`, `spec-draft-n-ubatch`, `spec-draft-sampling`, `moe-cache-mib`, `is-draft`, `is-draft-only`, `custom-name`, `custom-names`, `ui`, `webui`, `model`, `chat-template-file`, `mmproj`, `jinja`, `flash-attn`, `version`, `tools`, `batch-size`, `ubatch-size`, `log-colors`, `host`, `port`, `np`, `parallel`, `models-preset`, `models-max`, `models-memory-margin`, `models-autoload`, `props`, `temp`, `top-p`, `top-k`, `reasoning`, `reasoning-format`, `reasoning-effort`, `reasoning-preserve`, `no-reasoning-preserve`, `ctx-checkpoints`, `checkpoint-min-step`, `load-mode`, `no-mmap`, `log-verbosity`, `verbosity`, `lv`, `min-p`, `repeat-penalty`, `repeat-last-n`, `dry-multiplier`, `dry-base`, `dry-allowed-length`, `dry-penalty-last-n`, `dry-sequence-breaker`, `reasoning-budget`, `cache-prompt`, `no-cache-prompt`, `context-shift`, `no-context-shift`, `mlock`, `numa`, `split-mode`, `device`, `api-key-file`, `ssl-key-file`, `ssl-cert-file`, `tensor-split`, `fit`, `fitt`, `variants`, `hidden`, `is-hidden`, `alias`, `models-dir`, `theme`, `theme-transparent`, `connect`, `connect-code`.
+- **Restricted Short Option Keys**: `c`, `ngl`, `ngld`, `ncmoe`, `t`, `md`, `m`, `mm`, `np`, `b`, `ub`, `fa`, `kvu`, `h`, `lv`, `fit`, `fitt`, `a`, `lm`, `rea`.
 
 ### 3. Automated Quality Gates
 
@@ -185,14 +201,19 @@ To ensure wide terminal compatibility and eliminate modifier capture conflicts:
 - **Model selection & variant cycling (Dashboard Left Panel)**:
   - **`↑` / `↓`**: Navigate between base models.
   - **`←` / `→`**: Cycle between available variants for selected model (`[B]`, `[D]`, `[V]`, `[DV]`).
+  - **`H`**: Toggle showing/hiding hidden models in the base models list (displays `[H]` badge on hidden models).
   - **`Tab` / `Enter`**: Switch focus to Preset Details & Parameters editing (`Esc` to return to Models).
 - **Server operations**:
   - **`F4`**: Cancel active generation signal (`POST /v1/chat/completions/control`).
-  - **`F5`**: Start selected preset model.
-  - **`F6`**: Start router mode server.
+  - **`F5`**: Start selected preset model (guarded against launching hidden models).
+  - **`F6`**: Start router mode server (hidden models are excluded from router presets).
   - **`F7`**: Restart active server process.
   - **`F8`**: Stop active server.
+- **Parameter editing (Dashboard Right Panel)**:
+  - **`Enter`**: Enter edit mode for text/numeric fields, or toggle boolean parameters.
+  - **`Space`**: Toggle boolean parameters (e.g., `Hidden` toggle at index 4).
 - **Log viewer controls**: `A` / `Space` (auto-scroll toggle), `P` (pause/resume), `W` (line wrapping), `C` (copy logs).
+- **Settings navigation (Tab 2)**: `↑` / `↓` (navigate rows), `Space` (toggle boolean parameters such as `Transparent Background`, `Prompt Caching`, `Web UI`), `Enter` (open option selector modal for `Theme Preset`, `Port`, `Host`, `Load Mode`, etc., or file picker for `llama-server` / `models-dir`).
 
 ### 8. CLI Presets Generation & Tagging Conventions
 

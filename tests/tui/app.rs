@@ -773,3 +773,261 @@ model-draft = draft-model.gguf
         Some("new-draft-name")
     );
 }
+
+#[test]
+fn test_app_state_hidden_model_toggle_and_rebuild() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+    let gguf1 = models_dir.join("visible-model.gguf");
+    let gguf2 = models_dir.join("hidden-model.gguf");
+    let toml2 = models_dir.join("hidden-model.toml");
+
+    std::fs::write(&gguf1, b"dummy").unwrap();
+    std::fs::write(&gguf2, b"dummy").unwrap();
+    std::fs::write(&toml2, b"[llama-herd]\nhidden = true\n").unwrap();
+
+    let ini_path = models_dir.join("models-preset.ini");
+    let global_config = std::collections::HashMap::new();
+    let _ =
+        llama_herd::discovery::generate_presets_ini(models_dir, &ini_path, &global_config).unwrap();
+    let presets = llama_herd::discovery::discover_presets_from_ini(&ini_path);
+
+    let mut state = llama_herd::tui::app::AppState::new(
+        presets,
+        models_dir.to_path_buf(),
+        ini_path,
+        global_config,
+        std::path::PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
+    );
+
+    // Default: show_hidden is false, only visible model listed
+    assert_eq!(state.grouped_models.len(), 1);
+    assert_eq!(state.grouped_models[0].is_hidden, false);
+
+    // Toggle show_hidden to true
+    state.toggle_show_hidden();
+    assert_eq!(state.show_hidden, true);
+    assert_eq!(state.grouped_models.len(), 2);
+    let hidden_idx = state
+        .grouped_models
+        .iter()
+        .position(|m| m.is_hidden)
+        .unwrap();
+    assert_eq!(state.grouped_models[hidden_idx].base_name, "hidden-model");
+
+    // Toggle back to false
+    state.toggle_show_hidden();
+    assert_eq!(state.show_hidden, false);
+    assert_eq!(state.grouped_models.len(), 1);
+}
+
+#[test]
+fn test_app_state_hidden_save_persistence() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+    let gguf = models_dir.join("test-model.gguf");
+    let toml = models_dir.join("test-model.toml");
+
+    std::fs::write(&gguf, b"dummy").unwrap();
+    std::fs::write(&toml, b"[llama-herd]\nhidden = false\n").unwrap();
+
+    let ini_path = models_dir.join("models-preset.ini");
+    let global_config = std::collections::HashMap::new();
+    let _ =
+        llama_herd::discovery::generate_presets_ini(models_dir, &ini_path, &global_config).unwrap();
+    let presets = llama_herd::discovery::discover_presets_from_ini(&ini_path);
+
+    let mut state = llama_herd::tui::app::AppState::new(
+        presets,
+        models_dir.to_path_buf(),
+        ini_path,
+        global_config,
+        std::path::PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
+    );
+
+    assert_eq!(state.hidden, false);
+    assert_eq!(state.original_hidden, false);
+    assert!(!state.has_unsaved_changes());
+
+    // Toggle hidden property in state
+    state.hidden = true;
+    assert!(state.has_unsaved_changes());
+
+    // Save configuration
+    state.save_current_preset_config(false).unwrap();
+
+    let saved_toml = std::fs::read_to_string(&toml).unwrap();
+    let parsed: toml::Value = toml::from_str(&saved_toml).unwrap();
+    let herd = parsed
+        .get("llama-herd")
+        .expect("llama-herd section must exist");
+    assert_eq!(herd.get("hidden").and_then(|v| v.as_bool()), Some(true));
+
+    assert_eq!(state.hidden, true);
+    assert_eq!(state.original_hidden, true);
+    assert!(!state.has_unsaved_changes());
+}
+
+#[test]
+fn test_load_current_preset_settings_precedence_and_override() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+    let model_file = models_dir.join("main-model.gguf");
+    let default_toml = models_dir.join("main-model.toml");
+    let override_toml = models_dir.join("custom-config.toml");
+
+    std::fs::write(&model_file, b"dummy").unwrap();
+    std::fs::write(
+        &default_toml,
+        b"[llama-herd]\ntotal-layers = 32\n[llama-server-long]\nctx-size = 4096\nngl = 16\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &override_toml,
+        b"[llama-herd]\ntotal-layers = 48\n[llama-server-long]\nctx-size = 8192\nngl = 64\n",
+    )
+    .unwrap();
+
+    let ini_path = models_dir.join("models-preset.ini");
+    std::fs::write(
+        &ini_path,
+        r#"
+[main-model]
+model = main-model.gguf
+n-gpu-layers = 32
+"#,
+    )
+    .unwrap();
+
+    let presets = vec![("main-model".to_string(), model_file.clone())];
+    let mut state = llama_herd::tui::app::AppState::new(
+        presets,
+        models_dir.to_path_buf(),
+        ini_path.clone(),
+        std::collections::HashMap::new(),
+        std::path::PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
+    );
+
+    assert_eq!(state.grouped_models.len(), 1);
+    assert_eq!(state.grouped_models[0].model_path, model_file);
+    assert_eq!(state.ctx, 4096);
+    assert_eq!(state.total_layers, Some(32));
+    assert_eq!(state.ngl, "32");
+
+    // Call load_current_preset_settings with toml_path_override
+    state.load_current_preset_settings(Some(override_toml.clone()));
+
+    // Verify: model_path and preset_name were still resolved from grouped_models[selected_model_index]
+    // so ini_settings for "main-model" (n-gpu-layers = 32) are retained,
+    // while assets.config was overridden by override_toml (ctx-size 8192, total-layers 48)
+    assert_eq!(state.ngl, "32");
+    assert_eq!(state.ctx, 8192);
+    assert_eq!(state.total_layers, Some(48));
+    assert_eq!(state.config_file_name, "custom-config.toml");
+
+    // Now test fallback when both grouped_models and presets are empty
+    let mut empty_state = llama_herd::tui::app::AppState::new(
+        vec![],
+        models_dir.to_path_buf(),
+        ini_path,
+        std::collections::HashMap::new(),
+        std::path::PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
+    );
+    assert!(empty_state.grouped_models.is_empty());
+    assert!(empty_state.presets.is_empty());
+
+    // Call load_current_preset_settings with override path on empty state
+    empty_state.load_current_preset_settings(Some(override_toml));
+    assert_eq!(empty_state.ctx, 8192);
+    assert_eq!(empty_state.total_layers, Some(48));
+    assert_eq!(empty_state.config_file_name, "custom-config.toml");
+}
+
+#[test]
+fn test_rebuild_grouped_models_hidden_path_matching() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+    let model_file = models_dir.join("special-model.gguf");
+    let toml_file = models_dir.join("special-model.toml");
+
+    std::fs::write(&model_file, b"dummy").unwrap();
+    std::fs::write(&toml_file, b"[llama-herd]\nhidden = true\n").unwrap();
+
+    let ini_path = models_dir.join("models-preset.ini");
+    std::fs::write(
+        &ini_path,
+        r#"
+[special-model]
+model = special-model.gguf
+"#,
+    )
+    .unwrap();
+
+    let presets = vec![("special-model".to_string(), model_file.clone())];
+    let mut state = llama_herd::tui::app::AppState::new(
+        presets,
+        models_dir.to_path_buf(),
+        ini_path,
+        std::collections::HashMap::new(),
+        std::path::PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
+    );
+
+    // Toggle show_hidden to discover hidden models and mark existing entries
+    state.toggle_show_hidden();
+    assert_eq!(state.grouped_models.len(), 1);
+    assert!(state.grouped_models[0].is_hidden);
+    assert_eq!(
+        state.grouped_models[0].model_path.file_name(),
+        model_file.file_name()
+    );
+}
+
+#[test]
+fn test_current_effective_model_name_and_user_settings() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let models_dir = temp_dir.path();
+    let model_file = models_dir.join("test-model.gguf");
+    let ini_path = models_dir.join("models-preset.ini");
+
+    std::fs::write(&model_file, b"dummy").unwrap();
+    std::fs::write(
+        &ini_path,
+        r#"
+[test-model]
+model = test-model.gguf
+"#,
+    )
+    .unwrap();
+
+    let presets = vec![("test-model".to_string(), model_file.clone())];
+    let mut state = llama_herd::tui::app::AppState::new(
+        presets,
+        models_dir.to_path_buf(),
+        ini_path,
+        std::collections::HashMap::new(),
+        std::path::PathBuf::from("llama-server"),
+        llama_herd::tui::theme::Theme::default(),
+    );
+
+    // 1. Without custom name, effective name is auto generated preset name
+    assert_eq!(state.current_effective_model_name(), "test-model");
+    let settings = state.get_user_settings();
+    assert_eq!(settings.model_alias, Some("test-model".to_string()));
+
+    // 2. With custom name set, effective name is the custom name
+    state.set_current_custom_name("My Custom Display Name".to_string());
+    assert_eq!(
+        state.current_effective_model_name(),
+        "My Custom Display Name"
+    );
+    let settings2 = state.get_user_settings();
+    assert_eq!(
+        settings2.model_alias,
+        Some("My Custom Display Name".to_string())
+    );
+}

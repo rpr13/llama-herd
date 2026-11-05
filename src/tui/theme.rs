@@ -32,6 +32,262 @@ pub struct Theme {
     pub border_type: BorderType,
 }
 
+/// Built-in curated theme presets and custom theme configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThemePreset {
+    /// Default Borderless Simple skin with transparent background.
+    #[default]
+    Default,
+    /// Warm retro dark theme by Pavel Pertsev (MIT).
+    GruvboxDark,
+    /// Classic modern dark theme by Microsoft (MIT).
+    VsCodeDark,
+    /// Flagship dark theme by `JetBrains` (Apache 2.0).
+    IntellijDark,
+    /// Soothing pastel dark theme by Catppuccin Org (MIT).
+    CatppuccinMocha,
+    /// Elegant dark neon theme by enkia (MIT).
+    TokyoNight,
+    /// Arctic, north-bluish clean theme by Arctic Ice Studio (MIT).
+    Nord,
+    /// Iconic dark syntax theme from Atom (MIT).
+    OneDark,
+    /// User-customized theme loaded from theme.toml.
+    Custom,
+}
+
+impl ThemePreset {
+    /// Returns the unique machine-readable identifier for this theme preset.
+    #[must_use]
+    pub const fn id(&self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::GruvboxDark => "gruvbox-dark",
+            Self::VsCodeDark => "vscode-dark",
+            Self::IntellijDark => "intellij-dark",
+            Self::CatppuccinMocha => "catppuccin-mocha",
+            Self::TokyoNight => "tokyo-night",
+            Self::Nord => "nord",
+            Self::OneDark => "one-dark",
+            Self::Custom => "custom",
+        }
+    }
+
+    /// Returns the friendly human-readable display label for TUI selectors.
+    #[must_use]
+    pub const fn display_name(&self) -> &'static str {
+        match self {
+            Self::Default => "Default (Borderless Simple)",
+            Self::GruvboxDark => "Gruvbox Dark",
+            Self::VsCodeDark => "VS Code Dark+",
+            Self::IntellijDark => "IntelliJ Dark (Darcula)",
+            Self::CatppuccinMocha => "Catppuccin Mocha",
+            Self::TokyoNight => "Tokyo Night",
+            Self::Nord => "Nord",
+            Self::OneDark => "One Dark",
+            Self::Custom => "Custom (theme.toml)",
+        }
+    }
+
+    /// Returns the open-source license under which this color scheme is distributed.
+    #[must_use]
+    pub const fn license(&self) -> &'static str {
+        match self {
+            Self::IntellijDark => "Apache 2.0",
+            Self::Custom => "User Defined",
+            _ => "MIT",
+        }
+    }
+
+    /// Returns a concise description of the theme's palette and aesthetic.
+    #[must_use]
+    pub const fn description(&self) -> &'static str {
+        match self {
+            Self::Default => {
+                "Clean minimal borderless interface with native terminal transparency and high-contrast accents."
+            }
+            Self::GruvboxDark => {
+                "Warm retro groove palette by Pavel Pertsev featuring earthy tones, warm yellows, and distinct contrast."
+            }
+            Self::VsCodeDark => {
+                "Official dark palette from Visual Studio Code with signature editor blues, soft grays, and balanced syntax accents."
+            }
+            Self::IntellijDark => {
+                "Classic Darcula dark palette from JetBrains IDEs with muted teals, soft ambers, and comfortable syntax hues."
+            }
+            Self::CatppuccinMocha => {
+                "Soothing, highly accessible dark pastel palette with rich purples, soft blues, and comforting contrast."
+            }
+            Self::TokyoNight => {
+                "Celebrated deep blue/indigo night theme with vibrant neon blues, purples, and warm amber highlights."
+            }
+            Self::Nord => {
+                "Iconic arctic, north-bluish palette by Arctic Ice Studio focused on clean readability and cold pastel accents."
+            }
+            Self::OneDark => {
+                "The timeless dark syntax theme from Atom editor featuring balanced blues, purples, greens, and soft stone gray."
+            }
+            Self::Custom => {
+                "User-defined color palette loaded directly from %APPDATA%\\llama-herd\\theme.toml."
+            }
+        }
+    }
+
+    /// Resolves a string identifier to a known `ThemePreset`, falling back to `Default`.
+    #[must_use]
+    pub fn from_id(id: &str) -> Self {
+        match id.trim().to_ascii_lowercase().as_str() {
+            "gruvbox-dark" | "gruvbox" => Self::GruvboxDark,
+            "vscode-dark" | "vscode" | "vs-code" => Self::VsCodeDark,
+            "intellij-dark" | "intellij" | "darcula" => Self::IntellijDark,
+            "catppuccin-mocha" | "catppuccin" => Self::CatppuccinMocha,
+            "tokyo-night" | "tokyo" => Self::TokyoNight,
+            "nord" => Self::Nord,
+            "one-dark" | "onedark" | "atom" => Self::OneDark,
+            "custom" => Self::Custom,
+            _ => Self::Default,
+        }
+    }
+
+    /// Returns a slice containing all available theme presets in display order.
+    #[must_use]
+    pub const fn all() -> &'static [Self] {
+        &[
+            Self::Default,
+            Self::GruvboxDark,
+            Self::VsCodeDark,
+            Self::IntellijDark,
+            Self::CatppuccinMocha,
+            Self::TokyoNight,
+            Self::Nord,
+            Self::OneDark,
+            Self::Custom,
+        ]
+    }
+
+    /// Builds a fully-resolved `Theme` struct according to this preset,
+    /// with optional transparency override.
+    #[must_use]
+    pub fn build_theme(&self, custom_path: Option<&Path>, transparent: bool) -> Theme {
+        let mut theme = match self {
+            Self::Default => Theme::default(),
+            Self::GruvboxDark => Theme {
+                primary: Color::Rgb(0x83, 0xa5, 0x98),
+                secondary: Color::Rgb(0x92, 0x83, 0x74),
+                accent: Color::Rgb(0xfa, 0xbd, 0x2f),
+                success: Color::Rgb(0xb8, 0xbb, 0x26),
+                error: Color::Rgb(0xfb, 0x49, 0x34),
+                selection: Color::Rgb(0xd3, 0x86, 0x9b),
+                bg: Color::Rgb(0x28, 0x28, 0x28),
+                fg: Color::Rgb(0xeb, 0xdb, 0xb2),
+                header_bg: Color::Rgb(0x32, 0x30, 0x2f),
+                footer_bg: Color::Rgb(0x32, 0x30, 0x2f),
+                show_emojis: true,
+                border_type: BorderType::Plain,
+            },
+            Self::VsCodeDark => Theme {
+                primary: Color::Rgb(0x00, 0x7a, 0xcc),
+                secondary: Color::Rgb(0x80, 0x80, 0x80),
+                accent: Color::Rgb(0xdc, 0xdc, 0xaa),
+                success: Color::Rgb(0x6a, 0x99, 0x55),
+                error: Color::Rgb(0xf4, 0x47, 0x47),
+                selection: Color::Rgb(0xc5, 0x86, 0xc0),
+                bg: Color::Rgb(0x1e, 0x1e, 0x1e),
+                fg: Color::Rgb(0xd4, 0xd4, 0xd4),
+                header_bg: Color::Rgb(0x25, 0x25, 0x26),
+                footer_bg: Color::Rgb(0x25, 0x25, 0x26),
+                show_emojis: true,
+                border_type: BorderType::Plain,
+            },
+            Self::IntellijDark => Theme {
+                primary: Color::Rgb(0x29, 0x99, 0x99),
+                secondary: Color::Rgb(0x80, 0x80, 0x80),
+                accent: Color::Rgb(0xbb, 0xb5, 0x29),
+                success: Color::Rgb(0x62, 0x97, 0x55),
+                error: Color::Rgb(0xff, 0x6b, 0x68),
+                selection: Color::Rgb(0x98, 0x76, 0xaa),
+                bg: Color::Rgb(0x2b, 0x2b, 0x2b),
+                fg: Color::Rgb(0xa9, 0xb7, 0xc6),
+                header_bg: Color::Rgb(0x31, 0x33, 0x35),
+                footer_bg: Color::Rgb(0x31, 0x33, 0x35),
+                show_emojis: true,
+                border_type: BorderType::Plain,
+            },
+            Self::CatppuccinMocha => Theme {
+                primary: Color::Rgb(0x89, 0xb4, 0xfa),
+                secondary: Color::Rgb(0xa6, 0xad, 0xc8),
+                accent: Color::Rgb(0xf9, 0xe2, 0xaf),
+                success: Color::Rgb(0xa6, 0xe3, 0xa1),
+                error: Color::Rgb(0xf3, 0x8b, 0xa8),
+                selection: Color::Rgb(0xcb, 0xa6, 0xf7),
+                bg: Color::Rgb(0x1e, 0x1e, 0x2e),
+                fg: Color::Rgb(0xcd, 0xd6, 0xf4),
+                header_bg: Color::Rgb(0x18, 0x18, 0x25),
+                footer_bg: Color::Rgb(0x18, 0x18, 0x25),
+                show_emojis: true,
+                border_type: BorderType::Plain,
+            },
+            Self::TokyoNight => Theme {
+                primary: Color::Rgb(0x7a, 0xa2, 0xf7),
+                secondary: Color::Rgb(0x56, 0x5f, 0x89),
+                accent: Color::Rgb(0xe0, 0xaf, 0x68),
+                success: Color::Rgb(0x9e, 0xce, 0x6a),
+                error: Color::Rgb(0xf7, 0x76, 0x8e),
+                selection: Color::Rgb(0xbb, 0x9a, 0xf7),
+                bg: Color::Rgb(0x1a, 0x1b, 0x26),
+                fg: Color::Rgb(0xc0, 0xca, 0xf5),
+                header_bg: Color::Rgb(0x16, 0x16, 0x1e),
+                footer_bg: Color::Rgb(0x16, 0x16, 0x1e),
+                show_emojis: true,
+                border_type: BorderType::Plain,
+            },
+            Self::Nord => Theme {
+                primary: Color::Rgb(0x88, 0xc0, 0xd0),
+                secondary: Color::Rgb(0x4c, 0x56, 0x6a),
+                accent: Color::Rgb(0xeb, 0xcb, 0x8b),
+                success: Color::Rgb(0xa3, 0xbe, 0x8c),
+                error: Color::Rgb(0xbf, 0x61, 0x6a),
+                selection: Color::Rgb(0xb4, 0x8e, 0xad),
+                bg: Color::Rgb(0x2e, 0x34, 0x40),
+                fg: Color::Rgb(0xec, 0xef, 0xf4),
+                header_bg: Color::Rgb(0x24, 0x29, 0x33),
+                footer_bg: Color::Rgb(0x24, 0x29, 0x33),
+                show_emojis: true,
+                border_type: BorderType::Plain,
+            },
+            Self::OneDark => Theme {
+                primary: Color::Rgb(0x61, 0xaf, 0xef),
+                secondary: Color::Rgb(0x5c, 0x63, 0x70),
+                accent: Color::Rgb(0xe5, 0xc0, 0x7b),
+                success: Color::Rgb(0x98, 0xc3, 0x79),
+                error: Color::Rgb(0xe0, 0x6c, 0x75),
+                selection: Color::Rgb(0xc6, 0x78, 0xdd),
+                bg: Color::Rgb(0x28, 0x2c, 0x34),
+                fg: Color::Rgb(0xab, 0xb2, 0xbf),
+                header_bg: Color::Rgb(0x21, 0x25, 0x2b),
+                footer_bg: Color::Rgb(0x21, 0x25, 0x2b),
+                show_emojis: true,
+                border_type: BorderType::Plain,
+            },
+            Self::Custom => {
+                if let Some(path) = custom_path {
+                    Theme::load(path)
+                } else {
+                    Theme::default()
+                }
+            }
+        };
+
+        if transparent {
+            theme.bg = Color::Reset;
+            theme.header_bg = Color::Reset;
+            theme.footer_bg = Color::Reset;
+        }
+
+        theme
+    }
+}
+
 /// Parsed raw configuration for styling the TUI application.
 #[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "kebab-case")]
@@ -87,10 +343,10 @@ impl Default for Theme {
             success: Color::Green,
             error: Color::Red,
             selection: Color::Magenta,
-            bg: Color::Black,
+            bg: Color::Reset,
             fg: Color::White,
-            header_bg: Color::Indexed(234), // Subtle dark gray
-            footer_bg: Color::Indexed(234), // Subtle dark gray
+            header_bg: Color::Reset,
+            footer_bg: Color::Reset,
             show_emojis: true,
             border_type: BorderType::Plain,
         }
@@ -189,13 +445,24 @@ fn parse_color(s: &str) -> Option<Color> {
         "light-blue" | "light_blue" => Some(Color::LightBlue),
         "light-magenta" | "light_magenta" => Some(Color::LightMagenta),
         "light-cyan" | "light_cyan" => Some(Color::LightCyan),
-        "reset" => Some(Color::Reset),
+        "reset" | "default" | "none" | "transparent" => Some(Color::Reset),
         _ => {
             if (s.starts_with("indexed(") || s.starts_with("color(")) && s.ends_with(')') {
                 let start = if s.starts_with("indexed(") { 8 } else { 6 };
                 let num_str = &s[start..s.len() - 1];
                 if let Ok(n) = num_str.parse::<u8>() {
                     return Some(Color::Indexed(n));
+                }
+            }
+
+            if s.starts_with("rgb(") && s.ends_with(')') {
+                let inner = &s[4..s.len() - 1];
+                let parts: Vec<&str> = inner.split(',').collect();
+                if parts.len() == 3 {
+                    let r = parts[0].trim().parse::<u8>().ok()?;
+                    let g = parts[1].trim().parse::<u8>().ok()?;
+                    let b = parts[2].trim().parse::<u8>().ok()?;
+                    return Some(Color::Rgb(r, g, b));
                 }
             }
 
@@ -263,6 +530,25 @@ mod tests {
         assert_eq!(parse_color("light-magenta"), Some(Color::LightMagenta));
         assert_eq!(parse_color("light-cyan"), Some(Color::LightCyan));
         assert_eq!(parse_color("reset"), Some(Color::Reset));
+        assert_eq!(parse_color("default"), Some(Color::Reset));
+        assert_eq!(parse_color("none"), Some(Color::Reset));
+        assert_eq!(parse_color("transparent"), Some(Color::Reset));
+    }
+
+    #[test]
+    fn test_parse_color_rgb() {
+        assert_eq!(parse_color("rgb(10, 20, 30)"), Some(Color::Rgb(10, 20, 30)));
+        assert_eq!(parse_color("rgb(255,0,128)"), Some(Color::Rgb(255, 0, 128)));
+        assert_eq!(parse_color("rgb(256, 0, 0)"), None);
+        assert_eq!(parse_color("rgb(1, 2)"), None);
+    }
+
+    #[test]
+    fn test_theme_default_transparency() {
+        let theme = Theme::default();
+        assert_eq!(theme.bg, Color::Reset);
+        assert_eq!(theme.header_bg, Color::Reset);
+        assert_eq!(theme.footer_bg, Color::Reset);
     }
 
     #[test]
@@ -352,5 +638,54 @@ mod tests {
 
         let theme_missing = Theme::load(&missing_path);
         assert_eq!(theme_missing, Theme::default());
+    }
+
+    #[test]
+    fn test_theme_presets_serialization_and_fallback() {
+        assert_eq!(
+            ThemePreset::from_id("gruvbox-dark"),
+            ThemePreset::GruvboxDark
+        );
+        assert_eq!(ThemePreset::from_id("vscode-dark"), ThemePreset::VsCodeDark);
+        assert_eq!(
+            ThemePreset::from_id("intellij-dark"),
+            ThemePreset::IntellijDark
+        );
+        assert_eq!(
+            ThemePreset::from_id("catppuccin-mocha"),
+            ThemePreset::CatppuccinMocha
+        );
+        assert_eq!(ThemePreset::from_id("tokyo-night"), ThemePreset::TokyoNight);
+        assert_eq!(ThemePreset::from_id("nord"), ThemePreset::Nord);
+        assert_eq!(ThemePreset::from_id("one-dark"), ThemePreset::OneDark);
+        assert_eq!(ThemePreset::from_id("custom"), ThemePreset::Custom);
+        assert_eq!(ThemePreset::from_id("invalid-xyz"), ThemePreset::Default);
+    }
+
+    #[test]
+    fn test_theme_preset_build_theme_opaque_and_transparent() {
+        let gruvbox_opaque = ThemePreset::GruvboxDark.build_theme(None, false);
+        assert_ne!(gruvbox_opaque.bg, Color::Reset);
+        assert_eq!(gruvbox_opaque.bg, Color::Rgb(0x28, 0x28, 0x28));
+
+        let gruvbox_trans = ThemePreset::GruvboxDark.build_theme(None, true);
+        assert_eq!(gruvbox_trans.bg, Color::Reset);
+        assert_eq!(gruvbox_trans.header_bg, Color::Reset);
+        assert_eq!(gruvbox_trans.footer_bg, Color::Reset);
+        assert_eq!(gruvbox_trans.primary, gruvbox_opaque.primary);
+    }
+
+    #[test]
+    fn test_live_theme_switch_and_transparency_toggle() {
+        let mut theme = ThemePreset::GruvboxDark.build_theme(None, false);
+        assert_ne!(theme.bg, Color::Reset);
+
+        // Switch to transparent
+        theme = ThemePreset::GruvboxDark.build_theme(None, true);
+        assert_eq!(theme.bg, Color::Reset);
+
+        // Switch to VS Code Dark
+        theme = ThemePreset::VsCodeDark.build_theme(None, false);
+        assert_eq!(theme.bg, Color::Rgb(0x1e, 0x1e, 0x1e));
     }
 }

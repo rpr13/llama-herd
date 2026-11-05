@@ -10,9 +10,9 @@
 
 use llama_herd::config::{
     calculate_ngl, format_arg_name, format_ctx_display, format_ini_key, get_global_config_string,
-    get_optimal_threads, is_restricted_key, load_settings_from_ini, load_toml_safe,
-    load_toml_silent, parse_ctx, parse_ctx_str, parse_settings_ini, remove_global_config_value,
-    update_global_config_value,
+    get_optimal_threads, is_restricted_key, is_restricted_short_key, load_settings_from_ini,
+    load_toml_safe, load_toml_silent, parse_ctx, parse_ctx_str, parse_settings_ini,
+    remove_global_config_value, update_global_config_value,
 };
 use serde_json::json;
 use std::fs::File;
@@ -338,6 +338,9 @@ fn test_is_restricted_key_internal() {
     assert!(is_restricted_key("custom-name"));
     assert!(is_restricted_key("custom-names"));
     assert!(is_restricted_key("is-default"));
+    assert!(is_restricted_key("models-dir"));
+    assert!(is_restricted_key("theme"));
+    assert!(is_restricted_key("theme-transparent"));
 
     assert!(!is_restricted_key("slot-prompt-similarity"));
 }
@@ -539,4 +542,31 @@ fn test_format_ctx_display() {
     assert_eq!(format_ctx_display(""), "");
     assert_eq!(format_ctx_display("   "), "");
     assert_eq!(format_ctx_display("invalid"), "invalid");
+}
+
+#[test]
+fn test_hidden_and_is_hidden_are_restricted_keys() {
+    assert!(is_restricted_key("hidden"));
+    assert!(is_restricted_key("is-hidden"));
+}
+
+#[test]
+fn test_alias_and_a_are_restricted_keys() {
+    assert!(is_restricted_key("alias"));
+    assert!(is_restricted_short_key("a"));
+}
+
+#[test]
+fn test_theme_and_transparency_global_config() {
+    let mut config = std::collections::HashMap::new();
+    let mut herd_table = serde_json::Map::new();
+    herd_table.insert(
+        "theme".into(),
+        serde_json::Value::String("gruvbox-dark".into()),
+    );
+    herd_table.insert("theme-transparent".into(), serde_json::Value::Bool(true));
+    config.insert("llama-herd".into(), serde_json::Value::Object(herd_table));
+
+    let theme_val = get_global_config_string(&config, "theme", "default");
+    assert_eq!(theme_val, "gruvbox-dark");
 }
